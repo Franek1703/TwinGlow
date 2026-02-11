@@ -56,12 +56,11 @@ void ButtonActions::handleContextActions() {
         }
     } else if (screen->type == "IMAGE" || screen->type == "ANIMATION") {
         if (actionPress == ButtonPressType::SHORT) {
-            // Switch to next asset
-            // TODO: Implement asset switching logic
-            Serial.println(F("[ButtonActions] Next asset (not implemented)"));
+            if (screen->availableAssetIds.size() > 1) {
+                screen->currentAssetIndex = (screen->currentAssetIndex + 1) % screen->availableAssetIds.size();
+            }
             buttons->clearEvent(ButtonId::ACTION);
         } else if (actionPress == ButtonPressType::LONG) {
-            // Send to pair
             handleSendToPair();
             buttons->clearEvent(ButtonId::ACTION);
         }
@@ -92,8 +91,9 @@ void ButtonActions::handleSendToPair() {
         return;
     }
     
-    if (rtdb != nullptr) {
-        rtdb->sendToPair(screen->pairId, screen->id, currentAssetId);
+    String assetId = playlist->getCurrentAssetId();
+    if (rtdb != nullptr && assetId.length() > 0) {
+        rtdb->sendToPair(screen->pairId, screen->id, assetId);
         Serial.println(F("[ButtonActions] Sent to pair"));
     }
 }

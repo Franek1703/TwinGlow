@@ -34,7 +34,7 @@ bool TimeSync::sync(FirebaseApp* app) {
         Serial.println(ctime(&ntpTime));
         return true;
     } else {
-        Serial.println(F("[TimeSync] NTP sync failed"));
+        Serial.println(F("[TimeSync] NTP sync failed (getNtpTime() returned 0)"));
         synced = false;
         return false;
     }
@@ -48,24 +48,37 @@ bool TimeSync::shouldSync() const {
 }
 
 time_t TimeSync::getNtpTime() {
-    // Use FirebaseClient's built-in NTP helper
-    // This is a simplified version - FirebaseClient has get_ntp_time() helper
     const char* ntpServer = "pool.ntp.org";
     const int timeZone = 0; // UTC
-    
+
+    Serial.print(F("[TimeSync] configTime("));
+    Serial.print(timeZone * 3600);
+    Serial.print(F(", 0, "));
+    Serial.print(ntpServer);
+    Serial.println(F(")"));
+
     configTime(timeZone * 3600, 0, ntpServer);
-    
+
     time_t now = time(nullptr);
     int retries = 0;
     while (now < 1000000000 && retries < 10) {
         delay(100);
         now = time(nullptr);
         retries++;
+        if (retries <= 3 || retries == 10) {
+            Serial.print(F("[TimeSync] NTP wait retry "));
+            Serial.print(retries);
+            Serial.print(F("/10, now="));
+            Serial.println(now);
+        }
     }
-    
+
     if (now < 1000000000) {
-        return 0; // Failed
+        Serial.print(F("[TimeSync] NTP failed: time invalid after 10 retries (now="));
+        Serial.print(now);
+        Serial.println(F(", expected >= 1000000000)"));
+        return 0;
     }
-    
+
     return now;
 }

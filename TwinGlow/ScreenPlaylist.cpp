@@ -41,10 +41,26 @@ void ScreenPlaylist::setCurrentIndex(int index) {
 }
 
 ScreenConfig* ScreenPlaylist::getCurrentScreen() {
-    if (screens.empty() || currentIndex < 0 || currentIndex >= screens.size()) {
+    if (screens.empty() || currentIndex < 0 || (size_t)currentIndex >= screens.size()) {
         return nullptr;
     }
     return &screens[currentIndex];
+}
+
+const ScreenConfig* ScreenPlaylist::getCurrentScreen() const {
+    if (screens.empty() || currentIndex < 0 || (size_t)currentIndex >= screens.size()) {
+        return nullptr;
+    }
+    return &screens[currentIndex];
+}
+
+String ScreenPlaylist::getCurrentAssetId() const {
+    const ScreenConfig* s = getCurrentScreen();
+    if (s == nullptr) return "";
+    if (!s->availableAssetIds.empty() && s->currentAssetIndex >= 0 && s->currentAssetIndex < (int)s->availableAssetIds.size()) {
+        return s->availableAssetIds[s->currentAssetIndex];
+    }
+    return s->assetId;
 }
 
 bool ScreenPlaylist::shouldRotate() {

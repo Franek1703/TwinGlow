@@ -8,6 +8,8 @@
 #include <vector>
 #include <ArduinoJson.h>
 
+class FirebaseClientWrap;
+
 // Data structures
 struct ScreenConfig {
     String id;
@@ -19,6 +21,12 @@ struct ScreenConfig {
     // Shared screen reference
     String pairId;
     String sharedScreenId;
+    
+    // Asset for IMAGE/ANIMATION (local or from shared defaultAssetId)
+    String assetId;
+    // For shared screens with allowManualSwitch: current index into availableAssetIds
+    int currentAssetIndex;
+    std::vector<String> availableAssetIds;
     
     // Config JSON (for CLOCK/SENSOR) - stored as string for simplicity
     String configJson;
@@ -47,7 +55,7 @@ struct AssetData {
  */
 class FirestoreRepo {
 public:
-    FirestoreRepo(void* firestoreInstance, const String& projectId, const String& deviceId);
+    FirestoreRepo(FirebaseClientWrap* wrap, const String& projectId, const String& deviceId);
     
     // Device operations
     bool getDeviceDoc(int& configVersion, bool& bme680Present);
@@ -68,16 +76,11 @@ public:
     bool checkConfigVersion(int& version);
     
 private:
-    void* firestore; // Firestore instance (FirebaseFirestoreType*)
+    FirebaseClientWrap* wrap;
     String projectId;
     String deviceId;
     
-    // Helper to get Firestore instance with correct type
-    FirebaseFirestoreType* getFirestore() {
-        return static_cast<FirebaseFirestoreType*>(firestore);
-    }
-    
-    String getDevicePath() const;
+    String getDevicePath() const;  // "devices/{deviceId}" for Firestore
     String getScreensPath() const;
     String getAssetPath(const String& assetId) const;
     String getSharedScreenPath(const String& pairId, const String& sharedScreenId) const;

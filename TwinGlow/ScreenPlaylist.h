@@ -23,7 +23,11 @@ public:
     
     // Current screen
     ScreenConfig* getCurrentScreen();
+    const ScreenConfig* getCurrentScreen() const;
     int getCurrentIndex() const { return currentIndex; }
+    
+    // Current asset id for IMAGE/ANIMATION (from assetId or availableAssetIds[currentAssetIndex])
+    String getCurrentAssetId() const;
     
     // Rotation
     bool shouldRotate(); // Check if duration elapsed

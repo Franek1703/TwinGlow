@@ -6,13 +6,15 @@
 #include "FirebaseTypes.h"
 #include <Arduino.h>
 
+class FirebaseClientWrap;
+
 /**
  * Realtime Database repository
  * Handles presence, telemetry, and commands
  */
 class RtdbRepo {
 public:
-    RtdbRepo(void* rtdbInstance, const String& deviceId);
+    RtdbRepo(FirebaseClientWrap* wrap, const String& deviceId);
     
     // Presence
     bool updatePresence(bool online);
@@ -28,17 +30,13 @@ public:
     bool sendToPair(const String& pairId, const String& screenId, const String& assetId);
     
 private:
-    void* rtdb; // RTDB instance (FirebaseRTDBType*)
+    FirebaseClientWrap* wrap;
     String deviceId;
-    
-    // Helper to get RTDB instance with correct type
-    FirebaseRTDBType* getRTDB() {
-        return static_cast<FirebaseRTDBType*>(rtdb);
-    }
     
     String getPresencePath() const;
     String getTelemetryPath() const;
     String getCommandsPath() const;
+    String getPairEventsPath(const String& pairId) const;
 };
 
 #endif // RTDB_REPO_H

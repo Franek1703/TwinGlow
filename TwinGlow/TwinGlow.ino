@@ -284,12 +284,12 @@ void handleFirebaseConnecting() {
     if (!firebaseStarted) {
         if (firebaseClient.begin()) {
             firestoreRepo = new FirestoreRepo(
-                firebaseClient.getFirestore(),
+                &firebaseClient,
                 FIREBASE_PROJECT_ID,
                 deviceId
             );
             rtdbRepo = new RtdbRepo(
-                firebaseClient.getRtdb(),
+                &firebaseClient,
                 deviceId
             );
             firebaseStarted = true;
@@ -312,8 +312,11 @@ void handleDeviceClaiming() {
     
     if (!claimingAttempted && firestoreRepo != nullptr) {
         if (claimedUid.length() > 0) {
+            Serial.print(F("[Claiming] Attempting claim for uid len="));
+            Serial.println(claimedUid.length());
             if (firestoreRepo->claimDevice(claimedUid)) {
                 claimingAttempted = true;
+                Serial.println(F("[Claiming] Success"));
                 fsm.transition(DeviceState::CAPABILITY_DETECT);
             } else {
                 Serial.println(F("[Claiming] Failed, continuing anyway"));
@@ -370,11 +373,42 @@ void handleConfigLoading() {
                 Serial.print(F("[Config] Loading config version: "));
                 Serial.println(configVersion);
                 
-                // TODO: Load screens, shared screens, assets
-                // For now, create empty playlist
                 std::vector<ScreenConfig> screens;
-                playlist.setScreens(screens);
-                
+                if (firestoreRepo->getScreens(screens)) {
+                    for (size_t i = 0; i < screens.size(); i++) {
+                        ScreenConfig& sc = screens[i];
+                        if (sc.pairId.length() > 0 && sc.sharedScreenId.length() > 0) {
+                            SharedScreenConfig sharedConfig;
+                            if (firestoreRepo->getSharedScreen(sc.pairId, sc.sharedScreenId, sharedConfig)) {
+                                sc.assetId = sharedConfig.defaultAssetId;
+                                sc.availableAssetIds = sharedConfig.availableAssetIds;
+                                sc.currentAssetIndex = 0;
+                            }
+                        }
+                        if ((sc.type == "IMAGE" || sc.type == "ANIMATION") && sc.assetId.length() > 0) {
+                            AssetData assetData;
+                            if (firestoreRepo->getAsset(sc.assetId, assetData) && assetData.pixelsJson.length() > 0) {
+                                CachedAsset cached;
+                                if (assetCache.parseAsset(sc.assetId, assetData.pixelsJson, cached)) {
+                                    assetCache.addAsset(cached);
+                                }
+                            }
+                            for (size_t a = 0; a < sc.availableAssetIds.size(); a++) {
+                                const String& aid = sc.availableAssetIds[a];
+                                if (aid.length() > 0 && assetCache.getAsset(aid) == nullptr) {
+                                    AssetData ad;
+                                    if (firestoreRepo->getAsset(aid, ad) && ad.pixelsJson.length() > 0) {
+                                        CachedAsset c;
+                                        if (assetCache.parseAsset(aid, ad.pixelsJson, c)) {
+                                            assetCache.addAsset(c);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    playlist.setScreens(screens);
+                }
                 currentConfigVersion = configVersion;
             }
         }
@@ -425,9 +459,18 @@ void handleRunning() {
                                sensorTemp, sensorHumidity, sensorPressure, sensorGas,
                                sensorMetricIndex);
         } else if (screen->type == "IMAGE" || screen->type == "ANIMATION") {
-            // Render asset
-            // TODO: Get current asset from screen
-            CachedAsset* asset = nullptr;
+            String assetId = playlist.getCurrentAssetId();
+            CachedAsset* asset = assetId.length() > 0 ? assetCache.getAsset(assetId) : nullptr;
+            if (asset == nullptr && assetId.length() > 0 && firestoreRepo != nullptr) {
+                AssetData assetData;
+                if (firestoreRepo->getAsset(assetId, assetData) && assetData.pixelsJson.length() > 0) {
+                    CachedAsset cached;
+                    if (assetCache.parseAsset(assetId, assetData.pixelsJson, cached)) {
+                        assetCache.addAsset(cached);
+                        asset = assetCache.getAsset(assetId);
+                    }
+                }
+            }
             if (screen->type == "IMAGE") {
                 renderAsset.renderImage(asset, 0x000000);
             } else {
