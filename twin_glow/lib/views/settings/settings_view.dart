@@ -137,7 +137,7 @@ class _SettingsViewState extends State<SettingsView> {
                   builder: (context, state) {
                     final pairing = state.pairing;
                     return AppCard(
-                      onTap: () => context.go('/settings/pairing'),
+                      onTap: () => context.push('/settings/pairing'),
                       hoverable: true,
                       child: Row(
                         children: [

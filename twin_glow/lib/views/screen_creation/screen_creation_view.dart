@@ -16,6 +16,10 @@ class ScreenCreationView extends StatelessWidget {
       backgroundColor: AppColors.bgPrimary,
       appBar: AppBar(
         title: const Text('Create New Screen'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => context.pop(),
+        ),
       ),
       body: SafeArea(
         child: Padding(
@@ -48,7 +52,7 @@ class ScreenCreationView extends StatelessWidget {
                       onTap: () {
                         // Generate new screen ID and navigate to editor
                         final newId = 'screen_${DateTime.now().millisecondsSinceEpoch}';
-                        context.go('/screen/clock/$newId');
+                        context.push('/screen/clock/$newId');
                       },
                     ),
                     _ScreenTypeCard(
@@ -58,7 +62,7 @@ class ScreenCreationView extends StatelessWidget {
                       description: 'Static image display',
                       onTap: () {
                         final newId = 'screen_${DateTime.now().millisecondsSinceEpoch}';
-                        context.go('/screen/image/$newId');
+                        context.push('/screen/image/$newId');
                       },
                     ),
                     _ScreenTypeCard(
@@ -68,7 +72,7 @@ class ScreenCreationView extends StatelessWidget {
                       description: 'Animated sequence',
                       onTap: () {
                         final newId = 'screen_${DateTime.now().millisecondsSinceEpoch}';
-                        context.go('/screen/animation/$newId');
+                        context.push('/screen/animation/$newId');
                       },
                     ),
                     _ScreenTypeCard(
@@ -78,7 +82,7 @@ class ScreenCreationView extends StatelessWidget {
                       description: 'Sensor data display',
                       onTap: () {
                         final newId = 'screen_${DateTime.now().millisecondsSinceEpoch}';
-                        context.go('/screen/sensor/$newId');
+                        context.push('/screen/sensor/$newId');
                       },
                     ),
                   ],

@@ -32,6 +32,10 @@ class ScreenEditorClockView extends StatelessWidget {
         backgroundColor: AppColors.bgPrimary,
         appBar: AppBar(
           title: const Text('Clock Screen Editor'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => context.pop(),
+          ),
           actions: [
             BlocBuilder<ScreenEditorClockCubit, ScreenEditorClockState>(
               builder: (context, state) {

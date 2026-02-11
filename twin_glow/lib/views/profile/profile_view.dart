@@ -33,6 +33,10 @@ class _ProfileViewState extends State<ProfileView> {
       backgroundColor: AppColors.bgPrimary,
       appBar: AppBar(
         title: const Text('Profile'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => context.pop(),
+        ),
       ),
       body: SafeArea(
         child: BlocBuilder<AuthCubit, AuthState>(

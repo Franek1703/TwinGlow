@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:go_router/go_router.dart';
 import '../../config/app_colors.dart';
 import '../../config/app_spacing.dart';
 import '../../config/app_typography.dart';
@@ -13,6 +14,10 @@ class DeviceProvisioningView extends StatelessWidget {
       backgroundColor: AppColors.bgPrimary,
       appBar: AppBar(
         title: const Text('Device Provisioning'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => context.pop(),
+        ),
       ),
       body: Center(
         child: Padding(

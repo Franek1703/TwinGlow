@@ -43,6 +43,10 @@ class _AssetEditorImageViewState extends State<AssetEditorImageView> {
         backgroundColor: AppColors.bgPrimary,
         appBar: AppBar(
           title: Text(widget.assetId == null ? 'Create Image' : 'Edit Image'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => context.pop(),
+          ),
           actions: [
             BlocBuilder<AssetEditorCubit, AssetEditorState>(
               builder: (context, state) {

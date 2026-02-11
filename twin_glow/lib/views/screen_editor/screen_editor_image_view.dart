@@ -54,6 +54,10 @@ class ScreenEditorImageView extends StatelessWidget {
         backgroundColor: AppColors.bgPrimary,
         appBar: AppBar(
           title: const Text('Image Screen Editor'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => context.pop(),
+          ),
           actions: [
             BlocBuilder<ScreenEditorImageCubit, ScreenEditorImageState>(
               builder: (context, state) {

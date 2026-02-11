@@ -47,7 +47,7 @@ class _AssetsViewState extends State<AssetsView> {
                         SizedBox(height: AppSpacing.lg),
                         AppButton(
                           text: 'Sign In',
-                          onPressed: () => context.go('/auth'),
+                          onPressed: () => context.push('/auth'),
                         ),
                       ],
                     ),
@@ -134,7 +134,7 @@ class _AssetsViewState extends State<AssetsView> {
                       itemBuilder: (context, index) {
                         final asset = assets[index];
                         return AppCard(
-                          onTap: () => context.go('/asset/edit/${asset.id}'),
+                          onTap: () => context.push('/asset/edit/${asset.id}'),
                           hoverable: true,
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -221,7 +221,7 @@ class _AssetsViewState extends State<AssetsView> {
                     children: [
                       AppButton(
                         text: 'Create New Image',
-                        onPressed: () => context.go('/asset/create/image'),
+                        onPressed: () => context.push('/asset/create/image'),
                         fullWidth: true,
                         icon: Icon(
                           Icons.add,
@@ -233,7 +233,7 @@ class _AssetsViewState extends State<AssetsView> {
                       AppButton(
                         text: 'Create New Animation',
                         onPressed: () =>
-                            context.go('/asset/create/animation'),
+                            context.push('/asset/create/animation'),
                         variant: AppButtonVariant.secondary,
                         fullWidth: true,
                         icon: Icon(

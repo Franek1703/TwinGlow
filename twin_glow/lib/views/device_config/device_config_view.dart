@@ -48,6 +48,10 @@ class _DeviceConfigViewState extends State<DeviceConfigView> {
         backgroundColor: AppColors.bgPrimary,
         appBar: AppBar(
           title: const Text('Device Configuration'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => context.pop(),
+          ),
         ),
         body: SafeArea(
           child: BlocBuilder<DevicesCubit, DevicesState>(

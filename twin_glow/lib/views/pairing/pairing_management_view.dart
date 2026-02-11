@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:go_router/go_router.dart';
 import '../../config/app_colors.dart';
 import '../../config/app_spacing.dart';
 import '../../config/app_typography.dart';
@@ -37,6 +38,10 @@ class _PairingManagementViewState extends State<PairingManagementView> {
         backgroundColor: AppColors.bgPrimary,
         appBar: AppBar(
           title: const Text('Pairing Management'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => context.pop(),
+          ),
         ),
         body: SafeArea(
           child: SingleChildScrollView(
