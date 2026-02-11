@@ -1,0 +1,127 @@
+#include "RenderClock.h"
+
+RenderClock::RenderClock(MatrixDriver* mat) : matrix(mat) {
+}
+
+void RenderClock::render(const String& format, const String& layout,
+                         uint32_t fgColor, uint32_t accentColor, uint32_t bgColor,
+                         bool showSeconds, bool blinkColon) {
+    // Clear screen
+    matrix->fill(bgColor);
+    
+    // Get current time
+    time_t now = time(nullptr);
+    struct tm* timeinfo = localtime(&now);
+    
+    int hour = timeinfo->tm_hour;
+    int minute = timeinfo->tm_min;
+    int second = timeinfo->tm_sec;
+    
+    // Convert to 12H if needed
+    if (format == "12H") {
+        if (hour == 0) hour = 12;
+        else if (hour > 12) hour -= 12;
+    }
+    
+    // Render based on layout
+    if (layout == "BIG_HHMM") {
+        renderBigHHMM(fgColor, accentColor, bgColor, blinkColon);
+    } else if (layout == "HHMM_PLUS_SECONDS_BAR") {
+        renderHHMMPlusSecondsBar(fgColor, accentColor, bgColor, blinkColon);
+    } else if (layout == "MINIMAL") {
+        renderMinimal(fgColor, accentColor, bgColor, blinkColon);
+    } else {
+        // Default to BIG_HHMM
+        renderBigHHMM(fgColor, accentColor, bgColor, blinkColon);
+    }
+    
+    matrix->show();
+}
+
+void RenderClock::renderBigHHMM(uint32_t fgColor, uint32_t accentColor, uint32_t bgColor, bool blinkColon) {
+    time_t now = time(nullptr);
+    struct tm* timeinfo = localtime(&now);
+    int hour = timeinfo->tm_hour;
+    int minute = timeinfo->tm_min;
+    
+    // Draw HH:MM
+    drawDigit(1, 4, hour / 10, fgColor);
+    drawDigit(5, 4, hour % 10, fgColor);
+    drawColon(9, 6, accentColor, blinkColon);
+    drawDigit(11, 4, minute / 10, fgColor);
+    drawDigit(15, 4, minute % 10, fgColor);
+}
+
+void RenderClock::renderHHMMPlusSecondsBar(uint32_t fgColor, uint32_t accentColor, uint32_t bgColor, bool blinkColon) {
+    time_t now = time(nullptr);
+    struct tm* timeinfo = localtime(&now);
+    int hour = timeinfo->tm_hour;
+    int minute = timeinfo->tm_min;
+    int second = timeinfo->tm_sec;
+    
+    // Draw HH:MM
+    drawDigit(1, 4, hour / 10, fgColor);
+    drawDigit(5, 4, hour % 10, fgColor);
+    drawColon(9, 6, accentColor, blinkColon);
+    drawDigit(11, 4, minute / 10, fgColor);
+    drawDigit(15, 4, minute % 10, fgColor);
+    
+    // Draw seconds bar at bottom
+    drawSecondsBar(second, accentColor);
+}
+
+void RenderClock::renderMinimal(uint32_t fgColor, uint32_t accentColor, uint32_t bgColor, bool blinkColon) {
+    time_t now = time(nullptr);
+    struct tm* timeinfo = localtime(&now);
+    int hour = timeinfo->tm_hour;
+    int minute = timeinfo->tm_min;
+    
+    // Smaller digits
+    drawDigit(2, 6, hour / 10, fgColor);
+    drawDigit(6, 6, hour % 10, fgColor);
+    drawColon(10, 7, accentColor, blinkColon);
+    drawDigit(12, 6, minute / 10, fgColor);
+    drawDigit(14, 6, minute % 10, fgColor);
+}
+
+void RenderClock::drawDigit(uint8_t x, uint8_t y, uint8_t digit, uint32_t color) {
+    // Simplified digit rendering - draw basic patterns
+    // For a full implementation, use 7-segment or bitmap fonts
+    draw7Segment(x, y, digit, color);
+}
+
+void RenderClock::drawColon(uint8_t x, uint8_t y, uint32_t color, bool blink) {
+    if (blink && (millis() / 500) % 2 == 0) {
+        return; // Blink off
+    }
+    
+    matrix->setPixel(x, y, color);
+    matrix->setPixel(x, y + 2, color);
+}
+
+void RenderClock::drawSecondsBar(uint8_t seconds, uint32_t color) {
+    // Draw progress bar at bottom (row 15)
+    int pixels = (seconds * 16) / 60;
+    for (int i = 0; i < pixels && i < 16; i++) {
+        matrix->setPixel(i, 15, color);
+    }
+}
+
+void RenderClock::draw7Segment(uint8_t x, uint8_t y, uint8_t digit, uint32_t color) {
+    // Simplified 7-segment rendering for 16x16 matrix
+    // Each digit is 3x5 pixels
+    // This is a placeholder - implement full 7-segment patterns
+    
+    // For now, draw simple patterns
+    if (digit == 0) {
+        // Top, left top, right top, left bottom, right bottom, bottom
+        for (int i = 0; i < 3; i++) matrix->setPixel(x + i, y, color);
+        matrix->setPixel(x, y + 1, color);
+        matrix->setPixel(x + 2, y + 1, color);
+        matrix->setPixel(x, y + 2, color);
+        matrix->setPixel(x + 2, y + 2, color);
+        for (int i = 0; i < 3; i++) matrix->setPixel(x + i, y + 3, color);
+    }
+    // Add other digits similarly...
+    // This is simplified - full implementation would have all 0-9 patterns
+}
