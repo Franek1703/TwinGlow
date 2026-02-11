@@ -15,7 +15,7 @@ bool AssetCache::addAsset(const CachedAsset& asset) {
     // Add new asset
     assets.push_back(asset);
     
-    Serial.print("[AssetCache] Added asset: ");
+    Serial.print(F("[AssetCache] Added asset: "));
     Serial.println(asset.id);
     return true;
 }
@@ -24,7 +24,7 @@ bool AssetCache::removeAsset(const String& assetId) {
     for (auto it = assets.begin(); it != assets.end(); ++it) {
         if (it->id == assetId) {
             assets.erase(it);
-            Serial.print("[AssetCache] Removed asset: ");
+            Serial.print(F("[AssetCache] Removed asset: "));
             Serial.println(assetId);
             return true;
         }
@@ -34,7 +34,7 @@ bool AssetCache::removeAsset(const String& assetId) {
 
 void AssetCache::clear() {
     assets.clear();
-    Serial.println("[AssetCache] Cleared");
+    Serial.println(F("[AssetCache] Cleared"));
 }
 
 CachedAsset* AssetCache::getAsset(const String& assetId) {
@@ -56,7 +56,7 @@ bool AssetCache::parseAsset(const String& assetId, const String& jsonStr, Cached
     DeserializationError error = deserializeJson(doc, jsonStr);
     
     if (error) {
-        Serial.print("[AssetCache] JSON parse error: ");
+        Serial.print(F("[AssetCache] JSON parse error: "));
         Serial.println(error.c_str());
         return false;
     }

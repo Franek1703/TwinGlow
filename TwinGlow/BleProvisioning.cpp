@@ -8,12 +8,12 @@ public:
     ServerCallbacks(bool* connected) : deviceConnectedPtr(connected) {}
     
     void onConnect(BLEServer* pServer) {
-        Serial.println("[BLE] Client connected");
+        Serial.println(F("[BLE] Client connected"));
         *deviceConnectedPtr = true;
     }
     
     void onDisconnect(BLEServer* pServer) {
-        Serial.println("[BLE] Client disconnected");
+        Serial.println(F("[BLE] Client disconnected"));
         *deviceConnectedPtr = false;
     }
 };
@@ -34,9 +34,9 @@ public:
         std::string value(valueStr.c_str(), valueStr.length());
         String uuid = String(pCharacteristic->getUUID().toString().c_str());
         
-        Serial.print("[BLE] Received write to ");
+        Serial.print(F("[BLE] Received write to "));
         Serial.print(uuid);
-        Serial.print(", length: ");
+        Serial.print(F(", length: "));
         Serial.println(value.length());
         
         // Determine which characteristic was written based on target UUID
@@ -45,22 +45,22 @@ public:
             for (size_t i = 0; i < value.length() && i < 32; i++) {
                 ssidPtr->concat((char)value[i]);
             }
-            Serial.print("[BLE] SSID: ");
+            Serial.print(F("[BLE] SSID: "));
             Serial.println(*ssidPtr);
         } else if (targetUuid == BLE_CHAR_PASS_UUID) {
             passPtr->clear();
             for (size_t i = 0; i < value.length() && i < 64; i++) {
                 passPtr->concat((char)value[i]);
             }
-            Serial.print("[BLE] Password received (length: ");
+            Serial.print(F("[BLE] Password received (length: "));
             Serial.print(passPtr->length());
-            Serial.println(")");
+            Serial.println(F(")"));
         } else if (targetUuid == BLE_CHAR_UID_UUID) {
             uidPtr->clear();
             for (size_t i = 0; i < value.length() && i < 128; i++) {
                 uidPtr->concat((char)value[i]);
             }
-            Serial.print("[BLE] UID: ");
+            Serial.print(F("[BLE] UID: "));
             Serial.println(*uidPtr);
         }
     }
@@ -78,7 +78,7 @@ BleProvisioning::~BleProvisioning() {
 
 bool BleProvisioning::begin() {
     if (pServer != nullptr) {
-        Serial.println("[BLE] Already initialized");
+        Serial.println(F("[BLE] Already initialized"));
         return true;
     }
     
@@ -120,7 +120,7 @@ bool BleProvisioning::begin() {
     // Start advertising
     startAdvertising();
     
-    Serial.println("[BLE] Provisioning service started");
+    Serial.println(F("[BLE] Provisioning service started"));
     return true;
 }
 
@@ -135,7 +135,7 @@ void BleProvisioning::startAdvertising() {
     BLEDevice::startAdvertising();
     
     advertising = true;
-    Serial.println("[BLE] Advertising started");
+    Serial.println(F("[BLE] Advertising started"));
 }
 
 void BleProvisioning::stop() {
@@ -143,7 +143,7 @@ void BleProvisioning::stop() {
         BLEDevice::stopAdvertising();
         advertising = false;
         deviceConnected = false;
-        Serial.println("[BLE] Stopped");
+        Serial.println(F("[BLE] Stopped"));
     }
 }
 
@@ -163,10 +163,10 @@ void BleProvisioning::update() {
         // Client disconnected
         delay(500); // Give Bluetooth stack time
         if (isProvisioningComplete()) {
-            Serial.println("[BLE] Provisioning complete, stopping BLE");
+            Serial.println(F("[BLE] Provisioning complete, stopping BLE"));
             stop();
         } else {
-            Serial.println("[BLE] Incomplete provisioning data, keeping BLE active");
+            Serial.println(F("[BLE] Incomplete provisioning data, keeping BLE active"));
             clearData();
         }
         oldDeviceConnected = deviceConnected;

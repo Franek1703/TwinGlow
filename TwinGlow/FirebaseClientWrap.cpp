@@ -9,33 +9,33 @@ FirebaseClientWrap::~FirebaseClientWrap() {
 
 bool FirebaseClientWrap::begin() {
     if (initialized) {
-        Serial.println("[Firebase] Already initialized");
+        Serial.println(F("[Firebase] Already initialized"));
         return true;
     }
     
-    Serial.println("[Firebase] Initializing...");
+    Serial.println(F("[Firebase] Initializing..."));
     
     // FirebaseClient library uses initializeApp(AsyncClientClass&, FirebaseApp&, user_auth_data&)
     // not app.begin(). Configure auth and call initializeApp from your setup with an AsyncClient.
     
     // Initialize auth
     if (!initializeAuth()) {
-        Serial.println("[Firebase] Auth initialization failed");
+        Serial.println(F("[Firebase] Auth initialization failed"));
         return false;
     }
     
     // Initialize Firestore
     if (!initializeFirestore()) {
-        Serial.println("[Firebase] Firestore initialization failed - check FirebaseTypes.h");
+        Serial.println(F("[Firebase] Firestore initialization failed - check FirebaseTypes.h"));
     }
     
     // Initialize RTDB
     if (!initializeRTDB()) {
-        Serial.println("[Firebase] RTDB initialization failed - check FirebaseTypes.h");
+        Serial.println(F("[Firebase] RTDB initialization failed - check FirebaseTypes.h"));
     }
     
     initialized = true;
-    Serial.println("[Firebase] Initialized successfully");
+    Serial.println(F("[Firebase] Initialized successfully"));
     return true;
 }
 
@@ -58,7 +58,7 @@ bool FirebaseClientWrap::initializeAuth() {
     }
     */
     
-    Serial.println("[Firebase] WARNING: Auth not initialized - update FirebaseTypes.h");
+    Serial.println(F("[Firebase] WARNING: Auth not initialized - update FirebaseTypes.h"));
     return true; // Continue anyway
 }
 
@@ -72,7 +72,7 @@ bool FirebaseClientWrap::initializeFirestore() {
     return true;
     */
     
-    Serial.println("[Firebase] WARNING: Firestore not initialized - update FirebaseTypes.h");
+    Serial.println(F("[Firebase] WARNING: Firestore not initialized - update FirebaseTypes.h"));
     return false;
 }
 
@@ -81,7 +81,7 @@ bool FirebaseClientWrap::initializeRTDB() {
     // Example:
     /*
     if (auth == nullptr) {
-        Serial.println("[Firebase] Auth not initialized, cannot init RTDB");
+        Serial.println(F("[Firebase] Auth not initialized, cannot init RTDB"));
         return false;
     }
     
@@ -91,6 +91,6 @@ bool FirebaseClientWrap::initializeRTDB() {
     return true;
     */
     
-    Serial.println("[Firebase] WARNING: RTDB not initialized - update FirebaseTypes.h");
+    Serial.println(F("[Firebase] WARNING: RTDB not initialized - update FirebaseTypes.h"));
     return false;
 }

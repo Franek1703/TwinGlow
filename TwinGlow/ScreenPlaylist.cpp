@@ -8,9 +8,9 @@ void ScreenPlaylist::setScreens(const std::vector<ScreenConfig>& newScreens) {
     currentIndex = 0;
     screenStartMs = millis();
     
-    Serial.print("[Playlist] Loaded ");
+    Serial.print(F("[Playlist] Loaded "));
     Serial.print(screens.size());
-    Serial.println(" screens");
+    Serial.println(F(" screens"));
 }
 
 void ScreenPlaylist::next() {
@@ -19,7 +19,7 @@ void ScreenPlaylist::next() {
     currentIndex = (currentIndex + 1) % screens.size();
     screenStartMs = millis();
     
-    Serial.print("[Playlist] Next screen: ");
+    Serial.print(F("[Playlist] Next screen: "));
     Serial.println(currentIndex);
 }
 
@@ -29,7 +29,7 @@ void ScreenPlaylist::previous() {
     currentIndex = (currentIndex - 1 + screens.size()) % screens.size();
     screenStartMs = millis();
     
-    Serial.print("[Playlist] Previous screen: ");
+    Serial.print(F("[Playlist] Previous screen: "));
     Serial.println(currentIndex);
 }
 

@@ -12,9 +12,9 @@ const char* StateMachine::getStateName() const {
 
 void StateMachine::setState(DeviceState newState) {
     if (currentState != newState) {
-        Serial.print("[FSM] State: ");
+        Serial.print(F("[FSM] State: "));
         Serial.print(stateToString(currentState));
-        Serial.print(" -> ");
+        Serial.print(F(" -> "));
         Serial.println(stateToString(newState));
         currentState = newState;
     }
@@ -48,7 +48,7 @@ bool StateMachine::isOffline() const {
 void StateMachine::setError(const char* error) {
     strncpy(lastError, error, sizeof(lastError) - 1);
     lastError[sizeof(lastError) - 1] = '\0';
-    Serial.print("[FSM] Error: ");
+    Serial.print(F("[FSM] Error: "));
     Serial.println(error);
 }
 

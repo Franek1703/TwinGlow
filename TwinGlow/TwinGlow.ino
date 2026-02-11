@@ -5,6 +5,9 @@
  * See Config.h for configuration checklist and troubleshooting
  */
 
+// Let FirebaseClient use external PSRAM (define before any Firebase include)
+#define ENABLE_PSRAM
+
 #include "Config.h"
 #include "NvsStore.h"
 #include "StateMachine.h"
@@ -62,8 +65,8 @@ void setup() {
     Serial.begin(115200);
     delay(1000);
     
-    Serial.println("\n\n=== TwinGlow Firmware Starting ===");
-    Serial.print("FW Version: ");
+    Serial.println(F("\n\n=== TwinGlow Firmware Starting ==="));
+    Serial.print(F("FW Version: "));
     Serial.println(FW_VERSION);
     
     // Initialize state machine
@@ -71,14 +74,14 @@ void setup() {
     
     // Initialize matrix for visual feedback
     if (!matrix.begin()) {
-        Serial.println("[ERROR] Matrix initialization failed");
+        Serial.println(F("[ERROR] Matrix initialization failed"));
     }
     matrix.fill(matrix.color(0, 0, 255)); // Blue during boot
     matrix.show();
     
     // Initialize NVS
     if (!nvs.begin()) {
-        Serial.println("[ERROR] NVS initialization failed");
+        Serial.println(F("[ERROR] NVS initialization failed"));
         fsm.setError("NVS init failed");
         return;
     }
@@ -87,10 +90,10 @@ void setup() {
     
     // Load device ID
     if (!nvs.getDeviceId(deviceId)) {
-        Serial.println("[ERROR] Failed to get device ID");
+        Serial.println(F("[ERROR] Failed to get device ID"));
         return;
     }
-    Serial.print("[NVS] Device ID: ");
+    Serial.print(F("[NVS] Device ID: "));
     Serial.println(deviceId);
     
     // Load brightness
@@ -99,18 +102,18 @@ void setup() {
     
     // Check provisioning status
     if (!nvs.isProvisioned()) {
-        Serial.println("[NVS] Not provisioned, entering BLE mode");
+        Serial.println(F("[NVS] Not provisioned, entering BLE mode"));
         fsm.transition(DeviceState::PROVISIONING_BLE);
     } else {
         // Load Wi-Fi credentials
         String ssid, pass;
         if (nvs.getWifiSsid(ssid)) {
             nvs.getWifiPass(pass);
-            Serial.print("[NVS] Wi-Fi SSID: ");
+            Serial.print(F("[NVS] Wi-Fi SSID: "));
             Serial.println(ssid);
             fsm.transition(DeviceState::WIFI_CONNECTING);
         } else {
-            Serial.println("[NVS] No Wi-Fi credentials, entering BLE mode");
+            Serial.println(F("[NVS] No Wi-Fi credentials, entering BLE mode"));
             fsm.transition(DeviceState::PROVISIONING_BLE);
         }
     }
@@ -121,7 +124,7 @@ void setup() {
     // Initialize buttons
     buttons.begin();
     
-    Serial.println("[Setup] Complete");
+    Serial.println(F("[Setup] Complete"));
 }
 
 void loop() {
@@ -200,7 +203,7 @@ void handleProvisioningBle() {
             matrix.fill(matrix.color(255, 255, 0)); // Yellow during provisioning
             matrix.show();
         } else {
-            Serial.println("[BLE] Failed to start");
+            Serial.println(F("[BLE] Failed to start"));
             delay(1000);
         }
     }
@@ -216,7 +219,7 @@ void handleProvisioningBle() {
         nvs.setClaimedUid(bleProvisioning.getUid());
         nvs.setProvisioned(true);
         
-        Serial.println("[BLE] Provisioning complete, saving credentials");
+        Serial.println(F("[BLE] Provisioning complete, saving credentials"));
         
         bleStarted = false;
         
@@ -238,7 +241,7 @@ void handleWifiConnecting() {
                 matrix.show();
             }
         } else {
-            Serial.println("[WiFi] No credentials, entering BLE mode");
+            Serial.println(F("[WiFi] No credentials, entering BLE mode"));
             fsm.transition(DeviceState::PROVISIONING_BLE);
             return;
         }
@@ -247,11 +250,11 @@ void handleWifiConnecting() {
     wifiManager.update();
     
     if (wifiManager.isConnected()) {
-        Serial.println("[WiFi] Connected!");
+        Serial.println(F("[WiFi] Connected!"));
         wifiStarted = false;
         fsm.transition(DeviceState::TIME_SYNC);
     } else if (wifiManager.shouldEnterProvisioning()) {
-        Serial.println("[WiFi] Too many failures, entering BLE mode");
+            Serial.println(F("[WiFi] Too many failures, entering BLE mode"));
         wifiManager.reset();
         wifiStarted = false;
         fsm.transition(DeviceState::PROVISIONING_BLE);
@@ -266,7 +269,7 @@ void handleTimeSync() {
             syncAttempted = true;
             fsm.transition(DeviceState::FIREBASE_CONNECTING);
         } else {
-            Serial.println("[TimeSync] Failed, continuing anyway");
+            Serial.println(F("[TimeSync] Failed, continuing anyway"));
             syncAttempted = true;
             // Continue even if sync fails
             fsm.transition(DeviceState::FIREBASE_CONNECTING);
@@ -289,10 +292,10 @@ void handleFirebaseConnecting() {
                 deviceId
             );
             firebaseStarted = true;
-            Serial.println("[Firebase] Connected");
+            Serial.println(F("[Firebase] Connected"));
             fsm.transition(DeviceState::DEVICE_CLAIMING);
         } else {
-            Serial.println("[Firebase] Connection failed");
+            Serial.println(F("[Firebase] Connection failed"));
             delay(2000);
             // Retry or go offline
             fsm.transition(DeviceState::OFFLINE_RUNNING);
@@ -309,12 +312,12 @@ void handleDeviceClaiming() {
                 claimingAttempted = true;
                 fsm.transition(DeviceState::CAPABILITY_DETECT);
             } else {
-                Serial.println("[Claiming] Failed, continuing anyway");
+                Serial.println(F("[Claiming] Failed, continuing anyway"));
                 claimingAttempted = true;
                 fsm.transition(DeviceState::CAPABILITY_DETECT);
             }
         } else {
-            Serial.println("[Claiming] No UID, skipping");
+            Serial.println(F("[Claiming] No UID, skipping"));
             claimingAttempted = true;
             fsm.transition(DeviceState::CAPABILITY_DETECT);
         }
@@ -343,7 +346,7 @@ void handleCapabilityDetect() {
         }
         
         detectAttempted = true;
-        Serial.print("[Capability] BME680: ");
+        Serial.print(F("[Capability] BME680: "));
         Serial.println(bme680Present ? "present" : "not present");
         
         fsm.transition(DeviceState::CONFIG_LOADING);
@@ -360,7 +363,7 @@ void handleConfigLoading() {
         int configVersion;
         if (firestoreRepo->checkConfigVersion(configVersion)) {
             if (configVersion != currentConfigVersion) {
-                Serial.print("[Config] Loading config version: ");
+                Serial.print(F("[Config] Loading config version: "));
                 Serial.println(configVersion);
                 
                 // TODO: Load screens, shared screens, assets
@@ -442,7 +445,7 @@ void handleOfflineRunning() {
     static unsigned long lastReconnectAttempt = 0;
     if (millis() - lastReconnectAttempt > 30000) { // Every 30 seconds
         if (WiFi.isConnected()) {
-            Serial.println("[Offline] Attempting Firebase reconnect");
+            Serial.println(F("[Offline] Attempting Firebase reconnect"));
             fsm.transition(DeviceState::FIREBASE_CONNECTING);
         }
         lastReconnectAttempt = millis();
@@ -451,7 +454,7 @@ void handleOfflineRunning() {
 
 void handleErrorRecovery() {
     // Error recovery logic
-    Serial.println("[Error] In recovery mode");
+    Serial.println(F("[Error] In recovery mode"));
     delay(5000);
     // Try to recover or restart
     ESP.restart();
@@ -475,7 +478,7 @@ void checkConfigVersion() {
         int version;
         if (firestoreRepo->checkConfigVersion(version)) {
             if (version != currentConfigVersion) {
-                Serial.println("[Config] Version changed, reloading");
+                Serial.println(F("[Config] Version changed, reloading"));
                 fsm.transition(DeviceState::CONFIG_LOADING);
             }
         }

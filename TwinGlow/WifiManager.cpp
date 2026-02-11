@@ -14,11 +14,11 @@ bool WifiManager::begin(const String& ssid, const String& password) {
     connecting = false;
     
     if (ssid.length() == 0) {
-        Serial.println("[WiFi] No SSID provided");
+        Serial.println(F("[WiFi] No SSID provided"));
         return false;
     }
     
-    Serial.print("[WiFi] Connecting to: ");
+    Serial.print(F("[WiFi] Connecting to: "));
     Serial.println(ssid);
     
     WiFi.mode(WIFI_STA);
@@ -33,7 +33,7 @@ bool WifiManager::begin(const String& ssid, const String& password) {
 void WifiManager::update() {
     if (connecting) {
         if (isConnected()) {
-            Serial.print("[WiFi] Connected! IP: ");
+            Serial.print(F("[WiFi] Connected! IP: "));
             Serial.println(WiFi.localIP());
             connecting = false;
             failureCount = 0;
@@ -44,15 +44,15 @@ void WifiManager::update() {
             
             // Check if connection attempt timed out
             if (elapsed > 10000) { // 10 second timeout
-                Serial.println("[WiFi] Connection timeout");
+                Serial.println(F("[WiFi] Connection timeout"));
                 failureCount++;
                 quickRetryCount++;
                 
                 if (shouldRetry()) {
                     retryDelayMs = calculateBackoffDelay();
-                    Serial.print("[WiFi] Retrying in ");
+                    Serial.print(F("[WiFi] Retrying in "));
                     Serial.print(retryDelayMs);
-                    Serial.println("ms");
+                    Serial.println(F("ms"));
                     lastAttemptMs = now;
                 } else {
                     connecting = false;
@@ -68,9 +68,9 @@ void WifiManager::update() {
 }
 
 void WifiManager::attemptConnection() {
-    Serial.print("[WiFi] Attempt ");
+    Serial.print(F("[WiFi] Attempt "));
     Serial.print(failureCount + 1);
-    Serial.print(": Connecting to ");
+    Serial.print(F(": Connecting to "));
     Serial.println(currentSsid);
     
     WiFi.disconnect();

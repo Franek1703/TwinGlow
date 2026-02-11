@@ -8,11 +8,11 @@ TimeSync::TimeSync() : lastSyncMs(0), synced(false) {
 
 bool TimeSync::sync(FirebaseApp* app) {
     if (!WiFi.isConnected()) {
-        Serial.println("[TimeSync] Wi-Fi not connected");
+        Serial.println(F("[TimeSync] Wi-Fi not connected"));
         return false;
     }
     
-    Serial.println("[TimeSync] Starting NTP sync...");
+    Serial.println(F("[TimeSync] Starting NTP sync..."));
     
     // Use FirebaseClient's NTP helper
     time_t ntpTime = getNtpTime();
@@ -30,11 +30,11 @@ bool TimeSync::sync(FirebaseApp* app) {
         lastSyncMs = millis();
         synced = true;
         
-        Serial.print("[TimeSync] Sync successful: ");
+        Serial.print(F("[TimeSync] Sync successful: "));
         Serial.println(ctime(&ntpTime));
         return true;
     } else {
-        Serial.println("[TimeSync] NTP sync failed");
+        Serial.println(F("[TimeSync] NTP sync failed"));
         synced = false;
         return false;
     }

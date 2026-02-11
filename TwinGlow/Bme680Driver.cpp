@@ -11,16 +11,16 @@ Bme680Driver::~Bme680Driver() {
 }
 
 bool Bme680Driver::begin() {
-    Serial.println("[BME680] Initializing...");
+    Serial.println(F("[BME680] Initializing..."));
     
     if (!detect()) {
-        Serial.println("[BME680] Sensor not detected");
+        Serial.println(F("[BME680] Sensor not detected"));
         present = false;
         return false;
     }
     
     present = true;
-    Serial.println("[BME680] Sensor detected and initialized");
+    Serial.println(F("[BME680] Sensor detected and initialized"));
     return true;
 }
 
@@ -51,7 +51,7 @@ bool Bme680Driver::read(float& temperature, float& humidity, float& pressure, fl
     }
     
     if (!sensor->performReading()) {
-        Serial.println("[BME680] Failed to read sensor");
+        Serial.println(F("[BME680] Failed to read sensor"));
         return false;
     }
     

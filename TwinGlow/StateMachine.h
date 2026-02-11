@@ -43,7 +43,7 @@ public:
     
 private:
     DeviceState currentState;
-    char lastError[128];
+    char lastError[64];
     
     const char* stateToString(DeviceState state) const;
 };

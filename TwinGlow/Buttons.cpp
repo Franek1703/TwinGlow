@@ -15,7 +15,7 @@ void Buttons::begin() {
     pinMode(BUTTON_BRIGHT_UP_PIN, INPUT_PULLUP);
     pinMode(BUTTON_ACTION_PIN, INPUT_PULLUP);
     
-    Serial.println("[Buttons] Initialized");
+    Serial.println(F("[Buttons] Initialized"));
 }
 
 void Buttons::update() {

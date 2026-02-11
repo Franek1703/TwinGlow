@@ -3,8 +3,8 @@
 RtdbRepo::RtdbRepo(void* rtdbInstance, const String& devId)
     : rtdb(rtdbInstance), deviceId(devId) {
     if (rtdb == nullptr) {
-        Serial.println("[RtdbRepo] WARNING: RTDB instance is nullptr");
-        Serial.println("[RtdbRepo] Update FirebaseTypes.h with correct class names");
+        Serial.println(F("[RtdbRepo] WARNING: RTDB instance is nullptr"));
+        Serial.println(F("[RtdbRepo] Update FirebaseTypes.h with correct class names"));
     }
 }
 
@@ -22,7 +22,7 @@ String RtdbRepo::getCommandsPath() const {
 
 bool RtdbRepo::updatePresence(bool online) {
     if (rtdb == nullptr) {
-        Serial.println("[RTDB] RTDB not initialized - check FirebaseTypes.h");
+        Serial.println(F("[RTDB] RTDB not initialized - check FirebaseTypes.h"));
         return false;
     }
     // TODO: FirebaseClient uses db.set(aClient, path, value) with String/JSON string. Integrate AsyncClient.

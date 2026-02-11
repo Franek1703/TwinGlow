@@ -58,7 +58,7 @@ void ButtonActions::handleContextActions() {
         if (actionPress == ButtonPressType::SHORT) {
             // Switch to next asset
             // TODO: Implement asset switching logic
-            Serial.println("[ButtonActions] Next asset (not implemented)");
+            Serial.println(F("[ButtonActions] Next asset (not implemented)"));
             buttons->clearEvent(ButtonId::ACTION);
         } else if (actionPress == ButtonPressType::LONG) {
             // Send to pair
@@ -81,25 +81,25 @@ void ButtonActions::handleBrightnessChange(bool increase) {
     nvs->setBrightness(current);
     matrix->setBrightness(current);
     
-    Serial.print("[ButtonActions] Brightness: ");
+    Serial.print(F("[ButtonActions] Brightness: "));
     Serial.println(current);
 }
 
 void ButtonActions::handleSendToPair() {
     ScreenConfig* screen = playlist->getCurrentScreen();
     if (screen == nullptr || screen->pairId.length() == 0) {
-        Serial.println("[ButtonActions] Cannot send to pair - no pair ID");
+        Serial.println(F("[ButtonActions] Cannot send to pair - no pair ID"));
         return;
     }
     
     if (rtdb != nullptr) {
         rtdb->sendToPair(screen->pairId, screen->id, currentAssetId);
-        Serial.println("[ButtonActions] Sent to pair");
+        Serial.println(F("[ButtonActions] Sent to pair"));
     }
 }
 
 void ButtonActions::handleFactoryReset() {
-    Serial.println("[ButtonActions] Factory reset triggered!");
+    Serial.println(F("[ButtonActions] Factory reset triggered!"));
     
     // Visual feedback
     matrix->fill(matrix->color(255, 0, 0)); // Red

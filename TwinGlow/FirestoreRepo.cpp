@@ -5,8 +5,8 @@
 FirestoreRepo::FirestoreRepo(void* firestoreInstance, const String& projId, const String& devId)
     : firestore(firestoreInstance), projectId(projId), deviceId(devId) {
     if (firestore == nullptr) {
-        Serial.println("[FirestoreRepo] WARNING: Firestore instance is nullptr");
-        Serial.println("[FirestoreRepo] Update FirebaseTypes.h with correct class names");
+        Serial.println(F("[FirestoreRepo] WARNING: Firestore instance is nullptr"));
+        Serial.println(F("[FirestoreRepo] Update FirebaseTypes.h with correct class names"));
     }
 }
 
@@ -32,7 +32,7 @@ String FirestoreRepo::getUserDevicePath(const String& uid) const {
 
 bool FirestoreRepo::getDeviceDoc(int& configVersion, bool& bme680Present) {
     if (firestore == nullptr) {
-        Serial.println("[Firestore] Firestore not initialized - check FirebaseTypes.h");
+        Serial.println(F("[Firestore] Firestore not initialized - check FirebaseTypes.h"));
         configVersion = 0;
         bme680Present = false;
         return false;

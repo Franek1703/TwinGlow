@@ -13,14 +13,14 @@ bool MatrixDriver::begin() {
     strip.setBrightness(currentBrightness);
     strip.clear();
     strip.show();
-    Serial.println("[Matrix] Initialized");
+    Serial.println(F("[Matrix] Initialized"));
     return true;
 }
 
 void MatrixDriver::setBrightness(uint8_t brightness) {
     currentBrightness = brightness;
     strip.setBrightness(brightness);
-    Serial.print("[Matrix] Brightness set to: ");
+    Serial.print(F("[Matrix] Brightness set to: "));
     Serial.println(brightness);
 }
 

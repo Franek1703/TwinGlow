@@ -13,7 +13,7 @@ bool NvsStore::begin() {
     if (initialized) return true;
     
     if (!prefs.begin(NVS_NAMESPACE, false)) {
-        Serial.println("[NVS] Failed to open namespace");
+        Serial.println(F("[NVS] Failed to open namespace"));
         return false;
     }
     
@@ -44,13 +44,13 @@ bool NvsStore::getWifiPass(String& pass) {
 void NvsStore::setWifiSsid(const String& ssid) {
     if (!initialized) return;
     prefs.putString(NVS_KEY_WIFI_SSID, ssid);
-    Serial.println("[NVS] Saved Wi-Fi SSID");
+    Serial.println(F("[NVS] Saved Wi-Fi SSID"));
 }
 
 void NvsStore::setWifiPass(const String& pass) {
     if (!initialized) return;
     prefs.putString(NVS_KEY_WIFI_PASS, pass);
-    Serial.println("[NVS] Saved Wi-Fi password");
+    Serial.println(F("[NVS] Saved Wi-Fi password"));
 }
 
 bool NvsStore::getDeviceId(String& deviceId) {
@@ -62,7 +62,7 @@ bool NvsStore::getDeviceId(String& deviceId) {
 void NvsStore::setDeviceId(const String& deviceId) {
     if (!initialized) return;
     prefs.putString(NVS_KEY_DEVICE_ID, deviceId);
-    Serial.print("[NVS] Saved device ID: ");
+    Serial.print(F("[NVS] Saved device ID: "));
     Serial.println(deviceId);
 }
 
@@ -80,7 +80,7 @@ void NvsStore::ensureDeviceId() {
     if (!getDeviceId(deviceId) || deviceId.length() == 0) {
         String newId = generateDeviceId();
         setDeviceId(newId);
-        Serial.print("[NVS] Generated new device ID: ");
+        Serial.print(F("[NVS] Generated new device ID: "));
         Serial.println(newId);
     }
 }
@@ -94,7 +94,7 @@ bool NvsStore::getClaimedUid(String& uid) {
 void NvsStore::setClaimedUid(const String& uid) {
     if (!initialized) return;
     prefs.putString(NVS_KEY_CLAIMED_UID, uid);
-    Serial.print("[NVS] Saved claimed UID: ");
+    Serial.print(F("[NVS] Saved claimed UID: "));
     Serial.println(uid);
 }
 
@@ -106,7 +106,7 @@ bool NvsStore::isProvisioned() {
 void NvsStore::setProvisioned(bool provisioned) {
     if (!initialized) return;
     prefs.putBool(NVS_KEY_PROVISIONED, provisioned);
-    Serial.print("[NVS] Set provisioned: ");
+    Serial.print(F("[NVS] Set provisioned: "));
     Serial.println(provisioned);
 }
 
@@ -118,7 +118,7 @@ uint8_t NvsStore::getBrightness() {
 void NvsStore::setBrightness(uint8_t brightness) {
     if (!initialized) return;
     prefs.putUChar(NVS_KEY_BRIGHTNESS, brightness);
-    Serial.print("[NVS] Saved brightness: ");
+    Serial.print(F("[NVS] Saved brightness: "));
     Serial.println(brightness);
 }
 
@@ -131,7 +131,7 @@ void NvsStore::factoryReset() {
     prefs.remove(NVS_KEY_CLAIMED_UID);
     prefs.putBool(NVS_KEY_PROVISIONED, false);
     
-    Serial.println("[NVS] Factory reset complete (deviceId preserved)");
+    Serial.println(F("[NVS] Factory reset complete (deviceId preserved)"));
 }
 
 void NvsStore::fullReset() {
@@ -139,5 +139,5 @@ void NvsStore::fullReset() {
     
     // Clear everything
     prefs.clear();
-    Serial.println("[NVS] Full reset complete (all data cleared)");
+    Serial.println(F("[NVS] Full reset complete (all data cleared)"));
 }
