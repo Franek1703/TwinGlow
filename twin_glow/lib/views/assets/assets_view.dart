@@ -8,6 +8,7 @@ import '../../config/app_typography.dart';
 import '../../core/models/asset_model.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_card.dart';
+import '../../features/auth/cubit/auth_cubit.dart';
 import '../../features/assets_library/cubit/assets_cubit.dart';
 import '../../services/firebase/firebase_fake_repository.dart';
 
@@ -23,11 +24,41 @@ class _AssetsViewState extends State<AssetsView> {
 
   @override
   Widget build(BuildContext context) {
-    // TODO: Get userId from AuthCubit
-    const userId = 'user1';
+    return BlocBuilder<AuthCubit, AuthState>(
+      builder: (context, authState) {
+        final userId = authState.user?.id ?? '';
+        
+        if (userId.isEmpty) {
+          return Scaffold(
+            backgroundColor: AppColors.bgPrimary,
+            body: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (authState.isLoading)
+                    const CircularProgressIndicator()
+                  else
+                    Column(
+                      children: [
+                        Text(
+                          'Not authenticated',
+                          style: AppTypography.h2(context),
+                        ),
+                        SizedBox(height: AppSpacing.lg),
+                        AppButton(
+                          text: 'Sign In',
+                          onPressed: () => context.go('/auth'),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          );
+        }
 
-    return BlocProvider(
-      create: (_) => AssetsCubit(FirebaseFakeRepository(), userId),
+        return BlocProvider(
+          create: (_) => AssetsCubit(FirebaseFakeRepository(), userId),
       child: Scaffold(
         backgroundColor: AppColors.bgPrimary,
         body: SafeArea(
@@ -219,6 +250,8 @@ class _AssetsViewState extends State<AssetsView> {
           ),
         ),
       ),
+        );
+      },
     );
   }
 

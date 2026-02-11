@@ -15,6 +15,9 @@ import '../../views/screen_editor/screen_editor_sensor_view.dart';
 import '../../views/asset_editor/asset_editor_image_view.dart';
 import '../../views/asset_editor/asset_editor_animation_view.dart';
 import '../../views/pairing/pairing_management_view.dart';
+import '../../views/profile/profile_view.dart';
+import '../../views/device_config/device_config_view.dart';
+import '../../views/screen_creation/screen_creation_view.dart';
 
 final appRouter = GoRouter(
   initialLocation: '/onboarding',
@@ -30,6 +33,21 @@ final appRouter = GoRouter(
     GoRoute(
       path: '/provision',
       builder: (context, state) => const DeviceProvisioningView(),
+    ),
+    GoRoute(
+      path: '/screen/create',
+      builder: (context, state) => const ScreenCreationView(),
+    ),
+    GoRoute(
+      path: '/settings/profile',
+      builder: (context, state) => const ProfileView(),
+    ),
+    GoRoute(
+      path: '/device/:deviceId/config',
+      builder: (context, state) {
+        final deviceId = state.pathParameters['deviceId']!;
+        return DeviceConfigView(deviceId: deviceId);
+      },
     ),
     // Main app shell with bottom navigation
     ShellRoute(

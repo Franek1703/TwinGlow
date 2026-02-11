@@ -7,6 +7,7 @@ import '../../config/app_spacing.dart';
 import '../../config/app_typography.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_card.dart';
+import '../../features/auth/cubit/auth_cubit.dart';
 import '../../features/pairing/cubit/pairing_cubit.dart';
 import '../../services/firebase/firebase_fake_repository.dart';
 
@@ -23,11 +24,41 @@ class _SettingsViewState extends State<SettingsView> {
 
   @override
   Widget build(BuildContext context) {
-    // TODO: Get userId from AuthCubit
-    const userId = 'user1';
+    return BlocBuilder<AuthCubit, AuthState>(
+      builder: (context, authState) {
+        final userId = authState.user?.id ?? '';
+        
+        if (userId.isEmpty) {
+          return Scaffold(
+            backgroundColor: AppColors.bgPrimary,
+            body: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (authState.isLoading)
+                    const CircularProgressIndicator()
+                  else
+                    Column(
+                      children: [
+                        Text(
+                          'Not authenticated',
+                          style: AppTypography.h2(context),
+                        ),
+                        SizedBox(height: AppSpacing.lg),
+                        AppButton(
+                          text: 'Sign In',
+                          onPressed: () => context.go('/auth'),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          );
+        }
 
-    return BlocProvider(
-      create: (_) => PairingCubit(FirebaseFakeRepository(), userId),
+        return BlocProvider(
+          create: (_) => PairingCubit(FirebaseFakeRepository(), userId),
       child: Scaffold(
         backgroundColor: AppColors.bgPrimary,
         body: SafeArea(
@@ -55,7 +86,7 @@ class _SettingsViewState extends State<SettingsView> {
                 SizedBox(height: AppSpacing.md),
                 AppCard(
                   onTap: () {
-                    // TODO: Navigate to profile
+                    context.go('/settings/profile');
                   },
                   hoverable: true,
                   child: Row(
@@ -79,12 +110,12 @@ class _SettingsViewState extends State<SettingsView> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'John Doe',
+                              authState.user?.displayName ?? 'User',
                               style: AppTypography.h4(context),
                             ),
                             SizedBox(height: 2.h),
                             Text(
-                              'john@example.com',
+                              authState.user?.email ?? '',
                               style: AppTypography.small(context),
                             ),
                           ],
@@ -335,18 +366,24 @@ class _SettingsViewState extends State<SettingsView> {
                 ),
                 SizedBox(height: AppSpacing.xl),
                 // Sign Out
-                AppButton(
-                  text: 'Sign Out',
-                  onPressed: () {
-                    // TODO: Implement sign out
-                    context.go('/auth');
+                BlocListener<AuthCubit, AuthState>(
+                  listener: (context, state) {
+                    if (!state.isAuthenticated && !state.isLoading) {
+                      context.go('/auth');
+                    }
                   },
-                  variant: AppButtonVariant.danger,
-                  fullWidth: true,
-                  icon: Icon(
-                    Icons.logout,
-                    size: 20.sp,
-                    color: Colors.white,
+                  child: AppButton(
+                    text: 'Sign Out',
+                    onPressed: () {
+                      context.read<AuthCubit>().signOut();
+                    },
+                    variant: AppButtonVariant.danger,
+                    fullWidth: true,
+                    icon: Icon(
+                      Icons.logout,
+                      size: 20.sp,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
                 SizedBox(height: 100.h), // Space for bottom nav
@@ -355,6 +392,8 @@ class _SettingsViewState extends State<SettingsView> {
           ),
         ),
       ),
+        );
+      },
     );
   }
 }

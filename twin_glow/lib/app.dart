@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'config/app_theme.dart';
 import 'config/app_router.dart';
+import 'features/auth/cubit/auth_cubit.dart';
+import 'services/firebase/firebase_fake_repository.dart';
 
 class App extends StatelessWidget {
   const App({super.key});
@@ -13,11 +16,14 @@ class App extends StatelessWidget {
       minTextAdapt: true,
       splitScreenMode: true,
       builder: (context, child) {
-        return MaterialApp.router(
-          title: 'TwinGlow',
-          theme: AppTheme.darkTheme,
-          routerConfig: appRouter,
-          debugShowCheckedModeBanner: false,
+        return BlocProvider(
+          create: (_) => AuthCubit(FirebaseFakeRepository()),
+          child: MaterialApp.router(
+            title: 'TwinGlow',
+            theme: AppTheme.darkTheme,
+            routerConfig: appRouter,
+            debugShowCheckedModeBanner: false,
+          ),
         );
       },
     );

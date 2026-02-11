@@ -9,6 +9,7 @@ import '../../core/widgets/app_button.dart';
 import '../../core/widgets/device_header.dart';
 import '../../core/widgets/screen_card.dart';
 import '../../core/models/device_model.dart';
+import '../../features/auth/cubit/auth_cubit.dart';
 import '../../features/device/cubit/devices_cubit.dart';
 import '../../features/screens_playlist/cubit/screens_playlist_cubit.dart';
 import '../../services/firebase/firebase_fake_repository.dart';
@@ -18,55 +19,88 @@ class HomeView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // TODO: Get userId from AuthCubit
-    const userId = 'user1';
     final firebaseRepo = FirebaseFakeRepository();
 
-    return MultiBlocProvider(
-      providers: [
-        BlocProvider(
-          create: (_) => DevicesCubit(firebaseRepo, userId),
-        ),
-        BlocProvider(
-          create: (_) {
-            final devicesCubit = DevicesCubit(firebaseRepo, userId);
-            devicesCubit.loadDevices();
-            return devicesCubit;
-          },
-        ),
-      ],
-      child: BlocBuilder<DevicesCubit, DevicesState>(
-        builder: (context, devicesState) {
-          final activeDevice = devicesState.activeDevice;
-          if (activeDevice == null) {
-            return Scaffold(
-              backgroundColor: AppColors.bgPrimary,
-              body: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      'No devices found',
-                      style: AppTypography.h2(context),
+    return BlocBuilder<AuthCubit, AuthState>(
+      builder: (context, authState) {
+        final userId = authState.user?.id ?? '';
+        
+        if (userId.isEmpty) {
+          return Scaffold(
+            backgroundColor: AppColors.bgPrimary,
+            body: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (authState.isLoading)
+                    const CircularProgressIndicator()
+                  else
+                    Column(
+                      children: [
+                        Text(
+                          'Not authenticated',
+                          style: AppTypography.h2(context),
+                        ),
+                        SizedBox(height: AppSpacing.lg),
+                        AppButton(
+                          text: 'Sign In',
+                          onPressed: () => context.go('/auth'),
+                        ),
+                      ],
                     ),
-                    SizedBox(height: AppSpacing.lg),
-                    AppButton(
-                      text: 'Add Device',
-                      onPressed: () => context.go('/provision'),
-                    ),
-                  ],
-                ),
+                ],
               ),
-            );
-          }
-
-          return BlocProvider(
-            create: (_) =>
-                ScreensPlaylistCubit(firebaseRepo, activeDevice.id),
-            child: _HomeContent(device: activeDevice),
+            ),
           );
-        },
-      ),
+        }
+
+        return MultiBlocProvider(
+          providers: [
+            BlocProvider(
+              create: (_) => DevicesCubit(firebaseRepo, userId),
+            ),
+            BlocProvider(
+              create: (_) {
+                final devicesCubit = DevicesCubit(firebaseRepo, userId);
+                devicesCubit.loadDevices();
+                return devicesCubit;
+              },
+            ),
+          ],
+          child: BlocBuilder<DevicesCubit, DevicesState>(
+            builder: (context, devicesState) {
+              final activeDevice = devicesState.activeDevice;
+              if (activeDevice == null) {
+                return Scaffold(
+                  backgroundColor: AppColors.bgPrimary,
+                  body: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          'No devices found',
+                          style: AppTypography.h2(context),
+                        ),
+                        SizedBox(height: AppSpacing.lg),
+                        AppButton(
+                          text: 'Add Device',
+                          onPressed: () => context.go('/provision'),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+
+              return BlocProvider(
+                create: (_) =>
+                    ScreensPlaylistCubit(firebaseRepo, activeDevice.id),
+                child: _HomeContent(device: activeDevice),
+              );
+            },
+          ),
+        );
+      },
     );
   }
 }
@@ -148,7 +182,7 @@ class _HomeContent extends StatelessWidget {
               AppButton(
                 text: 'Add New Screen',
                 onPressed: () {
-                  // TODO: Navigate to screen creation
+                  context.go('/screen/create');
                 },
                 variant: AppButtonVariant.secondary,
                 fullWidth: true,

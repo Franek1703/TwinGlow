@@ -18,6 +18,15 @@ class AppCard extends StatelessWidget {
     this.backgroundColor,
   });
 
+  AppCard.padding({
+    super.key,
+    required this.child,
+    this.onTap,
+    this.hoverable = false,
+    this.backgroundColor,
+    EdgeInsets? padding,
+  }) : padding = padding ?? EdgeInsets.all(AppSpacing.sm);
+
   @override
   Widget build(BuildContext context) {
     return Material(
