@@ -4,7 +4,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'config/app_theme.dart';
 import 'config/app_router.dart';
 import 'features/auth/cubit/auth_cubit.dart';
-import 'services/firebase/firebase_fake_repository.dart';
+import 'services/firebase/firebase_repository_impl.dart';
 
 class App extends StatelessWidget {
   const App({super.key});
@@ -17,7 +17,7 @@ class App extends StatelessWidget {
       splitScreenMode: true,
       builder: (context, child) {
         return BlocProvider(
-          create: (_) => AuthCubit(FirebaseFakeRepository()),
+          create: (_) => AuthCubit(FirebaseRepositoryImpl()),
           child: MaterialApp.router(
             title: 'TwinGlow',
             theme: AppTheme.darkTheme,

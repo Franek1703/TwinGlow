@@ -8,7 +8,7 @@ import '../../config/app_typography.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_input.dart';
 import '../../features/auth/cubit/auth_cubit.dart';
-import '../../services/firebase/firebase_fake_repository.dart';
+import '../../services/firebase/firebase_repository_impl.dart';
 
 class AuthView extends StatefulWidget {
   const AuthView({super.key});
@@ -45,7 +45,7 @@ class _AuthViewState extends State<AuthView> {
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (_) => AuthCubit(FirebaseFakeRepository()),
+      create: (_) => AuthCubit(FirebaseRepositoryImpl()),
       child: BlocListener<AuthCubit, AuthState>(
         listener: (context, state) {
           if (state.isAuthenticated) {

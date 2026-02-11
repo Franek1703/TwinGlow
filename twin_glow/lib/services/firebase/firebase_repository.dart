@@ -38,4 +38,9 @@ abstract class FirebaseRepository {
   Future<void> sendPairingInvite(String userId, String targetEmail);
   Future<void> acceptPairingInvite(String userId, String inviteId);
   Future<void> unpair(String userId);
+
+  // Realtime Database (RTDB) methods
+  Stream<Map<String, dynamic>> watchDevicePresence(String deviceId);
+  Stream<Map<String, dynamic>> watchDeviceTelemetry(String deviceId);
+  Future<void> sendCommand(String deviceId, String type, Map<String, dynamic> payload);
 }

@@ -10,7 +10,7 @@ import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_card.dart';
 import '../../features/auth/cubit/auth_cubit.dart';
 import '../../features/assets_library/cubit/assets_cubit.dart';
-import '../../services/firebase/firebase_fake_repository.dart';
+import '../../services/firebase/firebase_repository_impl.dart';
 
 class AssetsView extends StatefulWidget {
   const AssetsView({super.key});
@@ -58,7 +58,7 @@ class _AssetsViewState extends State<AssetsView> {
         }
 
         return BlocProvider(
-          create: (_) => AssetsCubit(FirebaseFakeRepository(), userId),
+          create: (_) => AssetsCubit(FirebaseRepositoryImpl(), userId),
       child: Scaffold(
         backgroundColor: AppColors.bgPrimary,
         body: SafeArea(

@@ -9,7 +9,7 @@ import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_card.dart';
 import '../../core/widgets/app_input.dart';
 import '../../features/pairing/cubit/pairing_cubit.dart';
-import '../../services/firebase/firebase_fake_repository.dart';
+import '../../services/firebase/firebase_repository_impl.dart';
 
 class PairingManagementView extends StatefulWidget {
   const PairingManagementView({super.key});
@@ -33,7 +33,7 @@ class _PairingManagementViewState extends State<PairingManagementView> {
     const userId = 'user1';
 
     return BlocProvider(
-      create: (_) => PairingCubit(FirebaseFakeRepository(), userId),
+      create: (_) => PairingCubit(FirebaseRepositoryImpl(), userId),
       child: Scaffold(
         backgroundColor: AppColors.bgPrimary,
         appBar: AppBar(

@@ -11,7 +11,7 @@ import '../../core/widgets/app_input.dart';
 import '../../core/widgets/device_header.dart';
 import '../../core/models/device_model.dart';
 import '../../features/device/cubit/devices_cubit.dart';
-import '../../services/firebase/firebase_fake_repository.dart';
+import '../../services/firebase/firebase_repository_impl.dart';
 
 class DeviceConfigView extends StatefulWidget {
   final String deviceId;
@@ -36,7 +36,7 @@ class _DeviceConfigViewState extends State<DeviceConfigView> {
   Widget build(BuildContext context) {
     // TODO: Get userId from AuthCubit
     const userId = 'user1';
-    final firebaseRepo = FirebaseFakeRepository();
+    final firebaseRepo = FirebaseRepositoryImpl();
 
     return BlocProvider(
       create: (_) {

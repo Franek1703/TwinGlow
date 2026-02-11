@@ -9,7 +9,7 @@ import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_card.dart';
 import '../../features/auth/cubit/auth_cubit.dart';
 import '../../features/pairing/cubit/pairing_cubit.dart';
-import '../../services/firebase/firebase_fake_repository.dart';
+import '../../services/firebase/firebase_repository_impl.dart';
 
 class SettingsView extends StatefulWidget {
   const SettingsView({super.key});
@@ -58,7 +58,7 @@ class _SettingsViewState extends State<SettingsView> {
         }
 
         return BlocProvider(
-          create: (_) => PairingCubit(FirebaseFakeRepository(), userId),
+          create: (_) => PairingCubit(FirebaseRepositoryImpl(), userId),
       child: Scaffold(
         backgroundColor: AppColors.bgPrimary,
         body: SafeArea(

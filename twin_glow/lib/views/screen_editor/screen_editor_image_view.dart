@@ -13,7 +13,7 @@ import '../../core/widgets/asset_selector.dart';
 import '../../core/widgets/pixel_preview.dart';
 import '../../features/screen_editor/cubit/screen_editor_image_cubit.dart';
 import '../../features/assets_library/cubit/assets_cubit.dart';
-import '../../services/firebase/firebase_fake_repository.dart';
+import '../../services/firebase/firebase_repository_impl.dart';
 
 class ScreenEditorImageView extends StatelessWidget {
   final String screenId;
@@ -24,7 +24,7 @@ class ScreenEditorImageView extends StatelessWidget {
   Widget build(BuildContext context) {
     // TODO: Get userId from AuthCubit and load screen from repository
     const userId = 'user1';
-    final firebaseRepo = FirebaseFakeRepository();
+    final firebaseRepo = FirebaseRepositoryImpl();
 
     // TODO: Load screen from repository
     final mockScreen = ScreenModel(

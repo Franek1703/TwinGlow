@@ -12,14 +12,14 @@ import '../../core/models/device_model.dart';
 import '../../features/auth/cubit/auth_cubit.dart';
 import '../../features/device/cubit/devices_cubit.dart';
 import '../../features/screens_playlist/cubit/screens_playlist_cubit.dart';
-import '../../services/firebase/firebase_fake_repository.dart';
+import '../../services/firebase/firebase_repository_impl.dart';
 
 class HomeView extends StatelessWidget {
   const HomeView({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final firebaseRepo = FirebaseFakeRepository();
+    final firebaseRepo = FirebaseRepositoryImpl();
 
     return BlocBuilder<AuthCubit, AuthState>(
       builder: (context, authState) {

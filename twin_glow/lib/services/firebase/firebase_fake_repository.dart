@@ -357,4 +357,30 @@ class FirebaseFakeRepository implements FirebaseRepository {
     await Future.delayed(const Duration(milliseconds: 300));
     _pairing = PairingModel();
   }
+
+  // RTDB methods (mock implementations)
+  @override
+  Stream<Map<String, dynamic>> watchDevicePresence(String deviceId) {
+    // Return a stream that emits mock presence data
+    return Stream.value({
+      'online': true,
+      'lastSeen': DateTime.now().millisecondsSinceEpoch,
+    });
+  }
+
+  @override
+  Stream<Map<String, dynamic>> watchDeviceTelemetry(String deviceId) {
+    // Return a stream that emits mock telemetry data
+    return Stream.value({
+      'temperature': 22.5,
+      'humidity': 45.0,
+      'pressure': 1013.25,
+    });
+  }
+
+  @override
+  Future<void> sendCommand(String deviceId, String type, Map<String, dynamic> payload) async {
+    // Mock command sending
+    await Future.delayed(const Duration(milliseconds: 100));
+  }
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/models/device_model.dart';
 import '../../../services/firebase/firebase_repository.dart';
@@ -33,10 +34,17 @@ class DevicesState {
 class DevicesCubit extends Cubit<DevicesState> {
   final FirebaseRepository firebaseRepository;
   final String userId;
+  StreamSubscription<Map<String, dynamic>>? _presenceSubscription;
 
   DevicesCubit(this.firebaseRepository, this.userId)
       : super(DevicesState()) {
     loadDevices();
+  }
+
+  @override
+  Future<void> close() {
+    _presenceSubscription?.cancel();
+    return super.close();
   }
 
   Future<void> loadDevices() async {
@@ -44,14 +52,46 @@ class DevicesCubit extends Cubit<DevicesState> {
     try {
       final devices = await firebaseRepository.getDevices(userId);
       final activeDevice = devices.isNotEmpty ? devices.first : null;
+      
       emit(state.copyWith(
         devices: devices,
         activeDevice: activeDevice,
         isLoading: false,
       ));
+
+      // Subscribe to presence updates for active device
+      if (activeDevice != null) {
+        _subscribeToPresence(activeDevice.id);
+      }
     } catch (e) {
       emit(state.copyWith(isLoading: false, error: e.toString()));
     }
+  }
+
+  void _subscribeToPresence(String deviceId) {
+    _presenceSubscription?.cancel();
+    _presenceSubscription = firebaseRepository
+        .watchDevicePresence(deviceId)
+        .listen((presenceData) {
+      final isOnline = presenceData['online'] == true;
+      
+      // Update device online status
+      final updatedDevices = state.devices.map((device) {
+        if (device.id == deviceId) {
+          return device.copyWith(isOnline: isOnline);
+        }
+        return device;
+      }).toList();
+
+      final updatedActiveDevice = state.activeDevice?.id == deviceId
+          ? state.activeDevice!.copyWith(isOnline: isOnline)
+          : state.activeDevice;
+
+      emit(state.copyWith(
+        devices: updatedDevices,
+        activeDevice: updatedActiveDevice,
+      ));
+    });
   }
 
   Future<void> setActiveDevice(DeviceModel device) async {
