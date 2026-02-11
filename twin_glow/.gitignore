@@ -46,3 +46,8 @@ app.*.map.json
 
 
 /Design TwinGlow Mobile UI/*
+
+#Firebase api keys files
+android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
+/lib/firebase_options.dart
