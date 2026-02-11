@@ -3,11 +3,9 @@
  * 
  * CONFIGURATION CHECKLIST:
  * ========================
- * 1. Set FIREBASE_API_KEY - Get from Firebase Console > Project Settings > General > Web API Key
- * 2. Set FIREBASE_DATABASE_URL - Get from Firebase Console > Realtime Database > Data tab
- *    Format: https://<project-id>.<region>.firebasedatabase.app
- * 3. Set FIREBASE_DATABASE_SECRET - Get from Firebase Console > Project Settings > Service Accounts > Database secrets
- * 4. Set FIREBASE_PROJECT_ID - Your Firebase project ID
+ * 1. Copy TwinGlow/FirebaseSecrets.h.example to TwinGlow/FirebaseSecrets.h (gitignored)
+ * 2. In FirebaseSecrets.h set: FIREBASE_API_KEY, FIREBASE_DATABASE_URL,
+ *    FIREBASE_DATABASE_SECRET, FIREBASE_PROJECT_ID (from Firebase Console)
  * 5. Verify hardware pins match your wiring:
  *    - NeoPixel data pin
  *    - Button GPIO pins
@@ -28,6 +26,11 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+// FirebaseClient library build options (must be defined before any Firebase include in ALL .cpp units)
+#define ENABLE_DATABASE      // Realtime Database
+#define ENABLE_FIRESTORE     // Cloud Firestore
+#define ENABLE_LEGACY_TOKEN  // Database secret auth
+
 // Hardware pins
 #define NEOPIXEL_PIN 2
 #define MATRIX_WIDTH 16
@@ -41,11 +44,8 @@
 #define BME680_SCL_PIN 23
 #define BME680_I2C_ADDR 0x76
 
-// Firebase Configuration (REQUIRED - User must set these)
-#define FIREBASE_API_KEY "YOUR_API_KEY"
-#define FIREBASE_DATABASE_URL "https://your-project.firebaseio.com"
-#define FIREBASE_DATABASE_SECRET "YOUR_DB_SECRET"
-#define FIREBASE_PROJECT_ID "your-project-id"
+// Firebase secrets (copy FirebaseSecrets.h.example to FirebaseSecrets.h and fill in)
+#include "FirebaseSecrets.h"
 
 // Timing constants
 #define NTP_SYNC_INTERVAL_MS 21600000      // 6 hours
@@ -83,5 +83,8 @@
 
 // Firmware version
 #define FW_VERSION "1.0.0"
+
+// Set to 1 to run RTDB/Firestore put-get test once after Firebase connects
+#define FIREBASE_RUN_TEST 0
 
 #endif // CONFIG_H
