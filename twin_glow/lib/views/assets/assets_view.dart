@@ -1,0 +1,277 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:go_router/go_router.dart';
+import '../../config/app_colors.dart';
+import '../../config/app_spacing.dart';
+import '../../config/app_typography.dart';
+import '../../core/models/asset_model.dart';
+import '../../core/widgets/app_button.dart';
+import '../../core/widgets/app_card.dart';
+import '../../features/assets_library/cubit/assets_cubit.dart';
+import '../../services/firebase/firebase_fake_repository.dart';
+
+class AssetsView extends StatefulWidget {
+  const AssetsView({super.key});
+
+  @override
+  State<AssetsView> createState() => _AssetsViewState();
+}
+
+class _AssetsViewState extends State<AssetsView> {
+  bool _isMyAssets = true;
+
+  @override
+  Widget build(BuildContext context) {
+    // TODO: Get userId from AuthCubit
+    const userId = 'user1';
+
+    return BlocProvider(
+      create: (_) => AssetsCubit(FirebaseFakeRepository(), userId),
+      child: Scaffold(
+        backgroundColor: AppColors.bgPrimary,
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.symmetric(
+              horizontal: AppSpacing.xl,
+              vertical: AppSpacing.xl,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header
+                Text(
+                  'Assets',
+                  style: AppTypography.h1(context),
+                ),
+                SizedBox(height: AppSpacing.sm),
+                Text(
+                  'Manage your images and animations',
+                  style: AppTypography.body(context),
+                ),
+                SizedBox(height: AppSpacing.xl),
+                // Tabs
+                Container(
+                  padding: EdgeInsets.all(4.w),
+                  decoration: BoxDecoration(
+                    color: AppColors.bgElevated,
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _TabButton(
+                          text: 'My Assets',
+                          isActive: _isMyAssets,
+                          onTap: () => setState(() => _isMyAssets = true),
+                        ),
+                      ),
+                      Expanded(
+                        child: _TabButton(
+                          text: 'Default Assets',
+                          isActive: !_isMyAssets,
+                          onTap: () => setState(() => _isMyAssets = false),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: AppSpacing.xl),
+                // Asset Grid
+                BlocBuilder<AssetsCubit, AssetsState>(
+                  builder: (context, state) {
+                    final assets = _isMyAssets
+                        ? state.myAssets
+                        : state.defaultAssets;
+
+                    if (state.isLoading) {
+                      return const Center(
+                        child: CircularProgressIndicator(),
+                      );
+                    }
+
+                    return GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        crossAxisSpacing: AppSpacing.lg,
+                        mainAxisSpacing: AppSpacing.lg,
+                        childAspectRatio: 0.85,
+                      ),
+                      itemCount: assets.length,
+                      itemBuilder: (context, index) {
+                        final asset = assets[index];
+                        return AppCard(
+                          onTap: () => context.go('/asset/edit/${asset.id}'),
+                          hoverable: true,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Container(
+                                  width: double.infinity,
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: [
+                                        AppColors.bgElevated,
+                                        AppColors.bgSecondary,
+                                      ],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    ),
+                                    borderRadius:
+                                        BorderRadius.circular(AppSpacing.radiusLg),
+                                    border: Border.all(
+                                      color: AppColors.borderSubtle,
+                                    ),
+                                  ),
+                                  child: Icon(
+                                    _getAssetIcon(asset.type),
+                                    size: 48.sp,
+                                    color: AppColors.textMuted,
+                                  ),
+                                ),
+                              ),
+                              SizedBox(height: AppSpacing.md),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      asset.name,
+                                      style: AppTypography.h4(context),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  if (asset.type == AssetType.animation)
+                                    Icon(
+                                      Icons.movie,
+                                      size: 14.sp,
+                                      color: AppColors.accentPurple,
+                                    ),
+                                ],
+                              ),
+                              SizedBox(height: AppSpacing.sm),
+                              Wrap(
+                                spacing: 4.w,
+                                runSpacing: 4.h,
+                                children: asset.tags
+                                    .take(2)
+                                    .map((tag) => Container(
+                                          padding: EdgeInsets.symmetric(
+                                            horizontal: 8.w,
+                                            vertical: 4.h,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: AppColors.bgElevated,
+                                            borderRadius: BorderRadius.circular(
+                                              AppSpacing.radiusMd,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            tag,
+                                            style: AppTypography.xs(context),
+                                          ),
+                                        ))
+                                    .toList(),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+                SizedBox(height: AppSpacing.xl),
+                // Create buttons (only for My Assets)
+                if (_isMyAssets)
+                  Column(
+                    children: [
+                      AppButton(
+                        text: 'Create New Image',
+                        onPressed: () => context.go('/asset/create/image'),
+                        fullWidth: true,
+                        icon: Icon(
+                          Icons.add,
+                          size: 20.sp,
+                          color: Colors.white,
+                        ),
+                      ),
+                      SizedBox(height: AppSpacing.md),
+                      AppButton(
+                        text: 'Create New Animation',
+                        onPressed: () =>
+                            context.go('/asset/create/animation'),
+                        variant: AppButtonVariant.secondary,
+                        fullWidth: true,
+                        icon: Icon(
+                          Icons.add,
+                          size: 20.sp,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                    ],
+                  ),
+                SizedBox(height: 100.h), // Space for bottom nav
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  IconData _getAssetIcon(AssetType type) {
+    switch (type) {
+      case AssetType.image:
+        return Icons.image;
+      case AssetType.animation:
+        return Icons.movie;
+    }
+  }
+}
+
+class _TabButton extends StatelessWidget {
+  final String text;
+  final bool isActive;
+  final VoidCallback onTap;
+
+  const _TabButton({
+    required this.text,
+    required this.isActive,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: EdgeInsets.symmetric(
+          vertical: 10.h,
+        ),
+        decoration: BoxDecoration(
+          gradient: isActive ? AppColors.primaryGradient : null,
+          color: isActive ? null : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+          boxShadow: isActive
+              ? [
+                  BoxShadow(
+                    color: AppColors.accentCyan.withOpacity(0.3),
+                    blurRadius: 4,
+                  ),
+                ]
+              : null,
+        ),
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
+          style: AppTypography.button(context).copyWith(
+            color: isActive ? Colors.white : AppColors.textMuted,
+          ),
+        ),
+      ),
+    );
+  }
+}
