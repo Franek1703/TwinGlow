@@ -1,45 +1,35 @@
 /*
- * FirebaseClient Library Type Definitions
- * 
- * INSTRUCTIONS:
- * 1. Open your FirebaseClient.h library header file
- * 2. Find the class names for:
- *    - Firestore operations class
- *    - Realtime Database operations class  
- *    - Authentication class
- * 3. Update the typedefs below to match your library version
- * 4. Common class names to try:
- *    - Firestore / FirebaseFirestore / FirebaseApp::Firestore
- *    - RealtimeDatabase / RTDB / FirebaseRTDB / FirebaseApp::RTDB
- *    - FirebaseAuth / Auth
+ * FirebaseClient Library Type Definitions (mobizt/FirebaseClient)
+ *
+ * Requires Config.h to be included first (defines ENABLE_DATABASE, ENABLE_FIRESTORE, ENABLE_LEGACY_TOKEN).
+ * Library uses namespace firebase_ns.
  */
 
 #ifndef FIREBASE_TYPES_H
 #define FIREBASE_TYPES_H
 
+#include "Config.h"
 #include <FirebaseClient.h>
 
-// TODO: Update these to match your FirebaseClient library class names
-// Check FirebaseClient.h in your Arduino libraries folder
-
-// Uncomment and adjust ONE of these based on your library:
-// typedef Firestore FirebaseFirestoreType;
-// typedef FirebaseFirestore FirebaseFirestoreType;
-// typedef FirebaseApp::Firestore FirebaseFirestoreType;
-
-// Uncomment and adjust ONE of these:
-// typedef RealtimeDatabase FirebaseRTDBType;
-// typedef RTDB FirebaseRTDBType;
-// typedef FirebaseRTDB FirebaseRTDBType;
-// typedef FirebaseApp::RTDB FirebaseRTDBType;
-
-// Uncomment and adjust ONE of these:
-// typedef FirebaseAuth FirebaseAuthType;
-// typedef Auth FirebaseAuthType;
-
-// For now, use forward declarations until you find the correct names
-class FirebaseFirestoreType;
+#if defined(ENABLE_DATABASE)
+/* RealtimeDatabase is in global scope (database/RealtimeDatabase.h) */
+typedef RealtimeDatabase FirebaseRTDBType;
+#else
 class FirebaseRTDBType;
+#endif
+
+#if defined(ENABLE_FIRESTORE)
+/* Firestore::Documents is in namespace Firestore (firestore/Documents.h) */
+typedef Firestore::Documents FirebaseFirestoreType;
+#else
+class FirebaseFirestoreType;
+#endif
+
+#if defined(ENABLE_LEGACY_TOKEN)
+/* LegacyToken is in namespace firebase_ns (core/Auth/Token/LegacyToken.h) */
+typedef firebase_ns::LegacyToken FirebaseAuthType;
+#else
 class FirebaseAuthType;
+#endif
 
 #endif // FIREBASE_TYPES_H

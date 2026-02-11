@@ -1,6 +1,7 @@
 #ifndef RTDB_REPO_H
 #define RTDB_REPO_H
 
+#include "Config.h"
 #include <FirebaseClient.h>
 #include "FirebaseTypes.h"
 #include <Arduino.h>

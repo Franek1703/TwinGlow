@@ -1,10 +1,28 @@
 #include "FirebaseClientWrap.h"
 
-FirebaseClientWrap::FirebaseClientWrap() : initialized(false), firestore(nullptr), rtdb(nullptr), auth(nullptr) {
+FirebaseClientWrap::FirebaseClientWrap()
+    : firestore(nullptr), rtdb(nullptr), auth(nullptr), initialized(false) {
 }
 
 FirebaseClientWrap::~FirebaseClientWrap() {
-    // Cleanup will be handled based on actual types
+#if defined(ENABLE_LEGACY_TOKEN)
+    if (auth != nullptr) {
+        delete static_cast<FirebaseAuthType*>(auth);
+        auth = nullptr;
+    }
+#endif
+#if defined(ENABLE_DATABASE)
+    if (rtdb != nullptr) {
+        delete static_cast<FirebaseRTDBType*>(rtdb);
+        rtdb = nullptr;
+    }
+#endif
+#if defined(ENABLE_FIRESTORE)
+    if (firestore != nullptr) {
+        delete static_cast<FirebaseFirestoreType*>(firestore);
+        firestore = nullptr;
+    }
+#endif
 }
 
 bool FirebaseClientWrap::begin() {
@@ -12,85 +30,110 @@ bool FirebaseClientWrap::begin() {
         Serial.println(F("[Firebase] Already initialized"));
         return true;
     }
-    
+
     Serial.println(F("[Firebase] Initializing..."));
-    
-    // FirebaseClient library uses initializeApp(AsyncClientClass&, FirebaseApp&, user_auth_data&)
-    // not app.begin(). Configure auth and call initializeApp from your setup with an AsyncClient.
-    
-    // Initialize auth
+
+#if defined(ENABLE_DATABASE) || defined(ENABLE_FIRESTORE)
+    // Skip server cert verification so TLS connect succeeds (use setCACert in production)
+    sslClient.setInsecure();
+    Serial.println(F("[Firebase] setClient(sslClient)"));
+    aClient.setClient(sslClient);
+#endif
+
+    Serial.println(F("[Firebase] initializeAuth()..."));
     if (!initializeAuth()) {
         Serial.println(F("[Firebase] Auth initialization failed"));
         return false;
     }
-    
-    // Initialize Firestore
+    Serial.println(F("[Firebase] Auth OK"));
+
+    Serial.println(F("[Firebase] initializeFirestore()..."));
     if (!initializeFirestore()) {
-        Serial.println(F("[Firebase] Firestore initialization failed - check FirebaseTypes.h"));
+        Serial.println(F("[Firebase] Firestore initialization failed"));
+    } else {
+        Serial.println(F("[Firebase] Firestore instance OK"));
     }
-    
-    // Initialize RTDB
+
+    Serial.println(F("[Firebase] initializeRTDB()..."));
     if (!initializeRTDB()) {
-        Serial.println(F("[Firebase] RTDB initialization failed - check FirebaseTypes.h"));
+        Serial.println(F("[Firebase] RTDB initialization failed"));
+    } else {
+        Serial.println(F("[Firebase] RTDB instance OK"));
     }
-    
+
+#if defined(ENABLE_LEGACY_TOKEN) && (defined(ENABLE_DATABASE) || defined(ENABLE_FIRESTORE))
+    if (auth != nullptr) {
+        Serial.println(F("[Firebase] initializeApp(aClient, app, authData, 5000)..."));
+        user_auth_data& authData = static_cast<FirebaseAuthType*>(auth)->get();
+        initializeApp(aClient, app, authData, 5000UL);
+        Serial.println(F("[Firebase] initializeApp done"));
+    } else {
+        Serial.println(F("[Firebase] auth is null, skip initializeApp"));
+    }
+#endif
+
+    Serial.println(F("[Firebase] Binding RTDB/Firestore to app (getApp)..."));
+#if defined(ENABLE_DATABASE)
+    if (rtdb != nullptr) {
+        app.getApp(*static_cast<FirebaseRTDBType*>(rtdb));
+        Serial.println(F("[Firebase] app.getApp(rtdb) done"));
+    }
+#endif
+#if defined(ENABLE_FIRESTORE)
+    if (firestore != nullptr) {
+        app.getApp(*static_cast<FirebaseFirestoreType*>(firestore));
+        Serial.println(F("[Firebase] app.getApp(firestore) done"));
+    }
+#endif
+
     initialized = true;
     Serial.println(F("[Firebase] Initialized successfully"));
     return true;
 }
 
 bool FirebaseClientWrap::initializeAuth() {
-    // TODO: Uncomment and adjust once you know the correct Auth class name
-    // Example:
-    /*
-    FirebaseAuthType* authObj = new FirebaseAuthType();
-    authObj->user.email = "";
-    authObj->user.password = "";
-    authObj->token.legacy_token = FIREBASE_DATABASE_SECRET;
-    
-    SignInResult result = authObj->signIn(&app);
-    if (result.success) {
-        auth = authObj;
+#if defined(ENABLE_LEGACY_TOKEN)
+    Serial.println(F("[Firebase] Creating LegacyToken auth..."));
+    auth = new FirebaseAuthType(FIREBASE_DATABASE_SECRET);
+    if (auth != nullptr) {
+        Serial.println(F("[Firebase] LegacyToken created"));
         return true;
-    } else {
-        delete authObj;
-        return false;
     }
-    */
-    
-    Serial.println(F("[Firebase] WARNING: Auth not initialized - update FirebaseTypes.h"));
-    return true; // Continue anyway
+    Serial.println(F("[Firebase] LegacyToken alloc failed"));
+    return false;
+#else
+    Serial.println(F("[Firebase] ENABLE_LEGACY_TOKEN not defined"));
+    return true;
+#endif
 }
 
 bool FirebaseClientWrap::initializeFirestore() {
-    // TODO: Uncomment and adjust once you know the correct Firestore class name
-    // Example:
-    /*
-    FirebaseFirestoreType* fs = new FirebaseFirestoreType();
-    fs->begin(&app);
-    firestore = fs;
-    return true;
-    */
-    
-    Serial.println(F("[Firebase] WARNING: Firestore not initialized - update FirebaseTypes.h"));
+#if defined(ENABLE_FIRESTORE)
+    Serial.println(F("[Firebase] Allocating Firestore instance..."));
+    firestore = new FirebaseFirestoreType();
+    if (firestore != nullptr) {
+        Serial.println(F("[Firebase] Firestore instance created"));
+        return true;
+    }
+    Serial.println(F("[Firebase] Firestore alloc failed"));
     return false;
+#else
+    return false;
+#endif
 }
 
 bool FirebaseClientWrap::initializeRTDB() {
-    // TODO: Uncomment and adjust once you know the correct RTDB and Auth class names
-    // Example:
-    /*
-    if (auth == nullptr) {
-        Serial.println(F("[Firebase] Auth not initialized, cannot init RTDB"));
-        return false;
+#if defined(ENABLE_DATABASE)
+    Serial.print(F("[Firebase] Allocating RTDB instance url="));
+    Serial.println(FIREBASE_DATABASE_URL);
+    rtdb = new FirebaseRTDBType(FIREBASE_DATABASE_URL);
+    if (rtdb != nullptr) {
+        Serial.println(F("[Firebase] RTDB instance created"));
+        return true;
     }
-    
-    FirebaseRTDBType* db = new FirebaseRTDBType();
-    db->begin(FIREBASE_DATABASE_URL, static_cast<FirebaseAuthType*>(auth));
-    rtdb = db;
-    return true;
-    */
-    
-    Serial.println(F("[Firebase] WARNING: RTDB not initialized - update FirebaseTypes.h"));
+    Serial.println(F("[Firebase] RTDB alloc failed"));
     return false;
+#else
+    return false;
+#endif
 }

@@ -27,6 +27,7 @@
 #include "Buttons.h"
 #include "ButtonActions.h"
 #include "Bme680Driver.h"
+#include "FirebaseTest.h"
 
 // Forward declaration
 struct ScreenConfig;
@@ -293,6 +294,9 @@ void handleFirebaseConnecting() {
             );
             firebaseStarted = true;
             Serial.println(F("[Firebase] Connected"));
+#if FIREBASE_RUN_TEST
+            runFirebaseTest(firebaseClient);
+#endif
             fsm.transition(DeviceState::DEVICE_CLAIMING);
         } else {
             Serial.println(F("[Firebase] Connection failed"));
