@@ -37,15 +37,24 @@ final appRouter = GoRouter(
       routes: [
         GoRoute(
           path: '/home',
-          builder: (context, state) => const HomeView(),
+          pageBuilder: (context, state) => NoTransitionPage<void>(
+            key: state.pageKey,
+            child: const HomeView(),
+          ),
         ),
         GoRoute(
           path: '/assets',
-          builder: (context, state) => const AssetsView(),
+          pageBuilder: (context, state) => NoTransitionPage<void>(
+            key: state.pageKey,
+            child: const AssetsView(),
+          ),
         ),
         GoRoute(
           path: '/settings',
-          builder: (context, state) => const SettingsView(),
+          pageBuilder: (context, state) => NoTransitionPage<void>(
+            key: state.pageKey,
+            child: const SettingsView(),
+          ),
         ),
       ],
     ),

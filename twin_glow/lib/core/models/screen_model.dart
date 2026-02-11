@@ -10,7 +10,6 @@ class ScreenModel {
   final String id;
   final ScreenType type;
   final String? name;
-  final int duration; // seconds
   final bool enabled;
   final bool isShared;
   final List<List<int>>? previewData; // 16x16 pixel grid
@@ -21,7 +20,6 @@ class ScreenModel {
     required this.id,
     required this.type,
     this.name,
-    this.duration = 15,
     this.enabled = true,
     this.isShared = false,
     this.previewData,
@@ -33,7 +31,6 @@ class ScreenModel {
     String? id,
     ScreenType? type,
     String? name,
-    int? duration,
     bool? enabled,
     bool? isShared,
     List<List<int>>? previewData,
@@ -44,7 +41,6 @@ class ScreenModel {
       id: id ?? this.id,
       type: type ?? this.type,
       name: name ?? this.name,
-      duration: duration ?? this.duration,
       enabled: enabled ?? this.enabled,
       isShared: isShared ?? this.isShared,
       previewData: previewData ?? this.previewData,

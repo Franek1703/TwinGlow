@@ -54,11 +54,6 @@ class ScreenCard extends StatelessWidget {
                           screen.displayName,
                           style: AppTypography.h4(context),
                         ),
-                        if (screen.duration > 0)
-                          Text(
-                            '${screen.duration}s',
-                            style: AppTypography.small(context),
-                          ),
                       ],
                     ),
                   ),
