@@ -75,30 +75,47 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
   @override
   Future<List<DeviceModel>> getDevices(String userId) async {
     try {
-      // Query devices where userId matches
-      final querySnapshot = await _firestore
+      // Query user's device mappings from /users/{uid}/devices
+      final mappingSnapshot = await _firestore
+          .collection('users')
+          .doc(userId)
           .collection('devices')
-          .where('userId', isEqualTo: userId)
           .get();
+      if (mappingSnapshot.docs.isEmpty) return [];
 
-      final devices = querySnapshot.docs.map((doc) {
-        return _deviceFromFirestore(doc.id, doc.data());
-      }).toList();
+      // For each deviceId in mappings, fetch the device metadata from /devices/{deviceId}
+      final devices = <DeviceModel>[];
+      for (final mapDoc in mappingSnapshot.docs) {
+        final deviceId = mapDoc.id;
+        final deviceDoc = await _firestore.collection('devices').doc(deviceId).get();
+        if (!deviceDoc.exists) continue;
 
-      // Update online status from RTDB
-      for (var device in devices) {
-        final presenceRef = _database.ref('presence/${device.id}');
+        // Prefer user's name override if present
+        final data = deviceDoc.data()!;
+        final mapData = mapDoc.data();
+        final name = (mapData['nameOverride'] as String?) ?? data['name'] as String? ?? '';
+        var device = _deviceFromFirestore(
+          deviceId,
+          {
+            ...data,
+            'name': name,
+            // Include hasSensor and other metadata from /devices
+            'hasSensor': data['hw'] != null && (data['hw']['bme680'] == true),
+          },
+        );
+        // Online status from RTDB
+        final presenceRef = _database.ref('presence/$deviceId');
         final snapshot = await presenceRef.get();
         if (snapshot.exists) {
           final presenceData = snapshot.value as Map<dynamic, dynamic>?;
-          device = device.copyWith(
-            isOnline: presenceData?['online'] == true,
-          );
+          device = device.copyWith(isOnline: presenceData?['online'] == true);
         }
-      }
 
+        devices.add(device);
+      }
       return devices;
     } catch (e) {
+      print('error: $e');
       throw Exception('Failed to get devices: $e');
     }
   }

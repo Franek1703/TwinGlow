@@ -46,6 +46,9 @@ bool FirebaseClientWrap::begin() {
 
     if (!initializeRTDB()) {
         Serial.println(F("[Firebase] RTDB initialization failed"));
+        // Continue anyway - Firestore might still work
+    } else {
+        Serial.println(F("[Firebase] RTDB initialized successfully"));
     }
 
 #if defined(ENABLE_LEGACY_TOKEN) && (defined(ENABLE_DATABASE) || defined(ENABLE_FIRESTORE))

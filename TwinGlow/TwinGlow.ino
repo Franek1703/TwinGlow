@@ -509,14 +509,38 @@ void handleErrorRecovery() {
 
 // Periodic task callbacks
 void updatePresence() {
-    if (rtdbRepo != nullptr && WiFi.isConnected()) {
-        rtdbRepo->updatePresence(true);
+    if (rtdbRepo == nullptr) {
+        Serial.println(F("[Presence] rtdbRepo is null, skipping"));
+        return;
+    }
+    if (!WiFi.isConnected()) {
+        Serial.println(F("[Presence] Wi-Fi not connected, skipping"));
+        return;
+    }
+    
+    bool success = rtdbRepo->updatePresence(true);
+    if (!success) {
+        Serial.println(F("[Presence] Update failed"));
     }
 }
 
 void updateTelemetry() {
-    if (rtdbRepo != nullptr && bme680Present && WiFi.isConnected()) {
-        rtdbRepo->pushTelemetry(sensorTemp, sensorHumidity, sensorPressure, sensorGas);
+    if (rtdbRepo == nullptr) {
+        Serial.println(F("[Telemetry] rtdbRepo is null, skipping"));
+        return;
+    }
+    if (!bme680Present) {
+        Serial.println(F("[Telemetry] BME680 not present, skipping"));
+        return;
+    }
+    if (!WiFi.isConnected()) {
+        Serial.println(F("[Telemetry] Wi-Fi not connected, skipping"));
+        return;
+    }
+    
+    bool success = rtdbRepo->pushTelemetry(sensorTemp, sensorHumidity, sensorPressure, sensorGas);
+    if (!success) {
+        Serial.println(F("[Telemetry] Push failed"));
     }
 }
 
