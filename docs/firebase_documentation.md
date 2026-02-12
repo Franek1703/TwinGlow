@@ -584,7 +584,19 @@ RTDB is for live state only.
 
 ```
 
-ESP32 updates `lastSeenMs` periodically (e.g., every 10–30 seconds).
+**Field Descriptions:**
+- `online`: Boolean indicating device connectivity status
+- `lastSeenMs`: Epoch timestamp in milliseconds (Unix time * 1000)
+
+**Update Frequency:**
+- ESP32 updates presence every **20 seconds** (`PRESENCE_UPDATE_INTERVAL_MS = 20000`)
+- Updates occur only when Wi-Fi is connected
+- Timestamp uses `time(nullptr) * 1000` if NTP sync succeeded, otherwise falls back to `millis()`
+
+**Implementation Note:**
+Fields are set individually (not as a JSON object) to avoid JSON parsing issues with Firebase RTDB:
+- `/presence/{deviceId}/online` = boolean
+- `/presence/{deviceId}/lastSeenMs` = number (long long)
 
 ---
 

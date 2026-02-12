@@ -21,12 +21,11 @@ The firmware is designed to be:
 A clean Arduino/PlatformIO structure (logical modules) can look like this:
 
 ```
-/src
-  main.ino (or main.cpp)
+/TwinGlow/
+  TwinGlow.ino                  // main entry point, state handlers
 
   core/
-    AppContext.h/.cpp           // shared state, singletons, init order
-    StateMachine.h/.cpp         // global device FSM
+    StateMachine.h/.cpp         // global device FSM (DeviceState enum)
     Scheduler.h/.cpp            // periodic jobs (presence, config poll, telemetry, ntp)
 
   storage/
@@ -38,8 +37,10 @@ A clean Arduino/PlatformIO structure (logical modules) can look like this:
 
   firebase/
     FirebaseClientWrap.h/.cpp   // init auth, Firestore ops, RTDB ops
+    FirebaseTypes.h             // type aliases for FirebaseClient
+    FirebaseTest.h/.cpp         // optional test functions
     FirestoreRepo.h/.cpp        // screens/assets/devices read/write
-    RtdbRepo.h/.cpp             // presence/telemetry/commands
+    RtdbRepo.h/.cpp             // presence/telemetry/commands (fields set individually)
     TimeSync.h/.cpp             // NTP sync + scheduling + app.setTime()
 
   ui/
@@ -48,6 +49,7 @@ A clean Arduino/PlatformIO structure (logical modules) can look like this:
     RenderSensor.h/.cpp         // procedural SENSOR (BME680) renderer
     RenderAsset.h/.cpp          // IMAGE/ANIMATION renderer from cached assets
     ScreenPlaylist.h/.cpp       // ordered list of screens, current index, duration
+    AssetCache.h/.cpp           // cache for parsed asset data (pixels/frames)
 
   input/
     Buttons.h/.cpp              // debounce, short/long/very long press events
@@ -55,6 +57,9 @@ A clean Arduino/PlatformIO structure (logical modules) can look like this:
 
   sensors/
     Bme680Driver.h/.cpp         // detect + read sensor, smoothing, units
+
+  Config.h                      // build flags, pins, timing constants, secrets
+  FirebaseSecrets.h.example     // template for Firebase credentials
 ```
 
 **Why this structure works well:**
@@ -326,11 +331,13 @@ Once the device has at least one valid playlist (from cache or fresh load), it e
 3. **Button Handler**
     - debounced events
     - short/long/very long actions
-4. **Periodic Jobs**
-    - RTDB presence update
-    - optional telemetry push
-    - configVersion polling
+4. **Periodic Jobs** (managed by `Scheduler` class)
+    - RTDB presence update (every 20 seconds)
+    - optional telemetry push (every 10 seconds, only if BME680 present)
+    - configVersion polling (every 60 seconds)
     - NTP resync every 6 hours
+    - All tasks check Wi-Fi connectivity before executing
+    - Failed operations are logged but don't block device operation
 
 ---
 
@@ -417,12 +424,19 @@ Even if sharing fails (offline):
 
 ---
 
-## 9. Minimal Periodic Task Schedule (Recommended Defaults)
+## 9. Minimal Periodic Task Schedule (Actual Implementation)
 
-- Presence push (RTDB): every **10–30s**
-- Telemetry push (optional): every **5–30s** (sensor)
-- ConfigVersion poll (Firestore): every **30–120s**
-- NTP resync: every **6 hours**
+- Presence push (RTDB): every **20 seconds** (`PRESENCE_UPDATE_INTERVAL_MS = 20000`)
+- Telemetry push (optional): every **10 seconds** (`TELEMETRY_UPDATE_INTERVAL_MS = 10000`) - only if BME680 present
+- ConfigVersion poll (Firestore): every **60 seconds** (`CONFIG_POLL_INTERVAL_MS = 60000`)
+- NTP resync: every **6 hours** (`NTP_SYNC_INTERVAL_MS = 21600000`)
+
+**Implementation Details:**
+- All periodic tasks are managed by the `Scheduler` class
+- Tasks are registered during `CONFIG_LOADING` state
+- Tasks check connectivity before executing (Wi-Fi must be connected)
+- Failed operations are logged but don't block device operation
+- Telemetry updates are only scheduled if BME680 sensor is detected
 
 ---
 

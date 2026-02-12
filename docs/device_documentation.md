@@ -293,11 +293,17 @@ If Wi-Fi or Firebase becomes unavailable:
 
 RTDB is used only for **live and transient data**.
 
-Paths:
+**Paths:**
+- `/presence/{deviceId}` – heartbeat (updated every 20 seconds)
+- `/telemetry/{deviceId}` – sensor readings (optional, updated every 10 seconds if BME680 present)
+- `/commands/{deviceId}` – runtime commands (polling not yet implemented)
 
-- `/presence/{deviceId}` – heartbeat
-- `/telemetry/{deviceId}` – sensor readings (optional)
-- `/commands/{deviceId}` – runtime commands
+**Implementation:**
+- Fields are set individually using nested paths to avoid JSON parsing issues
+- Presence updates include `online` (boolean) and `lastSeenMs` (epoch milliseconds)
+- Telemetry includes `temperatureC`, `humidityPct`, `pressureHPa`, `gasOhms`, `updatedMs`
+- All updates check Wi-Fi connectivity and log errors
+- Failed updates don't block device operation
 
 ---
 

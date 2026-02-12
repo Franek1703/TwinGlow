@@ -211,9 +211,15 @@ RTDB is **not** used for persistent configuration.
 
 ### 6.3 Typical ESP32 RTDB Operations
 
-- Periodically update `/presence/{deviceId}`
-- Optionally push sensor readings to `/telemetry/{deviceId}`
-- Listen for new entries under `/commands/{deviceId}`
+- Periodically update `/presence/{deviceId}` (every 20 seconds)
+- Optionally push sensor readings to `/telemetry/{deviceId}` (every 10 seconds, if BME680 present)
+- Poll for new entries under `/commands/{deviceId}` (not yet implemented)
+
+**Implementation Details:**
+- Fields are set individually using nested paths (e.g., `/presence/{deviceId}/online`, `/presence/{deviceId}/lastSeenMs`)
+- This avoids JSON parsing issues that occur when passing JSON objects as strings
+- Each field update is checked for errors and logged
+- Failed updates don't block device operation but are logged for debugging
 
 RTDB communication is lightweight and tolerant to reconnections.
 
