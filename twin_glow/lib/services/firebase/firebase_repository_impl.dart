@@ -39,7 +39,7 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
       if (credential.user != null) {
         await _firestore.collection('users').doc(credential.user!.uid).set({
           'email': email,
-          'createdAt': FieldValue.serverTimestamp(),
+          'createdAt': Timestamp.fromDate(DateTime.now()),
         });
       }
       
@@ -129,7 +129,7 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
         'hasSensor': device.hasSensor,
         'isOnline': false,
         'configVersion': 1,
-        'createdAt': FieldValue.serverTimestamp(),
+        'createdAt': Timestamp.fromDate(DateTime.now()),
       });
       return device;
     } catch (e) {
@@ -148,7 +148,7 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
         'name': device.name,
         'hasSensor': device.hasSensor,
         'configVersion': currentVersion + 1,
-        'updatedAt': FieldValue.serverTimestamp(),
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
       });
     } catch (e) {
       throw Exception('Failed to update device: $e');
@@ -220,7 +220,7 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
         'assetId': screen.assetId,
         'config': screen.config,
         'previewData': screen.previewData,
-        'createdAt': FieldValue.serverTimestamp(),
+        'createdAt': Timestamp.fromDate(DateTime.now()),
       });
 
       // Increment device configVersion
@@ -247,7 +247,7 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
         'assetId': screen.assetId,
         'config': screen.config,
         'previewData': screen.previewData,
-        'updatedAt': FieldValue.serverTimestamp(),
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
       });
 
       // Increment device configVersion
@@ -300,14 +300,32 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
   @override
   Future<List<AssetModel>> getUserAssets(String userId) async {
     try {
+      // Support both 'userId' (legacy) and 'ownerUid' (new format)
       final querySnapshot = await _firestore
+          .collection('assets')
+          .where('ownerUid', isEqualTo: userId)
+          .where('isDefault', isEqualTo: false)
+          .get();
+
+      // Also query legacy format for backward compatibility
+      final legacySnapshot = await _firestore
           .collection('assets')
           .where('userId', isEqualTo: userId)
           .where('isDefault', isEqualTo: false)
           .get();
 
-      return querySnapshot.docs.map((doc) {
-        return _assetFromFirestore(doc.id, doc.data());
+      final allDocs = <String, dynamic>{};
+      for (var doc in querySnapshot.docs) {
+        allDocs[doc.id] = doc.data();
+      }
+      for (var doc in legacySnapshot.docs) {
+        if (!allDocs.containsKey(doc.id)) {
+          allDocs[doc.id] = doc.data();
+        }
+      }
+
+      return allDocs.entries.map((entry) {
+        return _assetFromFirestore(entry.key, entry.value);
       }).toList();
     } catch (e) {
       throw Exception('Failed to get user assets: $e');
@@ -333,14 +351,20 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
   @override
   Future<AssetModel> createAsset(String userId, AssetModel asset) async {
     try {
+      // Convert full grid to sparse format for Firestore
+      final sparsePixels = _convertToSparseFormat(asset.pixelData);
+      
       await _firestore.collection('assets').doc(asset.id).set({
         'name': asset.name,
-        'type': asset.type.name,
-        'userId': userId,
+        'type': asset.type.name.toUpperCase(),
+        'ownerUid': userId,
+        'width': 16,
+        'height': 16,
+        'encoding': 'SPARSE_I16_RGB888',
+        'pixels': sparsePixels,
         'tags': asset.tags,
-        'pixelData': asset.pixelData,
         'isDefault': false,
-        'createdAt': FieldValue.serverTimestamp(),
+        'createdAt': Timestamp.fromDate(DateTime.now()),
       });
       return asset;
     } catch (e) {
@@ -351,11 +375,14 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
   @override
   Future<void> updateAsset(String assetId, AssetModel asset) async {
     try {
+      // Convert full grid to sparse format for Firestore
+      final sparsePixels = _convertToSparseFormat(asset.pixelData);
+      
       await _firestore.collection('assets').doc(assetId).update({
         'name': asset.name,
         'tags': asset.tags,
-        'pixelData': asset.pixelData,
-        'updatedAt': FieldValue.serverTimestamp(),
+        'pixels': sparsePixels,
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
       });
     } catch (e) {
       throw Exception('Failed to update asset: $e');
@@ -441,7 +468,7 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
         'fromUserId': userId,
         'toUserId': targetUserId,
         'status': 'pending',
-        'createdAt': FieldValue.serverTimestamp(),
+        'createdAt': Timestamp.fromDate(DateTime.now()),
       });
     } catch (e) {
       throw Exception('Failed to send pairing invite: $e');
@@ -472,7 +499,7 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
       await _firestore.collection('pairs').doc(pairId).set({
         'userA': fromUserId,
         'userB': userId,
-        'createdAt': FieldValue.serverTimestamp(),
+        'createdAt': Timestamp.fromDate(DateTime.now()),
       });
 
       // Update user documents with pairId
@@ -647,16 +674,27 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
   }
 
   AssetModel _assetFromFirestore(String id, Map<String, dynamic> data) {
+    // Convert sparse format back to full 16x16 grid for UI
+    List<List<int>>? pixelData;
+    
+    if (data['pixels'] != null) {
+      // Sparse format: [{"index": i, "color": c}, ...] or legacy [[i, c], ...]
+      pixelData = _convertFromSparseFormat(data['pixels'] as List);
+    } else if (data['pixelData'] != null) {
+      // Legacy format: full grid (for backward compatibility)
+      pixelData = List<List<int>>.from(
+        (data['pixelData'] as List).map((row) => List<int>.from(row))
+      );
+    }
+    
     return AssetModel(
       id: id,
       name: data['name'] ?? 'Unnamed Asset',
-      type: data['type'] == 'animation' ? AssetType.animation : AssetType.image,
+      type: (data['type'] as String?)?.toLowerCase() == 'animation' 
+          ? AssetType.animation 
+          : AssetType.image,
       tags: data['tags'] != null ? List<String>.from(data['tags']) : [],
-      pixelData: data['pixelData'] != null
-          ? List<List<int>>.from(
-              (data['pixelData'] as List).map((row) => List<int>.from(row))
-            )
-          : null,
+      pixelData: pixelData,
       isDefault: data['isDefault'] ?? false,
       createdAt: data['createdAt']?.toDate(),
     );
@@ -704,5 +742,70 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
     } catch (e) {
       return 0;
     }
+  }
+
+  /// Converts full 16x16 grid to sparse format: [{"index": i, "color": c}, ...]
+  /// where index = y*16 + x (0-255) and color is RGB888 (0xRRGGBB)
+  /// Uses array of maps format which is more Firestore-friendly than nested arrays
+  List<Map<String, int>> _convertToSparseFormat(List<List<int>>? pixelData) {
+    if (pixelData == null || pixelData.isEmpty) return [];
+    
+    final sparsePixels = <Map<String, int>>[];
+    
+    for (int y = 0; y < pixelData.length && y < 16; y++) {
+      final row = pixelData[y];
+      for (int x = 0; x < row.length && x < 16; x++) {
+        final color = row[x];
+        // Skip black pixels (0 or transparent)
+        if (color != 0) {
+          // Convert ARGB to RGB888 (remove alpha channel)
+          final rgb888 = color & 0xFFFFFF;
+          final index = y * 16 + x;
+          sparsePixels.add({
+            'index': index,
+            'color': rgb888,
+          });
+        }
+      }
+    }
+    
+    return sparsePixels;
+  }
+
+  /// Converts sparse format [{"index": i, "color": c}, ...] back to full 16x16 grid
+  /// Supports both array-of-maps format (new) and array-of-arrays format (legacy)
+  /// where index = y*16 + x and color is RGB888 (converted to ARGB with alpha=255)
+  List<List<int>> _convertFromSparseFormat(List<dynamic> sparsePixels) {
+    // Initialize 16x16 grid with zeros (black/transparent)
+    final grid = List.generate(16, (_) => List.filled(16, 0));
+    
+    for (final pixelEntry in sparsePixels) {
+      int? index;
+      int? rgb888;
+      
+      // Try array-of-maps format first (new format)
+      if (pixelEntry is Map) {
+        index = pixelEntry['index'] as int?;
+        rgb888 = pixelEntry['color'] as int?;
+      }
+      // Fall back to array-of-arrays format (legacy)
+      else if (pixelEntry is List && pixelEntry.length >= 2) {
+        index = pixelEntry[0] as int?;
+        rgb888 = pixelEntry[1] as int?;
+      }
+      
+      if (index != null && rgb888 != null && index >= 0 && index < 256) {
+        final y = index ~/ 16;
+        final x = index % 16;
+        
+        if (y < 16 && x < 16) {
+          // Convert RGB888 to ARGB (add alpha channel = 255)
+          final argb = 0xFF000000 | rgb888;
+          grid[y][x] = argb;
+        }
+      }
+    }
+    
+    return grid;
   }
 }

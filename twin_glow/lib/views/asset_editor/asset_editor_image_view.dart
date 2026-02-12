@@ -13,6 +13,9 @@ import '../../core/widgets/pixel_grid_editor.dart';
 import '../../core/widgets/tool_palette.dart';
 import '../../core/widgets/pixel_preview.dart';
 import '../../features/asset_editor/cubit/asset_editor_cubit.dart';
+import '../../features/auth/cubit/auth_cubit.dart';
+import '../../services/firebase/firebase_repository_impl.dart';
+import '../../core/models/asset_model.dart';
 
 class AssetEditorImageView extends StatefulWidget {
   final String? assetId;
@@ -36,10 +39,11 @@ class _AssetEditorImageViewState extends State<AssetEditorImageView> {
 
   @override
   Widget build(BuildContext context) {
-    // TODO: Load asset from repository if assetId is provided
-    return BlocProvider(
-      create: (_) => AssetEditorCubit(),
-      child: Scaffold(
+    final authState = context.watch<AuthCubit>().state;
+    final userId = authState.user?.id ?? '';
+
+    if (userId.isEmpty) {
+      return Scaffold(
         backgroundColor: AppColors.bgPrimary,
         appBar: AppBar(
           title: Text(widget.assetId == null ? 'Create Image' : 'Edit Image'),
@@ -47,217 +51,300 @@ class _AssetEditorImageViewState extends State<AssetEditorImageView> {
             icon: const Icon(Icons.arrow_back),
             onPressed: () => context.pop(),
           ),
-          actions: [
-            BlocBuilder<AssetEditorCubit, AssetEditorState>(
-              builder: (context, state) {
-                return IconButton(
-                  icon: state.isLoading
-                      ? SizedBox(
-                          width: 20.w,
-                          height: 20.w,
-                          child: const CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.check),
-                  onPressed: state.isLoading
-                      ? null
-                      : () {
-                          context.read<AssetEditorCubit>().save().then((_) {
-                            context.pop();
-                          });
-                        },
-                );
-              },
-            ),
-          ],
         ),
-        body: SafeArea(
-          child: BlocBuilder<AssetEditorCubit, AssetEditorState>(
-            builder: (context, state) {
-              if (_nameController.text.isEmpty && state.name.isNotEmpty) {
-                _nameController.text = state.name;
-              }
+        body: const Center(child: Text('User not authenticated')),
+      );
+    }
 
-              return SingleChildScrollView(
-                padding: EdgeInsets.all(AppSpacing.xl),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Preview
-                    AppCard(
-                      child: Column(
-                        children: [
-                          Text(
-                            'Preview',
-                            style: AppTypography.h4(context),
-                          ),
-                          SizedBox(height: AppSpacing.lg),
-                          SizedBox(
-                            width: double.infinity,
-                            height: 200.h,
-                            child: PixelPreview(data: state.pixelData),
-                          ),
-                        ],
-                      ),
-                    ),
-                    SizedBox(height: AppSpacing.xl),
-                    // Pixel Grid Editor
-                    Text(
-                      'Pixel Editor',
-                      style: AppTypography.h2(context),
-                    ),
-                    SizedBox(height: AppSpacing.md),
-                    PixelGridEditor(
-                      initialData: state.pixelData,
-                      currentColor: state.currentColor,
-                      currentTool: state.currentTool,
-                      onDataChanged: (data) {
-                        context.read<AssetEditorCubit>().updatePixelData(data);
-                      },
-                    ),
-                    SizedBox(height: AppSpacing.lg),
-                    // Tools
-                    ToolPalette(
-                      selectedTool: state.currentTool,
-                      onToolSelected: (tool) {
-                        context.read<AssetEditorCubit>().setCurrentTool(tool);
-                      },
-                      onClear: () {
-                        context.read<AssetEditorCubit>().clearGrid();
-                      },
-                      onMirrorX: () {
-                        context.read<AssetEditorCubit>().mirrorX();
-                      },
-                      onMirrorY: () {
-                        context.read<AssetEditorCubit>().mirrorY();
-                      },
-                    ),
-                    SizedBox(height: AppSpacing.xl),
-                    // Color Picker
-                    ColorPicker(
-                      initialColor: state.currentColor,
-                      label: 'Current Color',
-                      onColorChanged: (color) {
-                        context.read<AssetEditorCubit>().setCurrentColor(color);
-                      },
-                    ),
-                    SizedBox(height: AppSpacing.xl),
-                    // Metadata
-                    Text(
-                      'Metadata',
-                      style: AppTypography.h2(context),
-                    ),
-                    SizedBox(height: AppSpacing.md),
-                    AppInput(
-                      label: 'Name',
-                      controller: _nameController,
-                      hint: 'Enter asset name',
-                      onChanged: (value) {
-                        context.read<AssetEditorCubit>().updateName(value);
-                      },
-                    ),
-                    SizedBox(height: AppSpacing.lg),
-                    // Tags
-                    AppCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Tags',
-                            style: AppTypography.h4(context),
-                          ),
-                          SizedBox(height: AppSpacing.md),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: AppInput(
-                                  controller: _tagController,
-                                  hint: 'Add tag',
-                                  onChanged: (_) {},
-                                ),
+    final firebaseRepo = FirebaseRepositoryImpl();
+
+    // Try to load existing asset, or create new one
+    return FutureBuilder<AssetModel?>(
+      future: widget.assetId != null
+          ? _loadAsset(firebaseRepo, widget.assetId!)
+          : Future.value(null),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Scaffold(
+            backgroundColor: AppColors.bgPrimary,
+            appBar: AppBar(
+              title: Text(
+                widget.assetId == null ? 'Create Image' : 'Edit Image',
+              ),
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => context.pop(),
+              ),
+            ),
+            body: const Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final asset = snapshot.data;
+
+        return BlocProvider(
+          create: (_) => AssetEditorCubit(
+            firebaseRepo,
+            userId,
+            AssetType.image,
+            asset: asset,
+          ),
+          child: Scaffold(
+            backgroundColor: AppColors.bgPrimary,
+            appBar: AppBar(
+              title: Text(
+                widget.assetId == null ? 'Create Image' : 'Edit Image',
+              ),
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => context.pop(),
+              ),
+              actions: [
+                BlocBuilder<AssetEditorCubit, AssetEditorState>(
+                  builder: (context, state) {
+                    return IconButton(
+                      icon: state.isLoading
+                          ? SizedBox(
+                              width: 20.w,
+                              height: 20.w,
+                              child: const CircularProgressIndicator(
+                                strokeWidth: 2,
                               ),
-                              SizedBox(width: AppSpacing.md),
-                              AppButton(
-                                text: 'Add',
-                                onPressed: () {
-                                  if (_tagController.text.isNotEmpty) {
-                                    context
-                                        .read<AssetEditorCubit>()
-                                        .addTag(_tagController.text.trim());
-                                    _tagController.clear();
-                                  }
-                                },
-                                size: AppButtonSize.sm,
+                            )
+                          : const Icon(Icons.check),
+                      onPressed: state.isLoading
+                          ? null
+                          : () async {
+                              await context.read<AssetEditorCubit>().save();
+                              if (context.mounted) {
+                                final currentState = context
+                                    .read<AssetEditorCubit>()
+                                    .state;
+                                if (currentState.error == null) {
+                                  context.pop();
+                                }
+                              }
+                            },
+                    );
+                  },
+                ),
+              ],
+            ),
+            body: SafeArea(
+              child: BlocBuilder<AssetEditorCubit, AssetEditorState>(
+                builder: (context, state) {
+                  if (_nameController.text.isEmpty && state.name.isNotEmpty) {
+                    _nameController.text = state.name;
+                  }
+
+                  return SingleChildScrollView(
+                    padding: EdgeInsets.all(AppSpacing.xl),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Preview
+                        AppCard(
+                          child: Column(
+                            children: [
+                              Text('Preview', style: AppTypography.h4(context)),
+                              SizedBox(height: AppSpacing.lg),
+                              SizedBox(
+                                width: double.infinity,
+                                height: 200.h,
+                                child: PixelPreview(data: state.pixelData),
                               ),
                             ],
                           ),
-                          if (state.tags.isNotEmpty) ...[
-                            SizedBox(height: AppSpacing.md),
-                            Wrap(
-                              spacing: AppSpacing.sm,
-                              runSpacing: AppSpacing.sm,
-                              children: state.tags.map((tag) {
-                                return Chip(
-                                  label: Text(tag),
-                                  onDeleted: () {
-                                    context
-                                        .read<AssetEditorCubit>()
-                                        .removeTag(tag);
-                                  },
-                                  backgroundColor: AppColors.bgElevated,
-                                  deleteIconColor: AppColors.textMuted,
-                                  labelStyle: AppTypography.small(context),
-                                );
-                              }).toList(),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    SizedBox(height: AppSpacing.xl),
-                    // Error Display
-                    if (state.error != null)
-                      AppCard(
-                        backgroundColor: AppColors.statusError.withOpacity(0.1),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.error_outline,
-                              color: AppColors.statusError,
-                              size: 20.sp,
-                            ),
-                            SizedBox(width: AppSpacing.md),
-                            Expanded(
-                              child: Text(
-                                state.error!,
-                                style: AppTypography.small(context).copyWith(
-                                  color: AppColors.statusError,
-                                ),
-                              ),
-                            ),
-                          ],
                         ),
-                      ),
-                    if (state.error != null) SizedBox(height: AppSpacing.lg),
-                    // Save Button
-                    AppButton(
-                      text: widget.assetId == null ? 'Create Asset' : 'Save Asset',
-                      onPressed: () {
-                        context.read<AssetEditorCubit>().save().then((_) {
-                          if (context.mounted && state.error == null) {
-                            context.pop();
-                          }
-                        });
-                      },
-                      fullWidth: true,
-                      size: AppButtonSize.lg,
+                        SizedBox(height: AppSpacing.xl),
+                        // Pixel Grid Editor
+                        Text('Pixel Editor', style: AppTypography.h2(context)),
+                        SizedBox(height: AppSpacing.md),
+                        PixelGridEditor(
+                          initialData: state.pixelData,
+                          currentColor: state.currentColor,
+                          currentTool: state.currentTool,
+                          onDataChanged: (data) {
+                            context.read<AssetEditorCubit>().updatePixelData(
+                              data,
+                            );
+                          },
+                        ),
+                        SizedBox(height: AppSpacing.lg),
+                        // Tools
+                        ToolPalette(
+                          selectedTool: state.currentTool,
+                          onToolSelected: (tool) {
+                            context.read<AssetEditorCubit>().setCurrentTool(
+                              tool,
+                            );
+                          },
+                          onClear: () {
+                            context.read<AssetEditorCubit>().clearGrid();
+                          },
+                          onMirrorX: () {
+                            context.read<AssetEditorCubit>().mirrorX();
+                          },
+                          onMirrorY: () {
+                            context.read<AssetEditorCubit>().mirrorY();
+                          },
+                        ),
+                        SizedBox(height: AppSpacing.xl),
+                        // Color Picker
+                        ColorPicker(
+                          initialColor: state.currentColor,
+                          label: 'Current Color',
+                          onColorChanged: (color) {
+                            context.read<AssetEditorCubit>().setCurrentColor(
+                              color,
+                            );
+                          },
+                        ),
+                        SizedBox(height: AppSpacing.xl),
+                        // Metadata
+                        Text('Metadata', style: AppTypography.h2(context)),
+                        SizedBox(height: AppSpacing.md),
+                        AppInput(
+                          label: 'Name',
+                          controller: _nameController,
+                          hint: 'Enter asset name',
+                          onChanged: (value) {
+                            context.read<AssetEditorCubit>().updateName(value);
+                          },
+                        ),
+                        SizedBox(height: AppSpacing.lg),
+                        // Tags
+                        AppCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Tags', style: AppTypography.h4(context)),
+                              SizedBox(height: AppSpacing.md),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: AppInput(
+                                      controller: _tagController,
+                                      hint: 'Add tag',
+                                      onChanged: (_) {},
+                                    ),
+                                  ),
+                                  SizedBox(width: AppSpacing.md),
+                                  AppButton(
+                                    text: 'Add',
+                                    onPressed: () {
+                                      if (_tagController.text.isNotEmpty) {
+                                        context.read<AssetEditorCubit>().addTag(
+                                          _tagController.text.trim(),
+                                        );
+                                        _tagController.clear();
+                                      }
+                                    },
+                                    size: AppButtonSize.sm,
+                                  ),
+                                ],
+                              ),
+                              if (state.tags.isNotEmpty) ...[
+                                SizedBox(height: AppSpacing.md),
+                                Wrap(
+                                  spacing: AppSpacing.sm,
+                                  runSpacing: AppSpacing.sm,
+                                  children: state.tags.map((tag) {
+                                    return Chip(
+                                      label: Text(tag),
+                                      onDeleted: () {
+                                        context
+                                            .read<AssetEditorCubit>()
+                                            .removeTag(tag);
+                                      },
+                                      backgroundColor: AppColors.bgElevated,
+                                      deleteIconColor: AppColors.textMuted,
+                                      labelStyle: AppTypography.small(context),
+                                    );
+                                  }).toList(),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        SizedBox(height: AppSpacing.xl),
+                        // Error Display
+                        if (state.error != null)
+                          AppCard(
+                            backgroundColor: AppColors.statusError.withOpacity(
+                              0.1,
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.error_outline,
+                                  color: AppColors.statusError,
+                                  size: 20.sp,
+                                ),
+                                SizedBox(width: AppSpacing.md),
+                                Expanded(
+                                  child: Text(
+                                    state.error!,
+                                    style: AppTypography.small(
+                                      context,
+                                    ).copyWith(color: AppColors.statusError),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        if (state.error != null)
+                          SizedBox(height: AppSpacing.lg),
+                        // Save Button
+                        AppButton(
+                          text: widget.assetId == null
+                              ? 'Create Asset'
+                              : 'Save Asset',
+                          onPressed: () {
+                            context.read<AssetEditorCubit>().save().then((_) {
+                              if (context.mounted && state.error == null) {
+                                context.pop();
+                              }
+                            });
+                          },
+                          fullWidth: true,
+                          size: AppButtonSize.lg,
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              );
-            },
+                  );
+                },
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
+  }
+
+  Future<AssetModel?> _loadAsset(
+    FirebaseRepositoryImpl repo,
+    String assetId,
+  ) async {
+    try {
+      final currentUser = await repo.getCurrentUser();
+      if (currentUser == null) return null;
+
+      // Try to find in user assets first
+      final userAssets = await repo.getUserAssets(currentUser.id);
+      try {
+        return userAssets.firstWhere((a) => a.id == assetId);
+      } catch (e) {
+        // Try default assets
+        final defaultAssets = await repo.getDefaultAssets();
+        try {
+          return defaultAssets.firstWhere((a) => a.id == assetId);
+        } catch (e) {
+          return null;
+        }
+      }
+    } catch (e) {
+      return null;
+    }
   }
 }

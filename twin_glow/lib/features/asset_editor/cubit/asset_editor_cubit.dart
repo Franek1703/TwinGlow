@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/models/asset_model.dart';
 import '../../../core/widgets/pixel_grid_editor.dart';
+import '../../../services/firebase/firebase_repository.dart';
 
 class AssetEditorState {
   final AssetModel? asset;
@@ -52,8 +53,18 @@ class AssetEditorState {
 }
 
 class AssetEditorCubit extends Cubit<AssetEditorState> {
-  AssetEditorCubit({AssetModel? asset})
-      : super(AssetEditorState(
+  final FirebaseRepository firebaseRepository;
+  final String userId;
+  final AssetType assetType;
+  final bool isNewAsset;
+
+  AssetEditorCubit(
+    this.firebaseRepository,
+    this.userId,
+    this.assetType, {
+    AssetModel? asset,
+  })  : isNewAsset = asset == null,
+        super(AssetEditorState(
           asset: asset,
           pixelData: asset?.pixelData ?? AssetEditorState._createEmptyGrid(),
           name: asset?.name ?? '',
@@ -107,9 +118,23 @@ class AssetEditorCubit extends Cubit<AssetEditorState> {
 
     emit(state.copyWith(isLoading: true, error: null));
     try {
-      // TODO: Save to Firebase via repository
-      await Future.delayed(const Duration(milliseconds: 500));
-      emit(state.copyWith(isLoading: false));
+      final assetId = state.asset?.id ?? 'asset_${DateTime.now().millisecondsSinceEpoch}';
+      
+      final asset = AssetModel(
+        id: assetId,
+        name: state.name,
+        type: assetType,
+        tags: state.tags,
+        pixelData: state.pixelData,
+      );
+
+      if (isNewAsset) {
+        await firebaseRepository.createAsset(userId, asset);
+      } else {
+        await firebaseRepository.updateAsset(assetId, asset);
+      }
+
+      emit(state.copyWith(isLoading: false, asset: asset));
     } catch (e) {
       emit(state.copyWith(isLoading: false, error: e.toString()));
     }

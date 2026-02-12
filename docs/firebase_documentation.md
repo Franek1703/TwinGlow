@@ -490,8 +490,10 @@ Store colors as **RGB888**, because:
 
 **Sparse encoding** stores only pixels that are not black.
 
-- `i` = 0..255, computed as `i = y*16 + x`
-- `c` = RGB888 integer `0xRRGGBB`
+- `index` = 0..255, computed as `index = y*16 + x`
+- `color` = RGB888 integer `0xRRGGBB`
+
+**Format:** Array of objects (Firestore-friendly format)
 
 ```json
 {
@@ -501,15 +503,20 @@ Store colors as **RGB888**, because:
   "height": 16,
   "encoding": "SPARSE_I16_RGB888",
   "pixels": [
-    [34, 16711680],
-    [35, 16711680],
-    [50, 16711680]
+    {"index": 34, "color": 16711680},
+    {"index": 35, "color": 16711680},
+    {"index": 50, "color": 16711680}
   ],
   "createdAt": "serverTimestamp",
   "tags": ["heart", "default"]
 }
-
 ```
+
+**Field descriptions:**
+- `index`: Pixel position (0-255), calculated as `y * 16 + x`
+- `color`: RGB888 color value (24-bit, `0xRRGGBB` format)
+
+Black pixels are implicit (not stored).
 
 Black pixels are implicit (not stored).
 
@@ -519,9 +526,11 @@ Black pixels are implicit (not stored).
 
 Store an initial frame and only changes per frame:
 
-- `basePixels` = initial sparse frame
-- `frames[]` = list of deltas
-- delta pixels can include black to turn pixels off (`c = 0x000000`)
+- `basePixels` = initial sparse frame (array of objects)
+- `frames[]` = list of deltas (each frame contains array of objects)
+- delta pixels can include black to turn pixels off (`color = 0x000000`)
+
+**Format:** Array of objects for both `basePixels` and frame `pixels`
 
 ```json
 {
@@ -532,21 +541,38 @@ Store an initial frame and only changes per frame:
   "encoding": "DELTA_SPARSE_I16_RGB888",
 
   "basePixels": [
-    [120, 16776960],
-    [121, 16776960]
+    {"index": 120, "color": 16776960},
+    {"index": 121, "color": 16776960}
   ],
 
   "frames": [
-    { "delayMs": 80, "pixels": [[120, 0], [121, 16776960]] },
-    { "delayMs": 80, "pixels": [[120, 16776960], [121, 0]] }
+    { 
+      "delayMs": 80, 
+      "pixels": [
+        {"index": 120, "color": 0},
+        {"index": 121, "color": 16776960}
+      ]
+    },
+    { 
+      "delayMs": 80, 
+      "pixels": [
+        {"index": 120, "color": 16776960},
+        {"index": 121, "color": 0}
+      ]
+    }
   ],
 
   "loop": true,
   "createdAt": "serverTimestamp",
   "tags": ["blink"]
 }
-
 ```
+
+**Field descriptions:**
+- `basePixels`: Array of `{"index": i, "color": c}` objects for the initial frame
+- `frames`: Array of frame objects, each containing:
+  - `delayMs`: Delay before next frame (milliseconds)
+  - `pixels`: Array of `{"index": i, "color": c}` objects (delta changes)
 
 ---
 
