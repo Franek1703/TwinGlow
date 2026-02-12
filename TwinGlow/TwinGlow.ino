@@ -75,10 +75,18 @@ void setup() {
     
     // Initialize matrix for visual feedback
     if (!matrix.begin()) {
-        Serial.println(F("[ERROR] Matrix initialization failed"));
+        Serial.println(F("[ERROR] Matrix initialization failed - check NEOPIXEL_PIN in Config.h"));
+        Serial.println(F("[ERROR] Common fixes: change NEOPIXEL_PIN to 5, check wiring, verify power"));
+    } else {
+        matrix.clear();
+        // Test rainbow animation on startup
+        Serial.println(F("[Matrix] Running startup test animation..."));
+        matrix.testRainbow(2000); // 2 second rainbow animation
+        matrix.clear();
+        
+        matrix.fill(matrix.color(0, 255, 255)); // Blue during boot
+        matrix.show();
     }
-    matrix.fill(matrix.color(0, 0, 255)); // Blue during boot
-    matrix.show();
     
     // Initialize NVS
     if (!nvs.begin()) {
@@ -238,7 +246,7 @@ void handleWifiConnecting() {
             nvs.getWifiPass(pass);
             if (wifiManager.begin(ssid, pass)) {
                 wifiStarted = true;
-                matrix.fill(matrix.color(0, 255, 0)); // Green during Wi-Fi
+                // matrix.fill(matrix.color(0, 255, 0)); // Green during Wi-Fi
                 matrix.show();
             }
         } else {
@@ -363,7 +371,15 @@ void handleCapabilityDetect() {
 void handleConfigLoading() {
     static bool loadingStarted = false;
     
-    if (!loadingStarted && firestoreRepo != nullptr) {
+    if (!loadingStarted) {
+        if (firestoreRepo == nullptr) {
+            Serial.println(F("[Config] firestoreRepo is null, skipping"));
+            // Still transition to RUNNING even without config
+            loadingStarted = true;
+            fsm.transition(DeviceState::RUNNING);
+            return;
+        }
+        
         loadingStarted = true;
         
         // Read config version
@@ -410,7 +426,12 @@ void handleConfigLoading() {
                     playlist.setScreens(screens);
                 }
                 currentConfigVersion = configVersion;
+            } else {
+                Serial.print(F("[Config] Config version unchanged: "));
+                Serial.println(configVersion);
             }
+        } else {
+            Serial.println(F("[Config] Failed to check config version"));
         }
         
         // Initialize button actions
@@ -426,6 +447,7 @@ void handleConfigLoading() {
         scheduler.scheduleConfigPoll(checkConfigVersion);
         scheduler.scheduleNtpSync(syncTime);
         
+        Serial.println(F("[Config] Transitioning to RUNNING"));
         fsm.transition(DeviceState::RUNNING);
     }
 }
@@ -447,9 +469,17 @@ void handleRunning() {
     if (screen != nullptr) {
         if (screen->type == "CLOCK") {
             // Render clock
-            renderClock.render("24H", "HHMM_PLUS_SECONDS_BAR", 
-                              0xFFFFFF, 0x00FFFF, 0x000000,
-                              false, true);
+            time_t now = time(nullptr);
+            
+            if (now < 1000000000) {
+                // Invalid time - show test pattern
+                matrix.fill(matrix.color(255, 0, 0)); // Red = time invalid
+                matrix.show();
+            } else {
+                renderClock.render("24H", "HHMM_PLUS_SECONDS_BAR", 
+                                  0xFFFFFF, 0x00FFFF, 0x000000,
+                                  false, true);
+            }
         } else if (screen->type == "SENSOR" && bme680Present) {
             // Render sensor
             std::vector<String> metrics = {"temperature", "humidity"};

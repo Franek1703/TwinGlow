@@ -11,7 +11,19 @@ void RenderClock::render(const String& format, const String& layout,
     
     // Get current time
     time_t now = time(nullptr);
+    if (now < 1000000000) {
+        // Invalid time - show error pattern
+        matrix->fill(matrix->color(255, 0, 0)); // Red
+        matrix->show();
+        return;
+    }
+    
     struct tm* timeinfo = localtime(&now);
+    if (timeinfo == nullptr) {
+        matrix->fill(matrix->color(255, 0, 0)); // Red
+        matrix->show();
+        return;
+    }
     
     int hour = timeinfo->tm_hour;
     int minute = timeinfo->tm_min;
@@ -110,18 +122,62 @@ void RenderClock::drawSecondsBar(uint8_t seconds, uint32_t color) {
 void RenderClock::draw7Segment(uint8_t x, uint8_t y, uint8_t digit, uint32_t color) {
     // Simplified 7-segment rendering for 16x16 matrix
     // Each digit is 3x5 pixels
-    // This is a placeholder - implement full 7-segment patterns
+    // Basic patterns for digits 0-9
     
-    // For now, draw simple patterns
-    if (digit == 0) {
-        // Top, left top, right top, left bottom, right bottom, bottom
-        for (int i = 0; i < 3; i++) matrix->setPixel(x + i, y, color);
-        matrix->setPixel(x, y + 1, color);
-        matrix->setPixel(x + 2, y + 1, color);
-        matrix->setPixel(x, y + 2, color);
-        matrix->setPixel(x + 2, y + 2, color);
-        for (int i = 0; i < 3; i++) matrix->setPixel(x + i, y + 3, color);
+    // Clear digit area first
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 5; j++) {
+            matrix->setPixel(x + i, y + j, 0); // Black
+        }
     }
-    // Add other digits similarly...
-    // This is simplified - full implementation would have all 0-9 patterns
+    
+    // 7-segment pattern: segments are numbered:
+    //   0
+    // 1   2
+    //   3
+    // 4   5
+    //   6
+    
+    bool segments[7] = {false};
+    
+    switch (digit) {
+        case 0: segments[0]=1; segments[1]=1; segments[2]=1; segments[4]=1; segments[5]=1; segments[6]=1; break;
+        case 1: segments[2]=1; segments[5]=1; break;
+        case 2: segments[0]=1; segments[2]=1; segments[3]=1; segments[4]=1; segments[6]=1; break;
+        case 3: segments[0]=1; segments[2]=1; segments[3]=1; segments[5]=1; segments[6]=1; break;
+        case 4: segments[1]=1; segments[2]=1; segments[3]=1; segments[5]=1; break;
+        case 5: segments[0]=1; segments[1]=1; segments[3]=1; segments[5]=1; segments[6]=1; break;
+        case 6: segments[0]=1; segments[1]=1; segments[3]=1; segments[4]=1; segments[5]=1; segments[6]=1; break;
+        case 7: segments[0]=1; segments[2]=1; segments[5]=1; break;
+        case 8: segments[0]=1; segments[1]=1; segments[2]=1; segments[3]=1; segments[4]=1; segments[5]=1; segments[6]=1; break;
+        case 9: segments[0]=1; segments[1]=1; segments[2]=1; segments[3]=1; segments[5]=1; segments[6]=1; break;
+        default: break;
+    }
+    
+    // Draw segments
+    if (segments[0]) { // Top
+        for (int i = 0; i < 3; i++) matrix->setPixel(x + i, y, color);
+    }
+    if (segments[1]) { // Top left
+        matrix->setPixel(x, y + 1, color);
+        matrix->setPixel(x, y + 2, color);
+    }
+    if (segments[2]) { // Top right
+        matrix->setPixel(x + 2, y + 1, color);
+        matrix->setPixel(x + 2, y + 2, color);
+    }
+    if (segments[3]) { // Middle
+        for (int i = 0; i < 3; i++) matrix->setPixel(x + i, y + 2, color);
+    }
+    if (segments[4]) { // Bottom left
+        matrix->setPixel(x, y + 3, color);
+        matrix->setPixel(x, y + 4, color);
+    }
+    if (segments[5]) { // Bottom right
+        matrix->setPixel(x + 2, y + 3, color);
+        matrix->setPixel(x + 2, y + 4, color);
+    }
+    if (segments[6]) { // Bottom
+        for (int i = 0; i < 3; i++) matrix->setPixel(x + i, y + 4, color);
+    }
 }

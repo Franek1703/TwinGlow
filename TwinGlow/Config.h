@@ -32,6 +32,7 @@
 #define ENABLE_LEGACY_TOKEN  // Database secret auth
 
 // Hardware pins
+// NOTE: If your matrix doesn't work, try changing NEOPIXEL_PIN to 5 (common alternative)
 #define NEOPIXEL_PIN 2
 #define MATRIX_WIDTH 16
 #define MATRIX_HEIGHT 16
