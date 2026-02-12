@@ -36,7 +36,10 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: '/screen/create',
-      builder: (context, state) => const ScreenCreationView(),
+      builder: (context, state) {
+        final deviceId = state.uri.queryParameters['deviceId'];
+        return ScreenCreationView(deviceId: deviceId);
+      },
     ),
     GoRoute(
       path: '/settings/profile',
@@ -81,21 +84,24 @@ final appRouter = GoRouter(
       path: '/screen/clock/:id',
       builder: (context, state) {
         final id = state.pathParameters['id']!;
-        return ScreenEditorClockView(screenId: id);
+        final deviceId = state.uri.queryParameters['deviceId'];
+        return ScreenEditorClockView(screenId: id, deviceId: deviceId);
       },
     ),
     GoRoute(
       path: '/screen/image/:id',
       builder: (context, state) {
         final id = state.pathParameters['id']!;
-        return ScreenEditorImageView(screenId: id);
+        final deviceId = state.uri.queryParameters['deviceId'];
+        return ScreenEditorImageView(screenId: id, deviceId: deviceId);
       },
     ),
     GoRoute(
       path: '/screen/sensor/:id',
       builder: (context, state) {
         final id = state.pathParameters['id']!;
-        return ScreenEditorSensorView(screenId: id);
+        final deviceId = state.uri.queryParameters['deviceId'];
+        return ScreenEditorSensorView(screenId: id, deviceId: deviceId);
       },
     ),
     // Asset editors

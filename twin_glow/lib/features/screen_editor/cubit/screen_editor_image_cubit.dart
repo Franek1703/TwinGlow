@@ -1,6 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/models/screen_model.dart';
 import '../../../core/models/asset_model.dart';
+import '../../../services/firebase/firebase_repository.dart';
 
 class ScreenEditorImageState {
   final ScreenModel screen;
@@ -39,8 +40,13 @@ class ScreenEditorImageState {
 }
 
 class ScreenEditorImageCubit extends Cubit<ScreenEditorImageState> {
-  ScreenEditorImageCubit(ScreenModel screen, List<AssetModel> availableAssets)
-      : super(ScreenEditorImageState(
+  final FirebaseRepository firebaseRepository;
+  final String deviceId;
+  final bool isNewScreen;
+
+  ScreenEditorImageCubit(this.firebaseRepository, this.deviceId, ScreenModel screen, List<AssetModel> availableAssets)
+      : isNewScreen = screen.assetId == null && !screen.isShared,
+        super(ScreenEditorImageState(
           screen: screen,
           selectedAssetId: screen.assetId,
           isShared: screen.isShared,
@@ -58,9 +64,19 @@ class ScreenEditorImageCubit extends Cubit<ScreenEditorImageState> {
   Future<void> save() async {
     emit(state.copyWith(isLoading: true));
     try {
-      // TODO: Save to Firebase via repository
-      await Future.delayed(const Duration(milliseconds: 300));
-      emit(state.copyWith(isLoading: false));
+      final updatedScreen = state.screen.copyWith(
+        assetId: state.selectedAssetId,
+        isShared: state.isShared,
+        name: 'Image Screen',
+      );
+
+      if (isNewScreen) {
+        await firebaseRepository.createScreen(deviceId, updatedScreen);
+      } else {
+        await firebaseRepository.updateScreen(deviceId, state.screen.id, updatedScreen);
+      }
+
+      emit(state.copyWith(isLoading: false, screen: updatedScreen));
     } catch (e) {
       emit(state.copyWith(isLoading: false, error: e.toString()));
     }

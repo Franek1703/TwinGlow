@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/models/screen_model.dart';
+import '../../../services/firebase/firebase_repository.dart';
 
 class ScreenEditorSensorState {
   final ScreenModel screen;
@@ -55,8 +56,13 @@ class ScreenEditorSensorState {
 }
 
 class ScreenEditorSensorCubit extends Cubit<ScreenEditorSensorState> {
-  ScreenEditorSensorCubit(ScreenModel screen)
-      : super(ScreenEditorSensorState(
+  final FirebaseRepository firebaseRepository;
+  final String deviceId;
+  final bool isNewScreen;
+
+  ScreenEditorSensorCubit(this.firebaseRepository, this.deviceId, ScreenModel screen)
+      : isNewScreen = screen.config == null,
+        super(ScreenEditorSensorState(
           screen: screen,
           showTemperature: screen.config?['showTemperature'] ?? true,
           showHumidity: screen.config?['showHumidity'] ?? true,
@@ -112,9 +118,19 @@ class ScreenEditorSensorCubit extends Cubit<ScreenEditorSensorState> {
   Future<void> save() async {
     emit(state.copyWith(isLoading: true));
     try {
-      // TODO: Save to Firebase via repository
-      await Future.delayed(const Duration(milliseconds: 300));
-      emit(state.copyWith(isLoading: false));
+      final config = getConfig();
+      final updatedScreen = state.screen.copyWith(
+        config: config,
+        name: 'Sensor Display',
+      );
+
+      if (isNewScreen) {
+        await firebaseRepository.createScreen(deviceId, updatedScreen);
+      } else {
+        await firebaseRepository.updateScreen(deviceId, state.screen.id, updatedScreen);
+      }
+
+      emit(state.copyWith(isLoading: false, screen: updatedScreen));
     } catch (e) {
       emit(state.copyWith(isLoading: false, error: e.toString()));
     }

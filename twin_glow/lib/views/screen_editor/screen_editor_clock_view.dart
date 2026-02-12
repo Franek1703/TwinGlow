@@ -10,25 +10,22 @@ import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_card.dart';
 import '../../core/widgets/color_picker.dart';
 import '../../features/screen_editor/cubit/screen_editor_clock_cubit.dart';
+import '../../services/firebase/firebase_repository_impl.dart';
 
 class ScreenEditorClockView extends StatelessWidget {
   final String screenId;
+  final String? deviceId;
 
-  const ScreenEditorClockView({super.key, required this.screenId});
+  const ScreenEditorClockView({
+    super.key,
+    required this.screenId,
+    this.deviceId,
+  });
 
   @override
   Widget build(BuildContext context) {
-    // TODO: Load screen from repository
-    final mockScreen = ScreenModel(
-      id: screenId,
-      type: ScreenType.clock,
-      name: 'Digital Clock',
-      enabled: true,
-    );
-
-    return BlocProvider(
-      create: (_) => ScreenEditorClockCubit(mockScreen),
-      child: Scaffold(
+    if (deviceId == null) {
+      return Scaffold(
         backgroundColor: AppColors.bgPrimary,
         appBar: AppBar(
           title: const Text('Clock Screen Editor'),
@@ -36,150 +33,231 @@ class ScreenEditorClockView extends StatelessWidget {
             icon: const Icon(Icons.arrow_back),
             onPressed: () => context.pop(),
           ),
-          actions: [
-            BlocBuilder<ScreenEditorClockCubit, ScreenEditorClockState>(
-              builder: (context, state) {
-                return IconButton(
-                  icon: state.isLoading
-                      ? SizedBox(
-                          width: 20.w,
-                          height: 20.w,
-                          child: const CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.check),
-                  onPressed: state.isLoading
-                      ? null
-                      : () {
-                          context.read<ScreenEditorClockCubit>().save().then((_) {
-                            context.pop();
-                          });
-                        },
-                );
-              },
-            ),
-          ],
         ),
-        body: SafeArea(
-          child: SingleChildScrollView(
-            padding: EdgeInsets.all(AppSpacing.xl),
-            child: BlocBuilder<ScreenEditorClockCubit, ScreenEditorClockState>(
-              builder: (context, state) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Preview Section
-                    AppCard(
-                      child: Column(
-                        children: [
-                          Text(
-                            'Preview',
-                            style: AppTypography.h4(context),
-                          ),
-                          SizedBox(height: AppSpacing.lg),
-                          Container(
-                            width: double.infinity,
-                            height: 200.h,
-                            decoration: BoxDecoration(
-                              color: state.backgroundColor,
-                              borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-                              border: Border.all(color: AppColors.borderSubtle),
-                            ),
-                            child: Center(
-                              child: _ClockPreview(
-                                digitColor: state.digitColor,
-                                colonColor: state.colonColor,
-                                showSeconds: state.showSeconds,
+        body: const Center(child: Text('Device ID is required')),
+      );
+    }
+
+    final firebaseRepo = FirebaseRepositoryImpl();
+
+    // Try to load existing screen, or create new one
+    return FutureBuilder<ScreenModel?>(
+      future: _loadScreen(firebaseRepo, deviceId!, screenId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Scaffold(
+            backgroundColor: AppColors.bgPrimary,
+            appBar: AppBar(
+              title: const Text('Clock Screen Editor'),
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => context.pop(),
+              ),
+            ),
+            body: const Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final screen =
+            snapshot.data ??
+            ScreenModel(
+              id: screenId,
+              type: ScreenType.clock,
+              name: 'Digital Clock',
+              enabled: true,
+            );
+
+        return BlocProvider(
+          create: (_) =>
+              ScreenEditorClockCubit(firebaseRepo, deviceId!, screen),
+          child: Scaffold(
+            backgroundColor: AppColors.bgPrimary,
+            appBar: AppBar(
+              title: const Text('Clock Screen Editor'),
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => context.pop(),
+              ),
+              actions: [
+                BlocBuilder<ScreenEditorClockCubit, ScreenEditorClockState>(
+                  builder: (context, state) {
+                    return IconButton(
+                      icon: state.isLoading
+                          ? SizedBox(
+                              width: 20.w,
+                              height: 20.w,
+                              child: const CircularProgressIndicator(
+                                strokeWidth: 2,
                               ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    SizedBox(height: AppSpacing.xl),
-                    // Settings
-                    Text(
-                      'Settings',
-                      style: AppTypography.h2(context),
-                    ),
-                    SizedBox(height: AppSpacing.lg),
-                    // Show Seconds Toggle
-                    AppCard(
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Show Seconds',
-                                style: AppTypography.h4(context),
-                              ),
-                              SizedBox(height: 2.h),
-                              Text(
-                                'Display seconds in clock',
-                                style: AppTypography.small(context),
-                              ),
-                            ],
-                          ),
-                          _ToggleSwitch(
-                            enabled: state.showSeconds,
-                            onChanged: (value) {
-                              context.read<ScreenEditorClockCubit>().toggleSeconds();
+                            )
+                          : const Icon(Icons.check),
+                      onPressed: state.isLoading
+                          ? null
+                          : () {
+                              context
+                                  .read<ScreenEditorClockCubit>()
+                                  .save()
+                                  .then((_) {
+                                    context.pop();
+                                  });
                             },
-                          ),
-                        ],
-                      ),
-                    ),
-                    SizedBox(height: AppSpacing.lg),
-                    // Color Configuration
-                    Text(
-                      'Colors',
-                      style: AppTypography.h3(context),
-                    ),
-                    SizedBox(height: AppSpacing.md),
-                    ColorPicker(
-                      initialColor: state.digitColor,
-                      label: 'Digit Color',
-                      onColorChanged: (color) {
-                        context.read<ScreenEditorClockCubit>().updateDigitColor(color);
+                    );
+                  },
+                ),
+              ],
+            ),
+            body: SafeArea(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.all(AppSpacing.xl),
+                child:
+                    BlocBuilder<ScreenEditorClockCubit, ScreenEditorClockState>(
+                      builder: (context, state) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Preview Section
+                            AppCard(
+                              child: Column(
+                                children: [
+                                  Text(
+                                    'Preview',
+                                    style: AppTypography.h4(context),
+                                  ),
+                                  SizedBox(height: AppSpacing.lg),
+                                  Container(
+                                    width: double.infinity,
+                                    height: 200.h,
+                                    decoration: BoxDecoration(
+                                      color: state.backgroundColor,
+                                      borderRadius: BorderRadius.circular(
+                                        AppSpacing.radiusLg,
+                                      ),
+                                      border: Border.all(
+                                        color: AppColors.borderSubtle,
+                                      ),
+                                    ),
+                                    child: Center(
+                                      child: _ClockPreview(
+                                        digitColor: state.digitColor,
+                                        colonColor: state.colonColor,
+                                        showSeconds: state.showSeconds,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            SizedBox(height: AppSpacing.xl),
+                            // Settings
+                            Text('Settings', style: AppTypography.h2(context)),
+                            SizedBox(height: AppSpacing.lg),
+                            // Show Seconds Toggle
+                            AppCard(
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Show Seconds',
+                                        style: AppTypography.h4(context),
+                                      ),
+                                      SizedBox(height: 2.h),
+                                      Text(
+                                        'Display seconds in clock',
+                                        style: AppTypography.small(context),
+                                      ),
+                                    ],
+                                  ),
+                                  _ToggleSwitch(
+                                    enabled: state.showSeconds,
+                                    onChanged: (value) {
+                                      context
+                                          .read<ScreenEditorClockCubit>()
+                                          .toggleSeconds();
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
+                            SizedBox(height: AppSpacing.lg),
+                            // Color Configuration
+                            Text('Colors', style: AppTypography.h3(context)),
+                            SizedBox(height: AppSpacing.md),
+                            ColorPicker(
+                              initialColor: state.digitColor,
+                              label: 'Digit Color',
+                              onColorChanged: (color) {
+                                context
+                                    .read<ScreenEditorClockCubit>()
+                                    .updateDigitColor(color);
+                              },
+                            ),
+                            SizedBox(height: AppSpacing.md),
+                            ColorPicker(
+                              initialColor: state.colonColor,
+                              label: 'Colon Color',
+                              onColorChanged: (color) {
+                                context
+                                    .read<ScreenEditorClockCubit>()
+                                    .updateColonColor(color);
+                              },
+                            ),
+                            SizedBox(height: AppSpacing.md),
+                            ColorPicker(
+                              initialColor: state.backgroundColor,
+                              label: 'Background Color',
+                              onColorChanged: (color) {
+                                context
+                                    .read<ScreenEditorClockCubit>()
+                                    .updateBackgroundColor(color);
+                              },
+                            ),
+                            SizedBox(height: AppSpacing.xxl),
+                            // Save Button
+                            AppButton(
+                              text: 'Save Configuration',
+                              onPressed: () {
+                                context
+                                    .read<ScreenEditorClockCubit>()
+                                    .save()
+                                    .then((_) {
+                                      context.pop();
+                                    });
+                              },
+                              fullWidth: true,
+                              size: AppButtonSize.lg,
+                            ),
+                          ],
+                        );
                       },
                     ),
-                    SizedBox(height: AppSpacing.md),
-                    ColorPicker(
-                      initialColor: state.colonColor,
-                      label: 'Colon Color',
-                      onColorChanged: (color) {
-                        context.read<ScreenEditorClockCubit>().updateColonColor(color);
-                      },
-                    ),
-                    SizedBox(height: AppSpacing.md),
-                    ColorPicker(
-                      initialColor: state.backgroundColor,
-                      label: 'Background Color',
-                      onColorChanged: (color) {
-                        context.read<ScreenEditorClockCubit>().updateBackgroundColor(color);
-                      },
-                    ),
-                    SizedBox(height: AppSpacing.xxl),
-                    // Save Button
-                    AppButton(
-                      text: 'Save Configuration',
-                      onPressed: () {
-                        context.read<ScreenEditorClockCubit>().save().then((_) {
-                          context.pop();
-                        });
-                      },
-                      fullWidth: true,
-                      size: AppButtonSize.lg,
-                    ),
-                  ],
-                );
-              },
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
+  }
+
+  Future<ScreenModel?> _loadScreen(
+    FirebaseRepositoryImpl repo,
+    String deviceId,
+    String screenId,
+  ) async {
+    try {
+      final screens = await repo.getScreens(deviceId);
+      try {
+        return screens.firstWhere((s) => s.id == screenId);
+      } catch (e) {
+        return null; // Screen doesn't exist yet
+      }
+    } catch (e) {
+      return null;
+    }
   }
 }
 
@@ -262,10 +340,7 @@ class _ToggleSwitch extends StatelessWidget {
   final bool enabled;
   final ValueChanged<bool> onChanged;
 
-  const _ToggleSwitch({
-    required this.enabled,
-    required this.onChanged,
-  });
+  const _ToggleSwitch({required this.enabled, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {

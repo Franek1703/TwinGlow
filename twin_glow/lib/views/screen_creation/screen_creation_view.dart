@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import '../../config/app_colors.dart';
@@ -6,12 +7,28 @@ import '../../config/app_spacing.dart';
 import '../../config/app_typography.dart';
 import '../../core/models/screen_model.dart';
 import '../../core/widgets/app_card.dart';
-
 class ScreenCreationView extends StatelessWidget {
-  const ScreenCreationView({super.key});
+  final String? deviceId;
+
+  const ScreenCreationView({super.key, this.deviceId});
 
   @override
   Widget build(BuildContext context) {
+    if (deviceId == null) {
+      return Scaffold(
+        backgroundColor: AppColors.bgPrimary,
+        appBar: AppBar(
+          title: const Text('Create New Screen'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => context.pop(),
+          ),
+        ),
+        body: const Center(
+          child: Text('No active device found'),
+        ),
+      );
+    }
     return Scaffold(
       backgroundColor: AppColors.bgPrimary,
       appBar: AppBar(
@@ -50,9 +67,9 @@ class ScreenCreationView extends StatelessWidget {
                       title: 'Clock',
                       description: 'Digital clock display',
                       onTap: () {
-                        // Generate new screen ID and navigate to editor
+                        // Generate new screen ID and navigate to editor with deviceId
                         final newId = 'screen_${DateTime.now().millisecondsSinceEpoch}';
-                        context.push('/screen/clock/$newId');
+                        context.push('/screen/clock/$newId?deviceId=$deviceId');
                       },
                     ),
                     _ScreenTypeCard(
@@ -62,7 +79,7 @@ class ScreenCreationView extends StatelessWidget {
                       description: 'Static image display',
                       onTap: () {
                         final newId = 'screen_${DateTime.now().millisecondsSinceEpoch}';
-                        context.push('/screen/image/$newId');
+                        context.push('/screen/image/$newId?deviceId=$deviceId');
                       },
                     ),
                     _ScreenTypeCard(
@@ -72,7 +89,7 @@ class ScreenCreationView extends StatelessWidget {
                       description: 'Animated sequence',
                       onTap: () {
                         final newId = 'screen_${DateTime.now().millisecondsSinceEpoch}';
-                        context.push('/screen/animation/$newId');
+                        context.push('/screen/image/$newId?deviceId=$deviceId'); // Animation uses image editor
                       },
                     ),
                     _ScreenTypeCard(
@@ -82,7 +99,7 @@ class ScreenCreationView extends StatelessWidget {
                       description: 'Sensor data display',
                       onTap: () {
                         final newId = 'screen_${DateTime.now().millisecondsSinceEpoch}';
-                        context.push('/screen/sensor/$newId');
+                        context.push('/screen/sensor/$newId?deviceId=$deviceId');
                       },
                     ),
                   ],

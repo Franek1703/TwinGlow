@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/models/screen_model.dart';
+import '../../../services/firebase/firebase_repository.dart';
 
 class ScreenEditorClockState {
   final ScreenModel screen;
@@ -43,8 +44,13 @@ class ScreenEditorClockState {
 }
 
 class ScreenEditorClockCubit extends Cubit<ScreenEditorClockState> {
-  ScreenEditorClockCubit(ScreenModel screen)
-      : super(ScreenEditorClockState(
+  final FirebaseRepository firebaseRepository;
+  final String deviceId;
+  final bool isNewScreen;
+
+  ScreenEditorClockCubit(this.firebaseRepository, this.deviceId, ScreenModel screen)
+      : isNewScreen = screen.config == null,
+        super(ScreenEditorClockState(
           screen: screen,
           digitColor: _getColorFromConfig(screen.config, 'digitColor', const Color(0xFF00D9FF)),
           colonColor: _getColorFromConfig(screen.config, 'colonColor', const Color(0xFF00D9FF)),
@@ -85,9 +91,19 @@ class ScreenEditorClockCubit extends Cubit<ScreenEditorClockState> {
   Future<void> save() async {
     emit(state.copyWith(isLoading: true));
     try {
-      // TODO: Save to Firebase via repository
-      await Future.delayed(const Duration(milliseconds: 300));
-      emit(state.copyWith(isLoading: false));
+      final config = getConfig();
+      final updatedScreen = state.screen.copyWith(
+        config: config,
+        name: 'Digital Clock',
+      );
+
+      if (isNewScreen) {
+        await firebaseRepository.createScreen(deviceId, updatedScreen);
+      } else {
+        await firebaseRepository.updateScreen(deviceId, state.screen.id, updatedScreen);
+      }
+
+      emit(state.copyWith(isLoading: false, screen: updatedScreen));
     } catch (e) {
       emit(state.copyWith(isLoading: false, error: e.toString()));
     }

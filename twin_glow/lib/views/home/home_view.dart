@@ -164,7 +164,7 @@ class _HomeContent extends StatelessWidget {
                               screen: screen,
                               onTap: () {
                                 final type = screen.type.name.toLowerCase();
-                                context.push('/screen/$type/${screen.id}');
+                                context.push('/screen/$type/${screen.id}?deviceId=${device.id}');
                               },
                               onToggle: () {
                                 context
@@ -182,7 +182,7 @@ class _HomeContent extends StatelessWidget {
               AppButton(
                 text: 'Add New Screen',
                 onPressed: () {
-                  context.push('/screen/create');
+                  context.push('/screen/create?deviceId=${device.id}');
                 },
                 variant: AppButtonVariant.secondary,
                 fullWidth: true,

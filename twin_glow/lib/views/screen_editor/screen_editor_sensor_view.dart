@@ -10,25 +10,22 @@ import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_card.dart';
 import '../../core/widgets/color_picker.dart';
 import '../../features/screen_editor/cubit/screen_editor_sensor_cubit.dart';
+import '../../services/firebase/firebase_repository_impl.dart';
 
 class ScreenEditorSensorView extends StatelessWidget {
   final String screenId;
+  final String? deviceId;
 
-  const ScreenEditorSensorView({super.key, required this.screenId});
+  const ScreenEditorSensorView({
+    super.key,
+    required this.screenId,
+    this.deviceId,
+  });
 
   @override
   Widget build(BuildContext context) {
-    // TODO: Load screen from repository
-    final mockScreen = ScreenModel(
-      id: screenId,
-      type: ScreenType.sensor,
-      name: 'Sensor Display',
-      enabled: true,
-    );
-
-    return BlocProvider(
-      create: (_) => ScreenEditorSensorCubit(mockScreen),
-      child: Scaffold(
+    if (deviceId == null) {
+      return Scaffold(
         backgroundColor: AppColors.bgPrimary,
         appBar: AppBar(
           title: const Text('Sensor Screen Editor'),
@@ -36,177 +33,272 @@ class ScreenEditorSensorView extends StatelessWidget {
             icon: const Icon(Icons.arrow_back),
             onPressed: () => context.pop(),
           ),
-          actions: [
-            BlocBuilder<ScreenEditorSensorCubit, ScreenEditorSensorState>(
-              builder: (context, state) {
-                return IconButton(
-                  icon: state.isLoading
-                      ? SizedBox(
-                          width: 20.w,
-                          height: 20.w,
-                          child: const CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.check),
-                  onPressed: state.isLoading
-                      ? null
-                      : () {
-                          context.read<ScreenEditorSensorCubit>().save().then((_) {
-                            context.pop();
-                          });
-                        },
-                );
-              },
-            ),
-          ],
         ),
-        body: SafeArea(
-          child: SingleChildScrollView(
-            padding: EdgeInsets.all(AppSpacing.xl),
-            child: BlocBuilder<ScreenEditorSensorCubit, ScreenEditorSensorState>(
-              builder: (context, state) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Preview Section
-                    AppCard(
-                      child: Column(
-                        children: [
-                          Text(
-                            'Preview',
-                            style: AppTypography.h4(context),
-                          ),
-                          SizedBox(height: AppSpacing.lg),
-                          Container(
-                            width: double.infinity,
-                            height: 200.h,
-                            decoration: BoxDecoration(
-                              color: state.backgroundColor,
-                              borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
-                              border: Border.all(color: AppColors.borderSubtle),
-                            ),
-                            child: Center(
-                              child: _SensorPreview(
-                                showTemperature: state.showTemperature,
-                                showHumidity: state.showHumidity,
-                                showPressure: state.showPressure,
-                                useMetricUnits: state.useMetricUnits,
-                                numberColor: state.numberColor,
-                                accentColor: state.accentColor,
+        body: const Center(child: Text('Device ID is required')),
+      );
+    }
+
+    final firebaseRepo = FirebaseRepositoryImpl();
+
+    // Try to load existing screen, or create new one
+    return FutureBuilder<ScreenModel?>(
+      future: _loadScreen(firebaseRepo, deviceId!, screenId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Scaffold(
+            backgroundColor: AppColors.bgPrimary,
+            appBar: AppBar(
+              title: const Text('Sensor Screen Editor'),
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => context.pop(),
+              ),
+            ),
+            body: const Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final screen =
+            snapshot.data ??
+            ScreenModel(
+              id: screenId,
+              type: ScreenType.sensor,
+              name: 'Sensor Display',
+              enabled: true,
+            );
+
+        return BlocProvider(
+          create: (_) =>
+              ScreenEditorSensorCubit(firebaseRepo, deviceId!, screen),
+          child: Scaffold(
+            backgroundColor: AppColors.bgPrimary,
+            appBar: AppBar(
+              title: const Text('Sensor Screen Editor'),
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => context.pop(),
+              ),
+              actions: [
+                BlocBuilder<ScreenEditorSensorCubit, ScreenEditorSensorState>(
+                  builder: (context, state) {
+                    return IconButton(
+                      icon: state.isLoading
+                          ? SizedBox(
+                              width: 20.w,
+                              height: 20.w,
+                              child: const CircularProgressIndicator(
+                                strokeWidth: 2,
                               ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    SizedBox(height: AppSpacing.xl),
-                    // Display Values
-                    Text(
-                      'Display Values',
-                      style: AppTypography.h2(context),
-                    ),
-                    SizedBox(height: AppSpacing.md),
-                    _CheckboxOption(
-                      label: 'Temperature',
-                      value: state.showTemperature,
-                      onChanged: (value) {
-                        context.read<ScreenEditorSensorCubit>().toggleTemperature();
-                      },
-                    ),
-                    SizedBox(height: AppSpacing.sm),
-                    _CheckboxOption(
-                      label: 'Humidity',
-                      value: state.showHumidity,
-                      onChanged: (value) {
-                        context.read<ScreenEditorSensorCubit>().toggleHumidity();
-                      },
-                    ),
-                    SizedBox(height: AppSpacing.sm),
-                    _CheckboxOption(
-                      label: 'Pressure',
-                      value: state.showPressure,
-                      onChanged: (value) {
-                        context.read<ScreenEditorSensorCubit>().togglePressure();
-                      },
-                    ),
-                    SizedBox(height: AppSpacing.lg),
-                    // Units
-                    AppCard(
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Units',
-                                style: AppTypography.h4(context),
-                              ),
-                              SizedBox(height: 2.h),
-                              Text(
-                                state.useMetricUnits ? 'Metric (°C, %)' : 'Imperial (°F, %)',
-                                style: AppTypography.small(context),
-                              ),
-                            ],
-                          ),
-                          _ToggleSwitch(
-                            enabled: state.useMetricUnits,
-                            onChanged: (value) {
-                              context.read<ScreenEditorSensorCubit>().toggleUnits();
+                            )
+                          : const Icon(Icons.check),
+                      onPressed: state.isLoading
+                          ? null
+                          : () {
+                              context
+                                  .read<ScreenEditorSensorCubit>()
+                                  .save()
+                                  .then((_) {
+                                    context.pop();
+                                  });
                             },
-                          ),
-                        ],
-                      ),
-                    ),
-                    SizedBox(height: AppSpacing.xl),
-                    // Color Configuration
-                    Text(
-                      'Colors',
-                      style: AppTypography.h3(context),
-                    ),
-                    SizedBox(height: AppSpacing.md),
-                    ColorPicker(
-                      initialColor: state.numberColor,
-                      label: 'Number Color',
-                      onColorChanged: (color) {
-                        context.read<ScreenEditorSensorCubit>().updateNumberColor(color);
+                    );
+                  },
+                ),
+              ],
+            ),
+            body: SafeArea(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.all(AppSpacing.xl),
+                child:
+                    BlocBuilder<
+                      ScreenEditorSensorCubit,
+                      ScreenEditorSensorState
+                    >(
+                      builder: (context, state) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Preview Section
+                            AppCard(
+                              child: Column(
+                                children: [
+                                  Text(
+                                    'Preview',
+                                    style: AppTypography.h4(context),
+                                  ),
+                                  SizedBox(height: AppSpacing.lg),
+                                  Container(
+                                    width: double.infinity,
+                                    height: 200.h,
+                                    decoration: BoxDecoration(
+                                      color: state.backgroundColor,
+                                      borderRadius: BorderRadius.circular(
+                                        AppSpacing.radiusLg,
+                                      ),
+                                      border: Border.all(
+                                        color: AppColors.borderSubtle,
+                                      ),
+                                    ),
+                                    child: Center(
+                                      child: _SensorPreview(
+                                        showTemperature: state.showTemperature,
+                                        showHumidity: state.showHumidity,
+                                        showPressure: state.showPressure,
+                                        useMetricUnits: state.useMetricUnits,
+                                        numberColor: state.numberColor,
+                                        accentColor: state.accentColor,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            SizedBox(height: AppSpacing.xl),
+                            // Display Values
+                            Text(
+                              'Display Values',
+                              style: AppTypography.h2(context),
+                            ),
+                            SizedBox(height: AppSpacing.md),
+                            _CheckboxOption(
+                              label: 'Temperature',
+                              value: state.showTemperature,
+                              onChanged: (value) {
+                                context
+                                    .read<ScreenEditorSensorCubit>()
+                                    .toggleTemperature();
+                              },
+                            ),
+                            SizedBox(height: AppSpacing.sm),
+                            _CheckboxOption(
+                              label: 'Humidity',
+                              value: state.showHumidity,
+                              onChanged: (value) {
+                                context
+                                    .read<ScreenEditorSensorCubit>()
+                                    .toggleHumidity();
+                              },
+                            ),
+                            SizedBox(height: AppSpacing.sm),
+                            _CheckboxOption(
+                              label: 'Pressure',
+                              value: state.showPressure,
+                              onChanged: (value) {
+                                context
+                                    .read<ScreenEditorSensorCubit>()
+                                    .togglePressure();
+                              },
+                            ),
+                            SizedBox(height: AppSpacing.lg),
+                            // Units
+                            AppCard(
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Units',
+                                        style: AppTypography.h4(context),
+                                      ),
+                                      SizedBox(height: 2.h),
+                                      Text(
+                                        state.useMetricUnits
+                                            ? 'Metric (°C, %)'
+                                            : 'Imperial (°F, %)',
+                                        style: AppTypography.small(context),
+                                      ),
+                                    ],
+                                  ),
+                                  _ToggleSwitch(
+                                    enabled: state.useMetricUnits,
+                                    onChanged: (value) {
+                                      context
+                                          .read<ScreenEditorSensorCubit>()
+                                          .toggleUnits();
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
+                            SizedBox(height: AppSpacing.xl),
+                            // Color Configuration
+                            Text('Colors', style: AppTypography.h3(context)),
+                            SizedBox(height: AppSpacing.md),
+                            ColorPicker(
+                              initialColor: state.numberColor,
+                              label: 'Number Color',
+                              onColorChanged: (color) {
+                                context
+                                    .read<ScreenEditorSensorCubit>()
+                                    .updateNumberColor(color);
+                              },
+                            ),
+                            SizedBox(height: AppSpacing.md),
+                            ColorPicker(
+                              initialColor: state.accentColor,
+                              label: 'Accent Color',
+                              onColorChanged: (color) {
+                                context
+                                    .read<ScreenEditorSensorCubit>()
+                                    .updateAccentColor(color);
+                              },
+                            ),
+                            SizedBox(height: AppSpacing.md),
+                            ColorPicker(
+                              initialColor: state.backgroundColor,
+                              label: 'Background Color',
+                              onColorChanged: (color) {
+                                context
+                                    .read<ScreenEditorSensorCubit>()
+                                    .updateBackgroundColor(color);
+                              },
+                            ),
+                            SizedBox(height: AppSpacing.xxl),
+                            // Save Button
+                            AppButton(
+                              text: 'Save Configuration',
+                              onPressed: () {
+                                context
+                                    .read<ScreenEditorSensorCubit>()
+                                    .save()
+                                    .then((_) {
+                                      context.pop();
+                                    });
+                              },
+                              fullWidth: true,
+                              size: AppButtonSize.lg,
+                            ),
+                          ],
+                        );
                       },
                     ),
-                    SizedBox(height: AppSpacing.md),
-                    ColorPicker(
-                      initialColor: state.accentColor,
-                      label: 'Accent Color',
-                      onColorChanged: (color) {
-                        context.read<ScreenEditorSensorCubit>().updateAccentColor(color);
-                      },
-                    ),
-                    SizedBox(height: AppSpacing.md),
-                    ColorPicker(
-                      initialColor: state.backgroundColor,
-                      label: 'Background Color',
-                      onColorChanged: (color) {
-                        context.read<ScreenEditorSensorCubit>().updateBackgroundColor(color);
-                      },
-                    ),
-                    SizedBox(height: AppSpacing.xxl),
-                    // Save Button
-                    AppButton(
-                      text: 'Save Configuration',
-                      onPressed: () {
-                        context.read<ScreenEditorSensorCubit>().save().then((_) {
-                          context.pop();
-                        });
-                      },
-                      fullWidth: true,
-                      size: AppButtonSize.lg,
-                    ),
-                  ],
-                );
-              },
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
+  }
+
+  Future<ScreenModel?> _loadScreen(
+    FirebaseRepositoryImpl repo,
+    String deviceId,
+    String screenId,
+  ) async {
+    try {
+      final screens = await repo.getScreens(deviceId);
+      try {
+        return screens.firstWhere((s) => s.id == screenId);
+      } catch (e) {
+        return null; // Screen doesn't exist yet
+      }
+    } catch (e) {
+      return null;
+    }
   }
 }
 
@@ -248,8 +340,7 @@ class _SensorPreview extends StatelessWidget {
             color: numberColor,
             accentColor: accentColor,
           ),
-        if (showHumidity && showPressure)
-          SizedBox(height: AppSpacing.md),
+        if (showHumidity && showPressure) SizedBox(height: AppSpacing.md),
         if (showPressure)
           _SensorValue(
             label: 'Pressure',
@@ -282,17 +373,10 @@ class _SensorValue extends StatelessWidget {
       children: [
         Text(
           label,
-          style: AppTypography.body(context).copyWith(
-            color: accentColor,
-          ),
+          style: AppTypography.body(context).copyWith(color: accentColor),
         ),
         SizedBox(width: AppSpacing.md),
-        Text(
-          value,
-          style: AppTypography.h3(context).copyWith(
-            color: color,
-          ),
-        ),
+        Text(value, style: AppTypography.h3(context).copyWith(color: color)),
       ],
     );
   }
@@ -314,12 +398,7 @@ class _CheckboxOption extends StatelessWidget {
     return AppCard(
       child: Row(
         children: [
-          Expanded(
-            child: Text(
-              label,
-              style: AppTypography.h4(context),
-            ),
-          ),
+          Expanded(child: Text(label, style: AppTypography.h4(context))),
           Checkbox(
             value: value,
             onChanged: (newValue) => onChanged(newValue ?? false),
@@ -335,10 +414,7 @@ class _ToggleSwitch extends StatelessWidget {
   final bool enabled;
   final ValueChanged<bool> onChanged;
 
-  const _ToggleSwitch({
-    required this.enabled,
-    required this.onChanged,
-  });
+  const _ToggleSwitch({required this.enabled, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
