@@ -686,6 +686,7 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
         (data['pixelData'] as List).map((row) => List<int>.from(row))
       );
     }
+    print('pixelData: $pixelData');
     
     return AssetModel(
       id: id,

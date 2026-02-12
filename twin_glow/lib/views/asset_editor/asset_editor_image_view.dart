@@ -41,6 +41,7 @@ class _AssetEditorImageViewState extends State<AssetEditorImageView> {
   Widget build(BuildContext context) {
     final authState = context.watch<AuthCubit>().state;
     final userId = authState.user?.id ?? '';
+    print("assetId: ${widget.assetId}");
 
     if (userId.isEmpty) {
       return Scaffold(
@@ -81,6 +82,7 @@ class _AssetEditorImageViewState extends State<AssetEditorImageView> {
         }
 
         final asset = snapshot.data;
+        print("asset: $asset");
 
         return BlocProvider(
           create: (_) => AssetEditorCubit(
@@ -328,11 +330,13 @@ class _AssetEditorImageViewState extends State<AssetEditorImageView> {
   ) async {
     try {
       final currentUser = await repo.getCurrentUser();
+      print("currentUser: $currentUser");
       if (currentUser == null) return null;
 
       // Try to find in user assets first
       final userAssets = await repo.getUserAssets(currentUser.id);
       try {
+        print("userAssets: $userAssets");
         return userAssets.firstWhere((a) => a.id == assetId);
       } catch (e) {
         // Try default assets

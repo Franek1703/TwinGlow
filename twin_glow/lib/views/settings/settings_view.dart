@@ -86,7 +86,7 @@ class _SettingsViewState extends State<SettingsView> {
                 SizedBox(height: AppSpacing.md),
                 AppCard(
                   onTap: () {
-                    context.go('/settings/profile');
+                    context.push('/settings/profile');
                   },
                   hoverable: true,
                   child: Row(
