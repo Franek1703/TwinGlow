@@ -1,4 +1,140 @@
 #include "RenderClock.h"
+#include "Config.h"
+
+// 3x9 digit patterns (27 bytes each: 3 columns x 9 rows)
+static const uint8_t blank[27] = {
+    0, 0, 0,
+    0, 0, 0,
+    0, 0, 0,
+    0, 0, 0,
+    0, 0, 0,
+    0, 0, 0,
+    0, 0, 0,
+    0, 0, 0,
+    0, 0, 0
+};
+
+static const uint8_t n0[27] = {
+    0, 1, 0,
+    1, 0, 1,
+    1, 0, 1,
+    1, 0, 1,
+    1, 0, 1,
+    1, 0, 1,
+    1, 0, 1,
+    1, 0, 1,
+    0, 1, 0
+};
+
+static const uint8_t n1[27] = {
+    0, 1, 1,
+    1, 0, 1,
+    0, 0, 1,
+    0, 0, 1,
+    0, 0, 1,
+    0, 0, 1,
+    0, 0, 1,
+    0, 0, 1,
+    0, 0, 1
+};
+
+static const uint8_t n2[27] = {
+    0, 1, 0,
+    1, 0, 1,
+    0, 0, 1,
+    0, 0, 1,
+    0, 1, 0,
+    0, 1, 0,
+    1, 0, 0,
+    1, 0, 0,
+    1, 1, 1
+};
+
+static const uint8_t n3[27] = {
+    0, 1, 0,
+    1, 0, 1,
+    0, 0, 1,
+    0, 0, 1,
+    1, 1, 0,
+    0, 0, 1,
+    0, 0, 1,
+    1, 0, 1,
+    0, 1, 0
+};
+
+static const uint8_t n4[27] = {
+    1, 0, 1,
+    1, 0, 1,
+    1, 0, 1,
+    1, 0, 1,
+    1, 1, 1,
+    0, 0, 1,
+    0, 0, 1,
+    0, 0, 1,
+    0, 0, 1
+};
+
+static const uint8_t n5[27] = {
+    1, 1, 1,
+    1, 0, 0,
+    1, 0, 0,
+    1, 0, 0,
+    0, 1, 0,
+    0, 0, 1,
+    0, 0, 1,
+    1, 0, 1,
+    0, 1, 0
+};
+
+static const uint8_t n6[27] = {
+    0, 1, 0,
+    1, 0, 1,
+    1, 0, 0,
+    1, 0, 0,
+    1, 1, 0,
+    1, 0, 1,
+    1, 0, 1,
+    1, 0, 1,
+    0, 1, 0
+};
+
+static const uint8_t n7[27] = {
+    1, 1, 1,
+    0, 0, 1,
+    0, 0, 1,
+    0, 0, 1,
+    0, 1, 0,
+    0, 1, 0,
+    0, 1, 0,
+    0, 1, 0,
+    0, 1, 0
+};
+
+static const uint8_t n8[27] = {
+    0, 1, 0,
+    1, 0, 1,
+    1, 0, 1,
+    1, 0, 1,
+    0, 1, 0,
+    1, 0, 1,
+    1, 0, 1,
+    1, 0, 1,
+    0, 1, 0
+};
+
+static const uint8_t n9[27] = {
+    0, 1, 0,
+    1, 0, 1,
+    1, 0, 1,
+    1, 0, 1,
+    0, 1, 1,
+    0, 0, 1,
+    0, 0, 1,
+    1, 0, 1,
+    0, 1, 0
+};
+
+static const uint8_t* number[10] = {n0, n1, n2, n3, n4, n5, n6, n7, n8, n9};
 
 RenderClock::RenderClock(MatrixDriver* mat) : matrix(mat) {
 }
@@ -75,12 +211,13 @@ void RenderClock::renderBigHHMM(uint32_t fgColor, uint32_t accentColor, uint32_t
     int hour = timeinfo->tm_hour;
     int minute = timeinfo->tm_min;
     
-    // Draw HH:MM
-    drawDigit(1, 4, hour / 10, fgColor);
-    drawDigit(5, 4, hour % 10, fgColor);
-    drawColon(9, 6, accentColor, blinkColon);
-    drawDigit(11, 4, minute / 10, fgColor);
-    drawDigit(15, 4, minute % 10, fgColor);
+    // Draw HH:MM - digits are 3 pixels wide, no spacing
+    // First digit starts at x=0, second at x=3, colon at x=6, minutes at x=8 and x=11
+    drawDigit(0, 4, hour / 10, fgColor);
+    drawDigit(4, 4, hour % 10, fgColor);
+    drawColon(7, 5, accentColor, blinkColon);
+    drawDigit(9, 4, minute / 10, fgColor);
+    drawDigit(13, 4, minute % 10, fgColor);
 }
 
 void RenderClock::renderHHMMPlusSecondsBar(uint32_t fgColor, uint32_t accentColor, uint32_t bgColor, bool blinkColon) {
@@ -90,12 +227,13 @@ void RenderClock::renderHHMMPlusSecondsBar(uint32_t fgColor, uint32_t accentColo
     int minute = timeinfo->tm_min;
     int second = timeinfo->tm_sec;
     
-    // Draw HH:MM
-    drawDigit(1, 4, hour / 10, fgColor);
-    drawDigit(5, 4, hour % 10, fgColor);
-    drawColon(9, 6, accentColor, blinkColon);
-    drawDigit(11, 4, minute / 10, fgColor);
-    drawDigit(15, 4, minute % 10, fgColor);
+    // Draw HH:MM - digits are 3 pixels wide, no spacing
+    // First digit starts at x=0, second at x=3, colon at x=6, minutes at x=8 and x=11
+    drawDigit(0, 4, hour / 10, fgColor);
+    drawDigit(4, 4, hour % 10, fgColor);
+    drawColon(7, 5, accentColor, blinkColon);
+    drawDigit(9, 4, minute / 10, fgColor);
+    drawDigit(13, 4, minute % 10, fgColor);
     
     // Draw seconds bar at bottom
     drawSecondsBar(second, accentColor);
@@ -115,10 +253,38 @@ void RenderClock::renderMinimal(uint32_t fgColor, uint32_t accentColor, uint32_t
     drawDigit(14, 6, minute % 10, fgColor);
 }
 
+void RenderClock::drawPatternPixel(uint8_t patternX, uint8_t patternY, uint8_t baseX, uint8_t baseY, uint32_t color) {
+    // Calculate absolute position
+    uint8_t absX = baseX + patternX;
+    uint8_t absY = baseY + patternY;
+    
+    // Draw pixel at rotated position
+    matrix->setPixel(absY, absX, color);
+}
+
+void RenderClock::drawPatternDigit(uint8_t x, uint8_t y, uint8_t digit, uint32_t color) {
+    if (digit > 9) return;
+    
+    const uint8_t* pattern;
+    if (digit == 0 && x == 0 && y == 0) {
+        pattern = blank; // Special case for leading zero
+    } else {
+        pattern = number[digit];
+    }
+    
+    // Draw 3x9 pattern (3 columns, 9 rows)
+    for (uint8_t row = 0; row < 9; row++) {
+        for (uint8_t col = 0; col < 3; col++) {
+            if (pattern[(row * 3) + col] == 1) {
+                drawPatternPixel(col, row, x, y, color);
+            }
+        }
+    }
+}
+
 void RenderClock::drawDigit(uint8_t x, uint8_t y, uint8_t digit, uint32_t color) {
-    // Simplified digit rendering - draw basic patterns
-    // For a full implementation, use 7-segment or bitmap fonts
-    draw7Segment(x, y, digit, color);
+    // Use pattern-based rendering with rotation
+    drawPatternDigit(x, y, digit, color);
 }
 
 void RenderClock::drawColon(uint8_t x, uint8_t y, uint32_t color, bool blink) {
@@ -126,15 +292,36 @@ void RenderClock::drawColon(uint8_t x, uint8_t y, uint32_t color, bool blink) {
         return; // Blink off
     }
     
-    matrix->setPixel(x, y, color);
-    matrix->setPixel(x, y + 2, color);
+    // Draw colon as two 2x2 pixel segments (no spacing)
+    // Top segment: 2x2 pixels at (x, y) to (x+1, y+1)
+    // Bottom segment: 2x2 pixels at (x, y+3) to (x+1, y+4)
+    for (uint8_t dx = 0; dx < 2; dx++) {
+        for (uint8_t dy = 0; dy < 2; dy++) {
+            // Top segment
+            uint8_t absX = x + dx;
+            uint8_t absY = y + dy;
+            uint8_t rotatedX = (uint8_t)(MATRIX_WIDTH - 1 - absY);
+            uint8_t rotatedY = absX;
+            matrix->setPixel(rotatedX, rotatedY, color);
+            
+            // Bottom segment
+            absY = y + 3 + dy;
+            rotatedX = (uint8_t)(MATRIX_WIDTH - 1 - absY);
+            rotatedY = absX;
+            matrix->setPixel(rotatedX, rotatedY, color);
+        }
+    }
 }
 
 void RenderClock::drawSecondsBar(uint8_t seconds, uint32_t color) {
     // Draw progress bar at bottom (row 15)
+    // After rotation: bottom row becomes leftmost column
     int pixels = (seconds * 16) / 60;
     for (int i = 0; i < pixels && i < 16; i++) {
-        matrix->setPixel(i, 15, color);
+        // Original: (i, 15) -> Rotated: (15-15, i) = (0, i)
+        uint8_t rotX = 0;
+        uint8_t rotY = (uint8_t)i;
+        matrix->setPixel(rotX, rotY, color);
     }
 }
 
