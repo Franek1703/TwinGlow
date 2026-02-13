@@ -29,6 +29,25 @@ void RenderClock::render(const String& format, const String& layout,
     int minute = timeinfo->tm_min;
     int second = timeinfo->tm_sec;
     
+    // Log time being rendered (only every 5 seconds to avoid spam)
+    static unsigned long lastTimeLogMs = 0;
+    static int lastLoggedSecond = -1;
+    if (second != lastLoggedSecond && (millis() - lastTimeLogMs >= 5000)) {
+        lastTimeLogMs = millis();
+        lastLoggedSecond = second;
+        Serial.print(F("[RenderClock] Rendering time: "));
+        Serial.print(hour);
+        Serial.print(F(":"));
+        if (minute < 10) Serial.print(F("0"));
+        Serial.print(minute);
+        Serial.print(F(":"));
+        if (second < 10) Serial.print(F("0"));
+        Serial.print(second);
+        Serial.print(F(" (epoch="));
+        Serial.print(now);
+        Serial.println(F(")"));
+    }
+    
     // Convert to 12H if needed
     if (format == "12H") {
         if (hour == 0) hour = 12;

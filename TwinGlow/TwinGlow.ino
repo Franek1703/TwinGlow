@@ -391,8 +391,29 @@ void handleConfigLoading() {
                 
                 std::vector<ScreenConfig> screens;
                 if (firestoreRepo->getScreens(screens)) {
+                    Serial.print(F("[Config] Firestore returned "));
+                    Serial.print(screens.size());
+                    Serial.println(F(" screens"));
                     for (size_t i = 0; i < screens.size(); i++) {
                         ScreenConfig& sc = screens[i];
+                        Serial.print(F("[Config] Screen["));
+                        Serial.print(i);
+                        Serial.print(F("] id="));
+                        Serial.print(sc.id);
+                        Serial.print(F(" type="));
+                        Serial.print(sc.type);
+                        Serial.print(F(" order="));
+                        Serial.print(sc.order);
+                        Serial.print(F(" enabled="));
+                        Serial.print(sc.enabled ? 1 : 0);
+                        Serial.print(F(" durationMs="));
+                        Serial.print(sc.durationMs);
+                        Serial.print(F(" assetId="));
+                        Serial.print(sc.assetId.length() > 0 ? sc.assetId.c_str() : "(empty)");
+                        Serial.print(F(" pairId="));
+                        Serial.print(sc.pairId.length() > 0 ? sc.pairId.c_str() : "(empty)");
+                        Serial.print(F(" sharedScreenId="));
+                        Serial.println(sc.sharedScreenId.length() > 0 ? sc.sharedScreenId.c_str() : "(empty)");
                         if (sc.pairId.length() > 0 && sc.sharedScreenId.length() > 0) {
                             SharedScreenConfig sharedConfig;
                             if (firestoreRepo->getSharedScreen(sc.pairId, sc.sharedScreenId, sharedConfig)) {
@@ -401,13 +422,28 @@ void handleConfigLoading() {
                                 sc.currentAssetIndex = 0;
                             }
                         }
-                        if ((sc.type == "IMAGE" || sc.type == "ANIMATION") && sc.assetId.length() > 0) {
+                        // Normalize type for comparison
+                        String scTypeUpper = sc.type;
+                        scTypeUpper.toUpperCase();
+                        if ((scTypeUpper == "IMAGE" || scTypeUpper == "ANIMATION") && sc.assetId.length() > 0) {
+                            Serial.print(F("[Config] Loading asset for screen["));
+                            Serial.print(i);
+                            Serial.print(F("]: "));
+                            Serial.println(sc.assetId);
                             AssetData assetData;
                             if (firestoreRepo->getAsset(sc.assetId, assetData) && assetData.pixelsJson.length() > 0) {
+                                Serial.print(F("[Config] Asset loaded, parsing... pixelsJsonLen="));
+                                Serial.println(assetData.pixelsJson.length());
                                 CachedAsset cached;
                                 if (assetCache.parseAsset(sc.assetId, assetData.pixelsJson, cached)) {
                                     assetCache.addAsset(cached);
+                                    Serial.println(F("[Config] Asset cached successfully"));
+                                } else {
+                                    Serial.println(F("[Config] Asset parse failed"));
                                 }
+                            } else {
+                                Serial.print(F("[Config] Asset load failed or empty: pixelsJsonLen="));
+                                Serial.println(assetData.pixelsJson.length());
                             }
                             for (size_t a = 0; a < sc.availableAssetIds.size(); a++) {
                                 const String& aid = sc.availableAssetIds[a];
@@ -424,7 +460,9 @@ void handleConfigLoading() {
                         }
                     }
                     playlist.setScreens(screens);
-                }
+                    } else {
+                        Serial.println(F("[Config] getScreens() returned false"));
+                    }
                 currentConfigVersion = configVersion;
             } else {
                 Serial.print(F("[Config] Config version unchanged: "));
@@ -459,28 +497,55 @@ void handleRunning() {
         lastSensorReadMs = millis();
     }
     
-    // Check screen rotation
-    if (playlist.shouldRotate()) {
-        playlist.next();
-    }
+    // Screen rotation disabled - only manual button switching
+    // if (playlist.shouldRotate()) {
+    //     playlist.next();
+    // }
     
     // Render current screen
     ScreenConfig* screen = playlist.getCurrentScreen();
+    static int lastLoggedIndex = -999;
+    static unsigned long lastRenderLogMs = 0;
+    int curIndex = playlist.getCurrentIndex();
+    bool logRender = (millis() - lastRenderLogMs >= 5000) || (screen != nullptr && lastLoggedIndex != curIndex);
+    if (screen == nullptr) {
+        if (lastLoggedIndex != -2) {
+            Serial.println(F("[Render] No screen (playlist empty or null)"));
+            lastLoggedIndex = -2;
+        }
+    } else if (logRender) {
+        lastRenderLogMs = millis();
+        lastLoggedIndex = curIndex;
+        Serial.print(F("[Render] Screen index="));
+        Serial.print(curIndex);
+        Serial.print(F(" type="));
+        Serial.print(screen->type);
+        Serial.print(F(" durationMs="));
+        Serial.print(screen->durationMs);
+        Serial.print(F(" assetId="));
+        Serial.println(playlist.getCurrentAssetId().length() > 0 ? playlist.getCurrentAssetId().c_str() : "(none)");
+    }
     if (screen != nullptr) {
-        if (screen->type == "CLOCK") {
+        // Normalize type to uppercase for comparison (in case Firestore returns lowercase)
+        String typeUpper = screen->type;
+        typeUpper.toUpperCase();
+        if (typeUpper == "CLOCK") {
             // Render clock
             time_t now = time(nullptr);
             
             if (now < 1000000000) {
+                if (logRender) Serial.println(F("[Render] Branch: CLOCK (invalid time -> red)"));
                 // Invalid time - show test pattern
                 matrix.fill(matrix.color(255, 0, 0)); // Red = time invalid
                 matrix.show();
             } else {
+                if (logRender) Serial.println(F("[Render] Branch: CLOCK"));
                 renderClock.render("24H", "HHMM_PLUS_SECONDS_BAR", 
                                   0xFFFFFF, 0x00FFFF, 0x000000,
                                   false, true);
             }
-        } else if (screen->type == "SENSOR" && bme680Present) {
+        } else if (typeUpper == "SENSOR" && bme680Present) {
+            if (logRender) Serial.println(F("[Render] Branch: SENSOR"));
             // Render sensor
             std::vector<String> metrics = {"temperature", "humidity"};
             renderSensor.render("AUTO_CYCLE", "BIG_VALUE_WITH_LABEL",
@@ -488,30 +553,55 @@ void handleRunning() {
                                0xFF8800, 0xFFFFFF, 0x000000,
                                sensorTemp, sensorHumidity, sensorPressure, sensorGas,
                                sensorMetricIndex);
-        } else if (screen->type == "IMAGE" || screen->type == "ANIMATION") {
+        } else if (typeUpper == "IMAGE" || typeUpper == "ANIMATION") {
             String assetId = playlist.getCurrentAssetId();
             CachedAsset* asset = assetId.length() > 0 ? assetCache.getAsset(assetId) : nullptr;
+            // Only try to load asset if not cached and not recently failed
+            static String lastFailedAssetId = "";
+            static unsigned long lastAssetLoadAttemptMs = 0;
             if (asset == nullptr && assetId.length() > 0 && firestoreRepo != nullptr) {
-                AssetData assetData;
-                if (firestoreRepo->getAsset(assetId, assetData) && assetData.pixelsJson.length() > 0) {
-                    CachedAsset cached;
-                    if (assetCache.parseAsset(assetId, assetData.pixelsJson, cached)) {
-                        assetCache.addAsset(cached);
-                        asset = assetCache.getAsset(assetId);
+                // Don't retry too frequently (wait at least 10 seconds between attempts)
+                if (assetId != lastFailedAssetId || (millis() - lastAssetLoadAttemptMs > 10000)) {
+                    lastAssetLoadAttemptMs = millis();
+                    AssetData assetData;
+                    if (firestoreRepo->getAsset(assetId, assetData) && assetData.pixelsJson.length() > 0) {
+                        CachedAsset cached;
+                        if (assetCache.parseAsset(assetId, assetData.pixelsJson, cached)) {
+                            assetCache.addAsset(cached);
+                            asset = assetCache.getAsset(assetId);
+                            lastFailedAssetId = ""; // Clear failure flag on success
+                        } else {
+                            lastFailedAssetId = assetId; // Remember failed asset
+                        }
+                    } else {
+                        lastFailedAssetId = assetId; // Remember failed asset
                     }
                 }
             }
-            if (screen->type == "IMAGE") {
+            if (logRender) {
+                Serial.print(F("[Render] Branch: "));
+                Serial.print(screen->type);
+                Serial.print(F(" asset="));
+                Serial.println(asset != nullptr && asset->isValid() ? "ok" : "null/invalid");
+            }
+            if (typeUpper == "IMAGE") {
                 renderAsset.renderImage(asset, 0x000000);
             } else {
                 renderAsset.renderAnimation(asset, 0x000000);
             }
+        } else {
+            if (logRender) Serial.println(F("[Render] Branch: fallback (unknown type or SENSOR without BME)"));
+            // Unknown type or SENSOR without BME680: show placeholder so display updates
+            matrix.fill(matrix.color(32, 32, 32));
+            matrix.show();
         }
     } else {
         // No screens - show default pattern
         matrix.fill(matrix.color(64, 64, 64));
         matrix.show();
     }
+    // Always push buffer to matrix so last drawn frame is visible
+    matrix.show();
 }
 
 void handleOfflineRunning() {

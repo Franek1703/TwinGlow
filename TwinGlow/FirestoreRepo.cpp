@@ -239,17 +239,29 @@ bool FirestoreRepo::getScreens(std::vector<ScreenConfig>& screens) {
     ListDocumentsOptions listOpts;
     String listPath = getScreensPath();
     String response = documents->list(*aClient, parent, listPath, listOpts);
-    if (aClient->lastError().code() != 0) return false;
+    if (aClient->lastError().code() != 0) {
+        Serial.print(F("[Firestore] getScreens list error: "));
+        Serial.println(aClient->lastError().code());
+        return false;
+    }
 
     DynamicJsonDocument doc(8192);
-    if (deserializeJson(doc, response) != DeserializationError::Ok) return false;
+    if (deserializeJson(doc, response) != DeserializationError::Ok) {
+        Serial.println(F("[Firestore] getScreens: JSON parse error"));
+        return false;
+    }
     if (!doc.containsKey("documents")) {
         screens.clear();
+        Serial.println(F("[Firestore] getScreens: no 'documents' in response"));
         return true;
     }
 
     screens.clear();
     JsonArray arr = doc["documents"].as<JsonArray>();
+    Serial.print(F("[Firestore] getScreens: path="));
+    Serial.print(listPath);
+    Serial.print(F(" rawDocs="));
+    Serial.println(arr.size());
     for (JsonVariant docVar : arr) {
         JsonObject docObj = docVar.as<JsonObject>();
         ScreenConfig sc;
@@ -268,7 +280,11 @@ bool FirestoreRepo::getScreens(std::vector<ScreenConfig>& screens) {
         int lastSlash = name.lastIndexOf('/');
         if (lastSlash >= 0) sc.id = name.substring(lastSlash + 1);
         JsonObject fields = docObj["fields"].as<JsonObject>();
-        if (fields.containsKey("type")) firestoreFieldToString(fields["type"].as<JsonObject>(), sc.type);
+        if (fields.containsKey("type")) {
+            firestoreFieldToString(fields["type"].as<JsonObject>(), sc.type);
+            // Normalize to uppercase for consistent comparison
+            sc.type.toUpperCase();
+        }
         if (fields.containsKey("order")) firestoreFieldToInt(fields["order"].as<JsonObject>(), sc.order);
         if (fields.containsKey("enabled")) firestoreFieldToBool(fields["enabled"].as<JsonObject>(), sc.enabled);
         if (fields.containsKey("durationMs")) { int d; firestoreFieldToInt(fields["durationMs"].as<JsonObject>(), d); sc.durationMs = d; }
@@ -277,6 +293,9 @@ bool FirestoreRepo::getScreens(std::vector<ScreenConfig>& screens) {
         if (fields.containsKey("assetId")) firestoreFieldToString(fields["assetId"].as<JsonObject>(), sc.assetId);
         screens.push_back(sc);
     }
+    Serial.print(F("[Firestore] getScreens: parsed "));
+    Serial.print(screens.size());
+    Serial.println(F(" screens"));
     // Sort by order
     for (size_t i = 0; i < screens.size(); i++) {
         for (size_t j = i + 1; j < screens.size(); j++) {
@@ -329,17 +348,55 @@ bool FirestoreRepo::getSharedScreen(const String& pairId, const String& sharedSc
     return true;
 }
 
-// Convert Firestore arrayValue of [index,color] pairs to flat JSON array for AssetCache::parseAsset
+// Convert Firestore arrayValue of {color, index} objects to flat JSON array for AssetCache::parseAsset
+// Format: [{color: 55807, index: 71}, {color: 55807, index: 73}]
 static void appendFirestorePixelArray(JsonArray& out, JsonVariant firestoreArr) {
-    if (!firestoreArr.containsKey("arrayValue") || !firestoreArr["arrayValue"].containsKey("values")) return;
+    if (!firestoreArr.containsKey("arrayValue") || !firestoreArr["arrayValue"].containsKey("values")) {
+        Serial.println(F("[Firestore] appendFirestorePixelArray: no arrayValue/values"));
+        return;
+    }
     JsonArray values = firestoreArr["arrayValue"]["values"].as<JsonArray>();
+    Serial.print(F("[Firestore] appendFirestorePixelArray: processing "));
+    Serial.print(values.size());
+    Serial.println(F(" pixel objects"));
     for (JsonVariant v : values) {
-        if (!v.containsKey("arrayValue") || !v["arrayValue"].containsKey("values")) continue;
-        JsonArray pair = v["arrayValue"]["values"].as<JsonArray>();
-        if (pair.size() >= 2) {
-            JsonArray row = out.add<JsonArray>();
-            row.add(pair[0].as<int>());
-            row.add(pair[1].as<uint32_t>());
+        // Check if it's a mapValue (object format: {color: X, index: Y})
+        if (v.containsKey("mapValue") && v["mapValue"].containsKey("fields")) {
+            JsonObject fields = v["mapValue"]["fields"].as<JsonObject>();
+            int index = -1;
+            uint32_t color = 0;
+            
+            if (fields.containsKey("index")) {
+                int idx;
+                if (firestoreFieldToInt(fields["index"].as<JsonObject>(), idx)) {
+                    index = idx;
+                }
+            }
+            if (fields.containsKey("color")) {
+                // Color is stored as integerValue in Firestore
+                JsonObject colorField = fields["color"].as<JsonObject>();
+                if (colorField.containsKey("integerValue")) {
+                    color = colorField["integerValue"].as<uint32_t>();
+                } else if (colorField.containsKey("stringValue")) {
+                    // Fallback for string representation
+                    color = strtoul(colorField["stringValue"].as<const char*>(), nullptr, 10);
+                }
+            }
+            
+            if (index >= 0) {
+                JsonArray row = out.add<JsonArray>();
+                row.add(index);
+                row.add(color);
+            }
+        }
+        // Legacy support: array format [[index, color], ...]
+        else if (v.containsKey("arrayValue") && v["arrayValue"].containsKey("values")) {
+            JsonArray pair = v["arrayValue"]["values"].as<JsonArray>();
+            if (pair.size() >= 2) {
+                JsonArray row = out.add<JsonArray>();
+                row.add(pair[0].as<int>());
+                row.add(pair[1].as<uint32_t>());
+            }
         }
     }
 }
@@ -361,23 +418,76 @@ bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset) {
     DocumentMask mask;
     GetDocumentOptions options(mask);
     String path = getAssetPath(assetId);
+    Serial.print(F("[Firestore] getAsset: querying path="));
+    Serial.print(path);
+    Serial.print(F(" projectId="));
+    Serial.println(projectId);
+    
     String response = documents->get(*aClient, parent, path, options);
-    if (aClient->lastError().code() != 0) return false;
+    
+    // Check for async client errors
+    int errorCode = aClient->lastError().code();
+    if (errorCode != 0) {
+        Serial.print(F("[Firestore] getAsset failed: id="));
+        Serial.print(assetId);
+        Serial.print(F(" path="));
+        Serial.print(path);
+        Serial.print(F(" errorCode="));
+        Serial.print(errorCode);
+        Serial.print(F(" errorMsg="));
+        Serial.println(aClient->lastError().message());
+        return false;
+    }
+    
+    // Check if response is empty
+    if (response.length() == 0) {
+        Serial.print(F("[Firestore] getAsset empty response: id="));
+        Serial.print(assetId);
+        Serial.print(F(" path="));
+        Serial.print(path);
+        Serial.print(F(" (document may not exist or async not ready)"));
+        Serial.println();
+        return false;
+    }
 
-    DynamicJsonDocument doc(8192);
-    if (deserializeJson(doc, response) != DeserializationError::Ok) return false;
-    if (!doc.containsKey("fields")) return false;
+    // Log raw response for debugging (first 500 chars)
+    Serial.print(F("[Firestore] getAsset raw response (first 500): "));
+    String responsePreview = response.length() > 500 ? response.substring(0, 500) : response;
+    Serial.println(responsePreview);
+    
+    DynamicJsonDocument doc(16384); // Increased from 8192 for larger assets
+    DeserializationError error = deserializeJson(doc, response);
+    if (error != DeserializationError::Ok) {
+        Serial.print(F("[Firestore] getAsset parse error: id="));
+        Serial.print(assetId);
+        Serial.print(F(" error="));
+        Serial.print(error.c_str());
+        Serial.print(F(" responseLen="));
+        Serial.println(response.length());
+        return false;
+    }
+    if (!doc.containsKey("fields")) {
+        Serial.print(F("[Firestore] getAsset: no 'fields' for id="));
+        Serial.println(assetId);
+        return false;
+    }
 
     JsonObject fields = doc["fields"].as<JsonObject>();
     if (fields.containsKey("type")) firestoreFieldToString(fields["type"].as<JsonObject>(), asset.type);
     if (fields.containsKey("encoding")) firestoreFieldToString(fields["encoding"].as<JsonObject>(), asset.encoding);
 
-    DynamicJsonDocument flat(8192);
+    DynamicJsonDocument flat(16384); // Increased for larger assets
     flat["type"] = asset.type;
     flat["encoding"] = asset.encoding;
     if (fields.containsKey("pixels")) {
+        Serial.println(F("[Firestore] Found 'pixels' field, parsing..."));
         JsonArray pixels = flat.createNestedArray("pixels");
         appendFirestorePixelArray(pixels, fields["pixels"]);
+        Serial.print(F("[Firestore] Parsed "));
+        Serial.print(pixels.size());
+        Serial.println(F(" pixels"));
+    } else {
+        Serial.println(F("[Firestore] No 'pixels' field found"));
     }
     if (fields.containsKey("basePixels")) {
         JsonArray basePixels = flat.createNestedArray("basePixels");
@@ -406,6 +516,14 @@ bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset) {
         flat["loop"] = l;
     }
     serializeJson(flat, asset.pixelsJson);
+    Serial.print(F("[Firestore] getAsset: id="));
+    Serial.print(assetId);
+    Serial.print(F(" type="));
+    Serial.print(asset.type);
+    Serial.print(F(" encoding="));
+    Serial.print(asset.encoding);
+    Serial.print(F(" pixelsJsonLen="));
+    Serial.println(asset.pixelsJson.length());
     return true;
 }
 

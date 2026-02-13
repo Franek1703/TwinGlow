@@ -105,4 +105,5 @@ void RenderAsset::applyDeltaFrame(const std::vector<Pixel>& basePixels, const st
             matrix->setPixel(x, y, matrix->color(pixel.color));
         }
     }
+    matrix->show();
 }
