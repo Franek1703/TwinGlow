@@ -15,6 +15,7 @@
 #include "BleProvisioning.h"
 #include "WifiManager.h"
 #include "FirebaseClientWrap.h"
+#include <ArduinoJson.h>
 #include "FirestoreRepo.h"
 #include "RtdbRepo.h"
 #include "TimeSync.h"
@@ -272,16 +273,39 @@ void handleWifiConnecting() {
 
 void handleTimeSync() {
     static bool syncAttempted = false;
+    static unsigned long syncStartMs = 0;
     
     if (!syncAttempted) {
+        syncStartMs = millis();
         if (timeSync.sync(firebaseClient.getApp())) {
-            syncAttempted = true;
-            fsm.transition(DeviceState::FIREBASE_CONNECTING);
+            // Verify time is valid before proceeding
+            delay(100); // Small delay to let time() update
+            time_t now = time(nullptr);
+            if (now >= 1000000000) {
+                Serial.print(F("[TimeSync] Success, time verified: epoch="));
+                Serial.println(now);
+                syncAttempted = true;
+                fsm.transition(DeviceState::FIREBASE_CONNECTING);
+            } else {
+                Serial.println(F("[TimeSync] Sync reported success but time invalid, waiting..."));
+                // Will retry on next loop
+            }
         } else {
-            Serial.println(F("[TimeSync] Failed, continuing anyway"));
-            syncAttempted = true;
-            // Continue even if sync fails
-            fsm.transition(DeviceState::FIREBASE_CONNECTING);
+            // Wait a bit and check if time becomes valid (NTP might still be syncing)
+            if (millis() - syncStartMs > 3000) {
+                delay(100);
+                time_t now = time(nullptr);
+                if (now >= 1000000000) {
+                    Serial.print(F("[TimeSync] Time became valid after wait: epoch="));
+                    Serial.println(now);
+                    syncAttempted = true;
+                    fsm.transition(DeviceState::FIREBASE_CONNECTING);
+                } else {
+                    Serial.println(F("[TimeSync] Failed, continuing anyway (time may sync later)"));
+                    syncAttempted = true;
+                    fsm.transition(DeviceState::FIREBASE_CONNECTING);
+                }
+            }
         }
     }
 }
@@ -540,9 +564,42 @@ void handleRunning() {
                 matrix.show();
             } else {
                 if (logRender) Serial.println(F("[Render] Branch: CLOCK"));
-                renderClock.render("24H", "HHMM_PLUS_SECONDS_BAR", 
-                                  0xFFFFFF, 0x00FFFF, 0x000000,
-                                  false, true);
+                
+                // Parse config JSON to get clock settings
+                bool showSeconds = true; // Default
+                uint32_t backgroundColor = 0x000000; // Black
+                uint32_t digitColor = 0xFFFFFF; // White
+                uint32_t colonColor = 0x00FFFF; // Cyan
+                String format = "24H"; // Default
+                String layout = "HHMM_PLUS_SECONDS_BAR"; // Default
+                
+                if (screen->configJson.length() > 0) {
+                    DynamicJsonDocument configDoc(2048);
+                    if (deserializeJson(configDoc, screen->configJson) == DeserializationError::Ok) {
+                        if (configDoc.containsKey("showSeconds")) {
+                            showSeconds = configDoc["showSeconds"].as<bool>();
+                        }
+                        if (configDoc.containsKey("backgroundColor")) {
+                            backgroundColor = configDoc["backgroundColor"].as<uint32_t>();
+                        }
+                        if (configDoc.containsKey("digitColor")) {
+                            digitColor = configDoc["digitColor"].as<uint32_t>();
+                        }
+                        if (configDoc.containsKey("colonColor")) {
+                            colonColor = configDoc["colonColor"].as<uint32_t>();
+                        }
+                        // Note: format and layout could also come from config if needed
+                    }
+                }
+                
+                // Choose layout based on showSeconds
+                if (!showSeconds) {
+                    layout = "BIG_HHMM"; // No seconds bar
+                }
+                
+                renderClock.render(format, layout, 
+                                  digitColor, colonColor, backgroundColor,
+                                  false, showSeconds);
             }
         } else if (typeUpper == "SENSOR" && bme680Present) {
             if (logRender) Serial.println(F("[Render] Branch: SENSOR"));

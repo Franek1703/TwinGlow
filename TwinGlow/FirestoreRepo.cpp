@@ -291,6 +291,30 @@ bool FirestoreRepo::getScreens(std::vector<ScreenConfig>& screens) {
         if (fields.containsKey("pairId")) firestoreFieldToString(fields["pairId"].as<JsonObject>(), sc.pairId);
         if (fields.containsKey("sharedScreenId")) firestoreFieldToString(fields["sharedScreenId"].as<JsonObject>(), sc.sharedScreenId);
         if (fields.containsKey("assetId")) firestoreFieldToString(fields["assetId"].as<JsonObject>(), sc.assetId);
+        // Load config JSON for CLOCK/SENSOR screens
+        if (fields.containsKey("config")) {
+            // Firestore stores nested objects as mapValue with fields
+            JsonObject configField = fields["config"].as<JsonObject>();
+            if (configField.containsKey("mapValue") && configField["mapValue"].containsKey("fields")) {
+                JsonObject configFields = configField["mapValue"]["fields"].as<JsonObject>();
+                DynamicJsonDocument configDoc(2048);
+                // Convert Firestore mapValue fields to flat JSON
+                JsonObject configObj = configDoc.to<JsonObject>();
+                // Copy all fields from Firestore format to JSON format
+                for (JsonPair kv : configFields) {
+                    String key = kv.key().c_str();
+                    JsonObject fieldObj = kv.value().as<JsonObject>();
+                    if (fieldObj.containsKey("booleanValue")) {
+                        configObj[key] = fieldObj["booleanValue"].as<bool>();
+                    } else if (fieldObj.containsKey("integerValue")) {
+                        configObj[key] = fieldObj["integerValue"].as<uint32_t>();
+                    } else if (fieldObj.containsKey("stringValue")) {
+                        configObj[key] = fieldObj["stringValue"].as<String>();
+                    }
+                }
+                serializeJson(configDoc, sc.configJson);
+            }
+        }
         screens.push_back(sc);
     }
     Serial.print(F("[Firestore] getScreens: parsed "));
