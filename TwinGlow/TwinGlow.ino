@@ -228,13 +228,29 @@ void handleProvisioningBle() {
         nvs.setWifiPass(bleProvisioning.getPass());
         nvs.setClaimedUid(bleProvisioning.getUid());
         nvs.setProvisioned(true);
-        
-        Serial.println(F("[BLE] Provisioning complete, saving credentials"));
-        
+
+        // Keep the in-memory copy in step with NVS. setup() read claimedUid
+        // before BLE had received anything, so without this the device reaches
+        // DEVICE_CLAIMING with an empty UID, skips claiming, and never shows up
+        // in the app. Redundant with the reboot below, but the handler should
+        // not silently depend on it.
+        claimedUid = bleProvisioning.getUid();
+
+        Serial.println(F("[BLE] Provisioning complete, credentials saved"));
+
+        matrix.fill(matrix.color(0, 255, 0)); // Green: provisioned
+        matrix.show();
+        delay(500);
+
+        // Reboot, as the BLE provisioning protocol specifies. A clean boot
+        // reloads NVS and brings up Wi-Fi/TLS with the BLE stack already
+        // released, which is the largest single block of heap the Firebase
+        // work has to fit around.
+        Serial.println(F("[BLE] Rebooting to start provisioned"));
+        Serial.flush();
         bleStarted = false;
-        
-        // Transition to Wi-Fi connecting
-        fsm.transition(DeviceState::WIFI_CONNECTING);
+        nvs.end();
+        ESP.restart();
     }
 }
 

@@ -15,7 +15,14 @@ void StateMachine::setState(DeviceState newState) {
         Serial.print(F("[FSM] State: "));
         Serial.print(stateToString(currentState));
         Serial.print(F(" -> "));
-        Serial.println(stateToString(newState));
+        Serial.print(stateToString(newState));
+        // Heap at each transition: the Firestore asset fetch is the tightest
+        // consumer, so this makes a starved heap obvious in the log.
+        Serial.print(F("  [heap="));
+        Serial.print(ESP.getFreeHeap());
+        Serial.print(F(" maxBlock="));
+        Serial.print(ESP.getMaxAllocHeap());
+        Serial.println(F("]"));
         currentState = newState;
         entryPending = true;
     }

@@ -44,7 +44,17 @@ private:
     BLECharacteristic* pCharSsid;
     BLECharacteristic* pCharPass;
     BLECharacteristic* pCharUid;
-    
+
+    // The BLE objects do not own their callbacks, so stop() frees these.
+    BLEServerCallbacks* pServerCallbacks;
+    BLECharacteristicCallbacks* pSsidCallbacks;
+    BLECharacteristicCallbacks* pPassCallbacks;
+    BLECharacteristicCallbacks* pUidCallbacks;
+
+    // BLEDevice::deinit(true) releases the controller memory permanently for
+    // this boot, so BLE cannot be brought back up without a reboot.
+    bool stackReleased;
+
     String ssid;
     String pass;
     String uid;

@@ -66,9 +66,12 @@ public:
     }
 };
 
-BleProvisioning::BleProvisioning() 
+BleProvisioning::BleProvisioning()
     : pServer(nullptr), pService(nullptr),
       pCharSsid(nullptr), pCharPass(nullptr), pCharUid(nullptr),
+      pServerCallbacks(nullptr), pSsidCallbacks(nullptr),
+      pPassCallbacks(nullptr), pUidCallbacks(nullptr),
+      stackReleased(false),
       deviceConnected(false), advertising(false), oldDeviceConnected(false) {
 }
 
@@ -81,46 +84,56 @@ bool BleProvisioning::begin() {
         Serial.println(F("[BLE] Already initialized"));
         return true;
     }
-    
+    if (stackReleased) {
+        // stop() released the controller memory; it cannot be reclaimed
+        // without a reboot.
+        Serial.println(F("[BLE] Stack already released this boot, reboot to re-provision"));
+        return false;
+    }
+
     // Initialize BLE
     BLEDevice::init(BLE_DEVICE_NAME);
-    
+
     // Create server
     pServer = BLEDevice::createServer();
-    ServerCallbacks* serverCallbacks = new ServerCallbacks(&deviceConnected);
-    pServer->setCallbacks(serverCallbacks);
-    
+    pServerCallbacks = new ServerCallbacks(&deviceConnected);
+    pServer->setCallbacks(pServerCallbacks);
+
     // Create service
     pService = pServer->createService(BLE_SERVICE_UUID);
-    
+
     // Create SSID characteristic
     pCharSsid = pService->createCharacteristic(
         BLE_CHAR_SSID_UUID,
         BLECharacteristic::PROPERTY_WRITE
     );
-    pCharSsid->setCallbacks(new CharacteristicCallbacks(&ssid, &pass, &uid, BLE_CHAR_SSID_UUID));
-    
+    pSsidCallbacks = new CharacteristicCallbacks(&ssid, &pass, &uid, BLE_CHAR_SSID_UUID);
+    pCharSsid->setCallbacks(pSsidCallbacks);
+
     // Create Password characteristic
     pCharPass = pService->createCharacteristic(
         BLE_CHAR_PASS_UUID,
         BLECharacteristic::PROPERTY_WRITE
     );
-    pCharPass->setCallbacks(new CharacteristicCallbacks(&ssid, &pass, &uid, BLE_CHAR_PASS_UUID));
-    
+    pPassCallbacks = new CharacteristicCallbacks(&ssid, &pass, &uid, BLE_CHAR_PASS_UUID);
+    pCharPass->setCallbacks(pPassCallbacks);
+
     // Create UID characteristic
     pCharUid = pService->createCharacteristic(
         BLE_CHAR_UID_UUID,
         BLECharacteristic::PROPERTY_WRITE
     );
-    pCharUid->setCallbacks(new CharacteristicCallbacks(&ssid, &pass, &uid, BLE_CHAR_UID_UUID));
-    
+    pUidCallbacks = new CharacteristicCallbacks(&ssid, &pass, &uid, BLE_CHAR_UID_UUID);
+    pCharUid->setCallbacks(pUidCallbacks);
+
     // Start service
     pService->start();
-    
+
     // Start advertising
     startAdvertising();
-    
-    Serial.println(F("[BLE] Provisioning service started"));
+
+    Serial.print(F("[BLE] Provisioning service started, free heap="));
+    Serial.println(ESP.getFreeHeap());
     return true;
 }
 
@@ -139,12 +152,46 @@ void BleProvisioning::startAdvertising() {
 }
 
 void BleProvisioning::stop() {
-    if (pServer != nullptr) {
-        BLEDevice::stopAdvertising();
-        advertising = false;
-        deviceConnected = false;
-        Serial.println(F("[BLE] Stopped"));
-    }
+    if (pServer == nullptr) return;
+
+    uint32_t heapBefore = ESP.getFreeHeap();
+
+    BLEDevice::stopAdvertising();
+    advertising = false;
+    deviceConnected = false;
+
+    // Stopping advertising alone leaves the BT controller and Bluedroid host
+    // resident, holding tens of KB of heap for the rest of the session - which
+    // then has to cover Wi-Fi, TLS and multi-KB Firestore responses.
+    // deinit(true) also releases the controller memory permanently for this boot.
+    // It deletes the server (and with it the service and characteristics), so
+    // every pointer into that tree must be dropped here.
+    BLEDevice::deinit(true);
+    stackReleased = true;
+
+    pServer = nullptr;
+    pService = nullptr;
+    pCharSsid = nullptr;
+    pCharPass = nullptr;
+    pCharUid = nullptr;
+
+    // The BLE objects never owned these.
+    delete pServerCallbacks;
+    pServerCallbacks = nullptr;
+    delete pSsidCallbacks;
+    pSsidCallbacks = nullptr;
+    delete pPassCallbacks;
+    pPassCallbacks = nullptr;
+    delete pUidCallbacks;
+    pUidCallbacks = nullptr;
+
+    Serial.print(F("[BLE] Stopped and stack released, heap "));
+    Serial.print(heapBefore);
+    Serial.print(F(" -> "));
+    Serial.print(ESP.getFreeHeap());
+    Serial.print(F(" (reclaimed "));
+    Serial.print((int32_t)ESP.getFreeHeap() - (int32_t)heapBefore);
+    Serial.println(F(" bytes)"));
 }
 
 bool BleProvisioning::isProvisioningComplete() {
