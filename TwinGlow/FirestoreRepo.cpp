@@ -269,7 +269,7 @@ bool FirestoreRepo::getScreens(std::vector<ScreenConfig>& screens) {
         sc.type = "";
         sc.order = 0;
         sc.enabled = true;
-        sc.durationMs = 5000;
+        sc.durationMs = SCREEN_DEFAULT_DURATION_MS;
         sc.pairId = "";
         sc.sharedScreenId = "";
         sc.assetId = "";
@@ -287,7 +287,13 @@ bool FirestoreRepo::getScreens(std::vector<ScreenConfig>& screens) {
         }
         if (fields.containsKey("order")) firestoreFieldToInt(fields["order"].as<JsonObject>(), sc.order);
         if (fields.containsKey("enabled")) firestoreFieldToBool(fields["enabled"].as<JsonObject>(), sc.enabled);
-        if (fields.containsKey("durationMs")) { int d; firestoreFieldToInt(fields["durationMs"].as<JsonObject>(), d); sc.durationMs = d; }
+        if (fields.containsKey("durationMs")) {
+            int d = 0;
+            if (firestoreFieldToInt(fields["durationMs"].as<JsonObject>(), d) && d > 0) {
+                // Clamp up, so a too-small value cannot spin the playlist.
+                sc.durationMs = (d < SCREEN_MIN_DURATION_MS) ? SCREEN_MIN_DURATION_MS : d;
+            }
+        }
         if (fields.containsKey("pairId")) firestoreFieldToString(fields["pairId"].as<JsonObject>(), sc.pairId);
         if (fields.containsKey("sharedScreenId")) firestoreFieldToString(fields["sharedScreenId"].as<JsonObject>(), sc.sharedScreenId);
         if (fields.containsKey("assetId")) firestoreFieldToString(fields["assetId"].as<JsonObject>(), sc.assetId);

@@ -4,13 +4,22 @@ ScreenPlaylist::ScreenPlaylist() : currentIndex(0), screenStartMs(0) {
 }
 
 void ScreenPlaylist::setScreens(const std::vector<ScreenConfig>& newScreens) {
-    screens = newScreens;
+    // Screens disabled in the app are dropped here rather than skipped during
+    // rotation, so the playlist only ever holds screens that should be shown.
+    screens.clear();
+    for (size_t i = 0; i < newScreens.size(); i++) {
+        if (newScreens[i].enabled) {
+            screens.push_back(newScreens[i]);
+        }
+    }
     currentIndex = 0;
     screenStartMs = millis();
-    
+
     Serial.print(F("[Playlist] Loaded "));
     Serial.print(screens.size());
-    Serial.println(F(" screens"));
+    Serial.print(F(" of "));
+    Serial.print(newScreens.size());
+    Serial.println(F(" screens (disabled ones filtered out)"));
 }
 
 void ScreenPlaylist::next() {
@@ -64,13 +73,17 @@ String ScreenPlaylist::getCurrentAssetId() const {
 }
 
 bool ScreenPlaylist::shouldRotate() {
-    if (screens.empty()) return false;
-    
+    // Nothing to rotate to.
+    if (screens.size() < 2) return false;
+
     ScreenConfig* screen = getCurrentScreen();
     if (screen == nullptr) return false;
-    
+
+    // durationMs <= 0 means "hold this screen", not "advance immediately".
+    if (screen->durationMs <= 0) return false;
+
     unsigned long elapsed = millis() - screenStartMs;
-    return elapsed >= screen->durationMs;
+    return elapsed >= (unsigned long)screen->durationMs;
 }
 
 void ScreenPlaylist::resetRotationTimer() {
