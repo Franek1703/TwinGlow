@@ -13,14 +13,14 @@ String FirestoreRepo::getScreensPath() const { return ""; }
 String FirestoreRepo::getAssetPath(const String&) const { return ""; }
 String FirestoreRepo::getSharedScreenPath(const String&, const String&) const { return ""; }
 String FirestoreRepo::getUserDevicePath(const String&) const { return ""; }
-bool FirestoreRepo::getDeviceDoc(int& v, bool& b) { v = 0; b = false; return false; }
+bool FirestoreRepo::getDeviceDoc(int& v, bool& b, String& tz) { v = 0; b = false; tz = ""; return false; }
 bool FirestoreRepo::createDeviceDoc(const String&) { return false; }
 bool FirestoreRepo::updateDeviceCapability(bool) { return false; }
 bool FirestoreRepo::claimDevice(const String&) { return false; }
 bool FirestoreRepo::getScreens(std::vector<ScreenConfig>&) { return false; }
 bool FirestoreRepo::getSharedScreen(const String&, const String&, SharedScreenConfig&) { return false; }
 bool FirestoreRepo::getAsset(const String&, AssetData&) { return false; }
-bool FirestoreRepo::checkConfigVersion(int& version) { bool d; return getDeviceDoc(version, d); }
+bool FirestoreRepo::checkConfigVersion(int& version, String& tzPosix) { bool d; return getDeviceDoc(version, d, tzPosix); }
 #else
 
 FirestoreRepo::FirestoreRepo(FirebaseClientWrap* wrap, const String& projId, const String& devId)
@@ -79,7 +79,10 @@ static bool firestoreFieldToBool(const JsonObject& field, bool& out) {
     return false;
 }
 
-bool FirestoreRepo::getDeviceDoc(int& configVersion, bool& bme680Present) {
+bool FirestoreRepo::getDeviceDoc(int& configVersion, bool& bme680Present, String& tzPosix) {
+    // Cleared up front so every failure path below leaves it empty, which the
+    // caller reads as "no timezone in the doc" and leaves the cached one alone.
+    tzPosix = "";
     if (wrap == nullptr) return false;
     FirebaseFirestoreType* documents = static_cast<FirebaseFirestoreType*>(wrap->getFirestore());
     AsyncClientClass* aClient = wrap->getAsyncClient();
@@ -118,6 +121,9 @@ bool FirestoreRepo::getDeviceDoc(int& configVersion, bool& bme680Present) {
     configVersion = 0;
     if (fields.containsKey("configVersion")) {
         firestoreFieldToInt(fields["configVersion"].as<JsonObject>(), configVersion);
+    }
+    if (fields.containsKey("tzPosix")) {
+        firestoreFieldToString(fields["tzPosix"].as<JsonObject>(), tzPosix);
     }
     bme680Present = false;
     if (fields.containsKey("hw")) {
@@ -188,7 +194,8 @@ bool FirestoreRepo::claimDevice(const String& uid) {
     Serial.print(F("[Claiming] Ensuring device doc exists..."));
     int cv;
     bool bme;
-    if (!getDeviceDoc(cv, bme)) {
+    String tz;
+    if (!getDeviceDoc(cv, bme, tz)) {
         Serial.println(F(" getDeviceDoc failed, creating device doc"));
         if (!createDeviceDoc(FW_VERSION)) {
             Serial.println(F("[Claiming] createDeviceDoc failed"));
@@ -665,9 +672,9 @@ bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset) {
     return true;
 }
 
-bool FirestoreRepo::checkConfigVersion(int& version) {
+bool FirestoreRepo::checkConfigVersion(int& version, String& tzPosix) {
     bool dummy;
-    return getDeviceDoc(version, dummy);
+    return getDeviceDoc(version, dummy, tzPosix);
 }
 
 #endif // ENABLE_FIRESTORE

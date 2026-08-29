@@ -116,7 +116,18 @@ void setup() {
     // Load brightness
     uint8_t brightness = nvs.getBrightness();
     matrix.setBrightness(brightness);
-    
+
+    // Load the cached timezone. TIME_SYNC runs long before Firestore is
+    // readable, so without this the clock would show UTC for the first minute
+    // of every boot - and forever if the device never gets back online.
+    String cachedTz;
+    if (nvs.getTzPosix(cachedTz)) {
+        timeSync.setTimeZone(cachedTz);
+    } else {
+        Serial.print(F("[NVS] No cached timezone, defaulting to "));
+        Serial.println(F(DEFAULT_TZ_POSIX));
+    }
+
     // Check provisioning status
     if (!nvs.isProvisioned()) {
         Serial.println(F("[NVS] Not provisioned, entering BLE mode"));
@@ -294,6 +305,16 @@ void handleWifiConnecting() {
     }
 }
 
+// Applies a timezone that arrived in the device doc. Empty means the doc has no
+// timezone yet, in which case the cached one stays - a device that has been set
+// up must not fall back to UTC just because the field went missing.
+void applyTimeZone(const String& tzPosix) {
+    if (tzPosix.length() == 0) return;
+    if (tzPosix == timeSync.getTimeZone()) return;
+    nvs.setTzPosix(tzPosix);
+    timeSync.setTimeZone(tzPosix);
+}
+
 void handleTimeSync() {
     static unsigned long stateStartMs = 0;
     static unsigned long lastAttemptMs = 0;
@@ -412,7 +433,9 @@ void handleCapabilityDetect() {
     if (firestoreRepo != nullptr) {
         // Read current state from Firestore
         int dummy;
-        firestoreRepo->getDeviceDoc(dummy, bme680Present);
+        String tzPosix;
+        firestoreRepo->getDeviceDoc(dummy, bme680Present, tzPosix);
+        applyTimeZone(tzPosix);
 
         // Update if changed
         if (bme680Detected != bme680Present) {
@@ -446,7 +469,12 @@ void handleConfigLoading() {
     {
         // Read config version
         int configVersion;
-        if (firestoreRepo->checkConfigVersion(configVersion)) {
+        String tzPosix;
+        if (firestoreRepo->checkConfigVersion(configVersion, tzPosix)) {
+            // Outside the version guard: a timezone change is applied even when
+            // configVersion happens to be unchanged, and costs nothing since the
+            // doc was fetched either way.
+            applyTimeZone(tzPosix);
             if (configVersion != currentConfigVersion) {
                 Serial.print(F("[Config] Loading config version: "));
                 Serial.println(configVersion);
@@ -624,7 +652,8 @@ void handleRunning() {
                 uint32_t colonColor = 0x00FFFF; // Cyan
                 String format = "24H"; // Default
                 String layout = "HHMM_PLUS_SECONDS_BAR"; // Default
-                
+                bool blinkColon = false; // Default
+
                 if (screen->configJson.length() > 0) {
                     DynamicJsonDocument configDoc(2048);
                     if (deserializeJson(configDoc, screen->configJson) == DeserializationError::Ok) {
@@ -640,7 +669,14 @@ void handleRunning() {
                         if (configDoc.containsKey("colonColor")) {
                             colonColor = configDoc["colonColor"].as<uint32_t>();
                         }
-                        // Note: format and layout could also come from config if needed
+                        if (configDoc.containsKey("format")) {
+                            format = configDoc["format"].as<String>();
+                        }
+                        if (configDoc.containsKey("blinkColon")) {
+                            blinkColon = configDoc["blinkColon"].as<bool>();
+                        }
+                        // layout is still derived from showSeconds below rather
+                        // than read from config.
                     }
                 }
                 
@@ -649,9 +685,12 @@ void handleRunning() {
                     layout = "BIG_HHMM"; // No seconds bar
                 }
                 
-                renderClock.render(format, layout, 
+                // Argument order matters here: this call used to pass
+                // (..., false, showSeconds), which put showSeconds into
+                // blinkColon and made the colon blink whenever seconds were on.
+                renderClock.render(format, layout,
                                   digitColor, colonColor, backgroundColor,
-                                  false, showSeconds);
+                                  showSeconds, blinkColon);
             }
         } else if (typeUpper == "SENSOR" && bme680Present) {
             if (logRender) Serial.println(F("[Render] Branch: SENSOR"));
@@ -818,7 +857,13 @@ void checkConfigVersion() {
 
     if (firestoreRepo != nullptr && WiFi.isConnected()) {
         int version;
-        if (firestoreRepo->checkConfigVersion(version)) {
+        String tzPosix;
+        if (firestoreRepo->checkConfigVersion(version, tzPosix)) {
+            // This is the 60s poll, so it is what actually picks up a timezone
+            // the owner changed in the app. Applied before the version guard:
+            // the doc has already been fetched, and a zone change should land
+            // even if the screen config itself is untouched.
+            applyTimeZone(tzPosix);
             if (version != currentConfigVersion) {
                 Serial.println(F("[Config] Version changed, reloading"));
                 fsm.transition(DeviceState::CONFIG_LOADING);
