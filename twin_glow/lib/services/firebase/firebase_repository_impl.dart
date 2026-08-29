@@ -409,6 +409,25 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
 
   // Asset methods
   @override
+  Future<List<AssetModel>> getAssetsByIds(List<String> assetIds) async {
+    final uniqueIds = assetIds.where((id) => id.isNotEmpty).toSet().toList();
+    if (uniqueIds.isEmpty) return const [];
+
+    try {
+      final snapshots = await Future.wait(
+        uniqueIds.map((id) => _firestore.collection('assets').doc(id).get()),
+      );
+
+      return snapshots
+          .where((snapshot) => snapshot.exists && snapshot.data() != null)
+          .map((snapshot) => _assetFromFirestore(snapshot.id, snapshot.data()!))
+          .toList();
+    } catch (e) {
+      throw Exception('Failed to get screen assets: $e');
+    }
+  }
+
+  @override
   Future<List<AssetModel>> getUserAssets(String userId) async {
     try {
       // Support both 'userId' (legacy) and 'ownerUid' (new format)

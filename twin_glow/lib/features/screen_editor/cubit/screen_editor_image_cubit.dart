@@ -155,7 +155,9 @@ class ScreenEditorImageCubit extends Cubit<ScreenEditorImageState> {
       final updatedScreen = ScreenModel(
         id: state.screen.id,
         type: state.screen.type,
-        name: 'Image Screen',
+        name: state.screen.type == ScreenType.animation
+            ? 'Animation Screen'
+            : 'Image Screen',
         enabled: state.screen.enabled,
         isShared: state.isShared,
         previewData: state.screen.previewData,

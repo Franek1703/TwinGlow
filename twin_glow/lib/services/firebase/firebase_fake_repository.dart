@@ -55,6 +55,9 @@ class FirebaseFakeRepository implements FirebaseRepository {
         enabled: true,
         isShared: true,
         previewData: _generateHeartPreview(),
+        assetId: 'asset1',
+        defaultAssetId: 'asset1',
+        availableAssetIds: const ['asset1', 'asset2'],
       ),
       ScreenModel(
         id: 'screen3',
@@ -63,6 +66,9 @@ class FirebaseFakeRepository implements FirebaseRepository {
         enabled: true,
         isShared: true,
         previewData: _generatePulsePreview(),
+        assetId: 'asset3',
+        defaultAssetId: 'asset3',
+        availableAssetIds: const ['asset3', 'default3'],
       ),
       ScreenModel(
         id: 'screen4',
@@ -80,6 +86,7 @@ class FirebaseFakeRepository implements FirebaseRepository {
         name: 'Sunset',
         type: AssetType.image,
         tags: ['nature', 'custom'],
+        pixelData: _generateHeartPreview(),
         isDefault: false,
       ),
       AssetModel(
@@ -87,6 +94,7 @@ class FirebaseFakeRepository implements FirebaseRepository {
         name: 'Mountain',
         type: AssetType.image,
         tags: ['nature', 'landscape'],
+        pixelData: _generatePulsePreview(),
         isDefault: false,
       ),
       AssetModel(
@@ -94,6 +102,7 @@ class FirebaseFakeRepository implements FirebaseRepository {
         name: 'Pulse',
         type: AssetType.animation,
         tags: ['effect'],
+        pixelData: _generatePulsePreview(),
         isDefault: false,
       ),
     ]);
@@ -105,6 +114,7 @@ class FirebaseFakeRepository implements FirebaseRepository {
         name: 'Heart',
         type: AssetType.image,
         tags: ['emoji', 'love'],
+        pixelData: _generateHeartPreview(),
         isDefault: true,
       ),
       AssetModel(
@@ -112,6 +122,7 @@ class FirebaseFakeRepository implements FirebaseRepository {
         name: 'Smile',
         type: AssetType.image,
         tags: ['emoji', 'happy'],
+        pixelData: _generatePulsePreview(),
         isDefault: true,
       ),
       AssetModel(
@@ -119,6 +130,7 @@ class FirebaseFakeRepository implements FirebaseRepository {
         name: 'Wave',
         type: AssetType.animation,
         tags: ['effect', 'water'],
+        pixelData: _generateHeartPreview(),
         isDefault: true,
       ),
     ]);
@@ -313,6 +325,15 @@ class FirebaseFakeRepository implements FirebaseRepository {
   }
 
   // Assets
+  @override
+  Future<List<AssetModel>> getAssetsByIds(List<String> assetIds) async {
+    await Future.delayed(const Duration(milliseconds: 300));
+    final ids = assetIds.toSet();
+    return [..._userAssets, ..._defaultAssets]
+        .where((asset) => ids.contains(asset.id))
+        .toList();
+  }
+
   @override
   Future<List<AssetModel>> getUserAssets(String userId) async {
     await Future.delayed(const Duration(milliseconds: 300));

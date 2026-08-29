@@ -8,6 +8,7 @@ import '../../config/app_typography.dart';
 import '../../core/models/asset_model.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_card.dart';
+import '../../core/widgets/pixel_preview.dart';
 import '../../features/auth/cubit/auth_cubit.dart';
 import '../../features/assets_library/cubit/assets_cubit.dart';
 import '../../services/firebase/firebase_repository_impl.dart';
@@ -157,10 +158,37 @@ class _AssetsViewState extends State<AssetsView> {
                                       color: AppColors.borderSubtle,
                                     ),
                                   ),
-                                  child: Icon(
-                                    _getAssetIcon(asset.type),
-                                    size: 48.sp,
-                                    color: AppColors.textMuted,
+                                  child: Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      if (asset.pixelData != null)
+                                        PixelPreview(data: asset.pixelData!)
+                                      else
+                                        Icon(
+                                          _getAssetIcon(asset.type),
+                                          size: 48.sp,
+                                          color: AppColors.textMuted,
+                                        ),
+                                      if (asset.type == AssetType.animation)
+                                        Positioned(
+                                          right: AppSpacing.sm,
+                                          bottom: AppSpacing.sm,
+                                          child: Container(
+                                            padding: EdgeInsets.all(5.w),
+                                            decoration: BoxDecoration(
+                                              color: Colors.black.withValues(
+                                                alpha: 0.7,
+                                              ),
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: Icon(
+                                              Icons.play_arrow,
+                                              size: 16.sp,
+                                              color: AppColors.accentPurple,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
                                   ),
                                 ),
                               ),

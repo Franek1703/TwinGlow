@@ -33,6 +33,7 @@ abstract class FirebaseRepository {
   );
 
   // Assets
+  Future<List<AssetModel>> getAssetsByIds(List<String> assetIds);
   Future<List<AssetModel>> getUserAssets(String userId);
   Future<List<AssetModel>> getDefaultAssets();
   Future<AssetModel> createAsset(String userId, AssetModel asset);

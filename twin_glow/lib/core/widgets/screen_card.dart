@@ -3,18 +3,21 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../../config/app_colors.dart';
 import '../../config/app_spacing.dart';
 import '../../config/app_typography.dart';
+import '../../core/models/asset_model.dart';
 import '../../core/models/screen_model.dart';
 import 'app_card.dart';
-import 'pixel_preview.dart';
+import 'screen_preview.dart';
 
 class ScreenCard extends StatelessWidget {
   final ScreenModel screen;
+  final List<AssetModel> assets;
   final VoidCallback? onTap;
   final VoidCallback? onToggle;
 
   const ScreenCard({
     super.key,
     required this.screen,
+    this.assets = const [],
     this.onTap,
     this.onToggle,
   });
@@ -32,9 +35,7 @@ class ScreenCard extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 height: 200.w,
-                child: screen.previewData != null
-                    ? PixelPreview(data: screen.previewData!)
-                    : _TypeIconPreview(type: screen.type),
+                child: ScreenPreview(screen: screen, assets: assets),
               ),
               SizedBox(height: AppSpacing.lg),
               // Screen info
@@ -93,49 +94,6 @@ class ScreenCard extends StatelessWidget {
               ),
             ),
         ],
-      ),
-    );
-  }
-
-  IconData _getTypeIcon(ScreenType type) {
-    switch (type) {
-      case ScreenType.clock:
-        return Icons.access_time;
-      case ScreenType.image:
-        return Icons.image;
-      case ScreenType.animation:
-        return Icons.movie;
-      case ScreenType.sensor:
-        return Icons.device_thermostat;
-      case ScreenType.game:
-        return Icons.sports_esports;
-    }
-  }
-}
-
-class _TypeIconPreview extends StatelessWidget {
-  final ScreenType type;
-
-  const _TypeIconPreview({required this.type});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [AppColors.bgElevated, AppColors.bgSecondary],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(AppSpacing.radiusXl),
-        border: Border.all(color: AppColors.borderSubtle),
-      ),
-      child: Center(
-        child: Icon(
-          _getTypeIcon(type),
-          size: 48.sp,
-          color: AppColors.textMuted,
-        ),
       ),
     );
   }

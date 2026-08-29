@@ -162,6 +162,7 @@ class _HomeContent extends StatelessWidget {
                             padding: EdgeInsets.only(bottom: AppSpacing.lg),
                             child: ScreenCard(
                               screen: screen,
+                              assets: state.assets,
                               onTap: () {
                                 final type = screen.type.name.toLowerCase();
                                 context.push('/screen/$type/${screen.id}?deviceId=${device.id}');

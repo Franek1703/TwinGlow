@@ -18,6 +18,7 @@ import '../../views/pairing/pairing_management_view.dart';
 import '../../views/profile/profile_view.dart';
 import '../../views/device_config/device_config_view.dart';
 import '../../views/screen_creation/screen_creation_view.dart';
+import '../core/models/screen_model.dart';
 
 final appRouter = GoRouter(
   initialLocation: '/onboarding',
@@ -94,6 +95,18 @@ final appRouter = GoRouter(
         final id = state.pathParameters['id']!;
         final deviceId = state.uri.queryParameters['deviceId'];
         return ScreenEditorImageView(screenId: id, deviceId: deviceId);
+      },
+    ),
+    GoRoute(
+      path: '/screen/animation/:id',
+      builder: (context, state) {
+        final id = state.pathParameters['id']!;
+        final deviceId = state.uri.queryParameters['deviceId'];
+        return ScreenEditorImageView(
+          screenId: id,
+          deviceId: deviceId,
+          screenType: ScreenType.animation,
+        );
       },
     ),
     GoRoute(
@@ -231,4 +244,3 @@ class _NavItem extends StatelessWidget {
     );
   }
 }
-

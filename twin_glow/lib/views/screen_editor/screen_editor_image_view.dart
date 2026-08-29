@@ -10,7 +10,7 @@ import '../../core/models/asset_model.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_card.dart';
 import '../../core/widgets/asset_selector.dart';
-import '../../core/widgets/pixel_preview.dart';
+import '../../core/widgets/screen_preview.dart';
 import '../../features/screen_editor/cubit/screen_editor_image_cubit.dart';
 import '../../features/assets_library/cubit/assets_cubit.dart';
 import '../../features/auth/cubit/auth_cubit.dart';
@@ -19,12 +19,18 @@ import '../../services/firebase/firebase_repository_impl.dart';
 class ScreenEditorImageView extends StatelessWidget {
   final String screenId;
   final String? deviceId;
+  final ScreenType screenType;
 
   const ScreenEditorImageView({
     super.key,
     required this.screenId,
     this.deviceId,
+    this.screenType = ScreenType.image,
   });
+
+  String get _editorTitle => screenType == ScreenType.animation
+      ? 'Animation Screen Editor'
+      : 'Image Screen Editor';
 
   @override
   Widget build(BuildContext context) {
@@ -32,7 +38,7 @@ class ScreenEditorImageView extends StatelessWidget {
       return Scaffold(
         backgroundColor: AppColors.bgPrimary,
         appBar: AppBar(
-          title: const Text('Image Screen Editor'),
+          title: Text(_editorTitle),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back),
             onPressed: () => context.pop(),
@@ -54,7 +60,7 @@ class ScreenEditorImageView extends StatelessWidget {
           return Scaffold(
             backgroundColor: AppColors.bgPrimary,
             appBar: AppBar(
-              title: const Text('Image Screen Editor'),
+              title: Text(_editorTitle),
               leading: IconButton(
                 icon: const Icon(Icons.arrow_back),
                 onPressed: () => context.pop(),
@@ -68,8 +74,10 @@ class ScreenEditorImageView extends StatelessWidget {
             snapshot.data ??
             ScreenModel(
               id: screenId,
-              type: ScreenType.image,
-              name: 'Image Screen',
+              type: screenType,
+              name: screenType == ScreenType.animation
+                  ? 'Animation Screen'
+                  : 'Image Screen',
               enabled: true,
               isShared: false,
             );
@@ -81,7 +89,7 @@ class ScreenEditorImageView extends StatelessWidget {
               create: (context) {
                 final assetsCubit = context.read<AssetsCubit>();
                 final imageAssets = assetsCubit.state.myAssets
-                    .where((a) => a.type == AssetType.image)
+                    .where((a) => a.type == _assetType)
                     .toList();
                 return ScreenEditorImageCubit(
                   firebaseRepo,
@@ -96,7 +104,7 @@ class ScreenEditorImageView extends StatelessWidget {
           child: Scaffold(
             backgroundColor: AppColors.bgPrimary,
             appBar: AppBar(
-              title: const Text('Image Screen Editor'),
+              title: Text(_editorTitle),
               leading: IconButton(
                 icon: const Icon(Icons.arrow_back),
                 onPressed: () => context.pop(),
@@ -134,11 +142,23 @@ class ScreenEditorImageView extends StatelessWidget {
                 padding: EdgeInsets.all(AppSpacing.xl),
                 child: BlocBuilder<ScreenEditorImageCubit, ScreenEditorImageState>(
                   builder: (context, state) {
-                    final selectedAsset = state.availableAssets.firstWhere(
-                      (a) => a.id == state.selectedAssetId,
-                      orElse: () => state.availableAssets.isNotEmpty
-                          ? state.availableAssets.first
-                          : _createDummyAsset(),
+                    final assetsState = context.watch<AssetsCubit>().state;
+                    final compatibleAssets = [
+                      ...assetsState.myAssets,
+                      ...assetsState.defaultAssets,
+                    ].where((asset) => asset.type == _assetType).toList();
+                    final previewScreen = ScreenModel(
+                      id: state.screen.id,
+                      type: screenType,
+                      name: state.screen.name,
+                      enabled: state.screen.enabled,
+                      isShared: state.isShared,
+                      previewData: state.screen.previewData,
+                      assetId: state.defaultAssetId,
+                      config: state.screen.config,
+                      defaultAssetId: state.defaultAssetId,
+                      availableAssetIds: state.poolAssetIds,
+                      allowManualSwitch: state.screen.allowManualSwitch,
                     );
 
                     return Column(
@@ -153,28 +173,10 @@ class ScreenEditorImageView extends StatelessWidget {
                               SizedBox(
                                 width: double.infinity,
                                 height: 200.h,
-                                child: selectedAsset.pixelData != null
-                                    ? PixelPreview(
-                                        data: selectedAsset.pixelData!,
-                                      )
-                                    : Container(
-                                        decoration: BoxDecoration(
-                                          gradient: LinearGradient(
-                                            colors: [
-                                              AppColors.bgElevated,
-                                              AppColors.bgSecondary,
-                                            ],
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            AppSpacing.radiusLg,
-                                          ),
-                                        ),
-                                        child: Icon(
-                                          Icons.image,
-                                          size: 48.sp,
-                                          color: AppColors.textMuted,
-                                        ),
-                                      ),
+                                child: ScreenPreview(
+                                  screen: previewScreen,
+                                  assets: compatibleAssets,
+                                ),
                               ),
                             ],
                           ),
@@ -239,46 +241,41 @@ class ScreenEditorImageView extends StatelessWidget {
                         ],
                         SizedBox(height: AppSpacing.xl),
                         // Asset Selection
-                        Text('Images on this screen',
-                            style: AppTypography.h2(context)),
+                        Text(
+                          screenType == ScreenType.animation
+                              ? 'Animations on this screen'
+                              : 'Images on this screen',
+                          style: AppTypography.h2(context),
+                        ),
                         SizedBox(height: 2.h),
                         Text(
                           state.poolAssetIds.length > 1
                               ? 'Tap to add or remove. Hold to set the starting image (★). '
                                   'The device cycles them in this order with the action button.'
-                              : 'Tap to add images. Add more than one to cycle them '
+                              : 'Tap to add assets. Add more than one to cycle them '
                                   'with the action button on the device.',
                           style: AppTypography.small(context),
                         ),
                         SizedBox(height: AppSpacing.md),
-                        BlocBuilder<AssetsCubit, AssetsState>(
-                          builder: (context, assetsState) {
-                            final imageAssets = [
-                              ...assetsState.myAssets,
-                              ...assetsState.defaultAssets,
-                            ].where((a) => a.type == AssetType.image).toList();
-
-                            return AssetSelector(
-                              assets: imageAssets,
-                              selectedAssetId: state.selectedAssetId,
-                              poolAssetIds: state.poolAssetIds,
-                              defaultAssetId: state.defaultAssetId,
-                              onAssetSelected: (asset) {
-                                context
-                                    .read<ScreenEditorImageCubit>()
-                                    .selectAsset(asset.id);
-                              },
-                              onAssetToggled: (asset) {
-                                context
-                                    .read<ScreenEditorImageCubit>()
-                                    .toggleAssetInPool(asset.id);
-                              },
-                              onSetDefault: (asset) {
-                                context
-                                    .read<ScreenEditorImageCubit>()
-                                    .setDefaultAsset(asset.id);
-                              },
-                            );
+                        AssetSelector(
+                          assets: compatibleAssets,
+                          selectedAssetId: state.selectedAssetId,
+                          poolAssetIds: state.poolAssetIds,
+                          defaultAssetId: state.defaultAssetId,
+                          onAssetSelected: (asset) {
+                            context
+                                .read<ScreenEditorImageCubit>()
+                                .selectAsset(asset.id);
+                          },
+                          onAssetToggled: (asset) {
+                            context
+                                .read<ScreenEditorImageCubit>()
+                                .toggleAssetInPool(asset.id);
+                          },
+                          onSetDefault: (asset) {
+                            context
+                                .read<ScreenEditorImageCubit>()
+                                .setDefaultAsset(asset.id);
                           },
                         ),
                         SizedBox(height: AppSpacing.xxl),
@@ -324,9 +321,9 @@ class ScreenEditorImageView extends StatelessWidget {
     }
   }
 
-  AssetModel _createDummyAsset() {
-    return AssetModel(id: 'dummy', name: 'No Asset', type: AssetType.image);
-  }
+  AssetType get _assetType => screenType == ScreenType.animation
+      ? AssetType.animation
+      : AssetType.image;
 }
 
 class _ToggleSwitch extends StatelessWidget {

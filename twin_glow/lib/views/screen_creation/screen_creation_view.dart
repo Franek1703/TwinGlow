@@ -89,7 +89,9 @@ class ScreenCreationView extends StatelessWidget {
                       description: 'Animated sequence',
                       onTap: () {
                         final newId = 'screen_${DateTime.now().millisecondsSinceEpoch}';
-                        context.push('/screen/image/$newId?deviceId=$deviceId'); // Animation uses image editor
+                        context.push(
+                          '/screen/animation/$newId?deviceId=$deviceId',
+                        );
                       },
                     ),
                     _ScreenTypeCard(

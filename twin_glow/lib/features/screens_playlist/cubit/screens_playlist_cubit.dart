@@ -1,25 +1,30 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../core/models/asset_model.dart';
 import '../../../core/models/screen_model.dart';
 import '../../../services/firebase/firebase_repository.dart';
 
 class ScreensPlaylistState {
   final List<ScreenModel> screens;
+  final List<AssetModel> assets;
   final bool isLoading;
   final String? error;
 
   ScreensPlaylistState({
     this.screens = const [],
+    this.assets = const [],
     this.isLoading = false,
     this.error,
   });
 
   ScreensPlaylistState copyWith({
     List<ScreenModel>? screens,
+    List<AssetModel>? assets,
     bool? isLoading,
     String? error,
   }) {
     return ScreensPlaylistState(
       screens: screens ?? this.screens,
+      assets: assets ?? this.assets,
       isLoading: isLoading ?? this.isLoading,
       error: error ?? this.error,
     );
@@ -39,10 +44,41 @@ class ScreensPlaylistCubit extends Cubit<ScreensPlaylistState> {
     emit(state.copyWith(isLoading: true));
     try {
       final screens = await firebaseRepository.getScreens(deviceId);
-      emit(state.copyWith(screens: screens, isLoading: false));
+      final assetIds = screens
+          .expand(_assetIdsForScreen)
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+
+      List<AssetModel> assets = const [];
+      String? assetError;
+      try {
+        assets = await firebaseRepository.getAssetsByIds(assetIds);
+      } catch (e) {
+        // Screen configuration should still be usable when an asset was
+        // deleted or is temporarily unavailable.
+        assetError = e.toString();
+      }
+
+      emit(state.copyWith(
+        screens: screens,
+        assets: assets,
+        isLoading: false,
+        error: assetError,
+      ));
     } catch (e) {
       emit(state.copyWith(isLoading: false, error: e.toString()));
     }
+  }
+
+  static Iterable<String> _assetIdsForScreen(ScreenModel screen) sync* {
+    if (!screen.supportsAssetPool) return;
+
+    if (screen.availableAssetIds.isNotEmpty) {
+      yield* screen.availableAssetIds;
+    }
+    if (screen.defaultAssetId != null) yield screen.defaultAssetId!;
+    if (screen.assetId != null) yield screen.assetId!;
   }
 
   Future<void> toggleScreen(String screenId) async {
