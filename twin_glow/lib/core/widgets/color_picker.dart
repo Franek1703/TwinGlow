@@ -161,6 +161,10 @@ class _ColorPickerState extends State<ColorPicker> {
   }
 
   List<Color> _getPresetColors() {
+    // Fully saturated primaries rather than the Material swatches. Colors.red is
+    // #F44336 - on a 16x16 LED panel its green and blue channels leave it looking
+    // washed out next to a pure #FF0000, even though the firmware's gamma
+    // correction now reproduces it faithfully.
     return [
       Colors.white,
       Colors.black,
@@ -168,10 +172,10 @@ class _ColorPickerState extends State<ColorPicker> {
       AppColors.accentMagenta,
       AppColors.accentGreen,
       AppColors.accentPurple,
-      Colors.red,
-      Colors.orange,
-      Colors.yellow,
-      Colors.blue,
+      const Color(0xFFFF0000),
+      const Color(0xFFFF7F00),
+      const Color(0xFFFFFF00),
+      const Color(0xFF0000FF),
     ];
   }
 }
