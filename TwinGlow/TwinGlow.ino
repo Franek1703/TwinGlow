@@ -30,7 +30,8 @@
 #include "Bme680Driver.h"
 #include "FirebaseTest.h"
 
-// Config.h is gitignored, so it may not define this on a fresh checkout.
+// Fallback for a Config.h that predates this flag (it is listed in
+// .gitignore, so local copies can drift from the tracked one).
 // Default to manual-only screen changes; set to 1 in Config.h to auto-rotate.
 #ifndef SCREEN_AUTO_ROTATE
 #define SCREEN_AUTO_ROTATE 0
