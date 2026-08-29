@@ -283,6 +283,22 @@ class FirebaseFakeRepository implements FirebaseRepository {
   }
 
   @override
+  Future<void> setScreenShared(
+    String deviceId,
+    String screenId,
+    String? pairId,
+    bool isShared,
+  ) async {
+    await Future.delayed(const Duration(milliseconds: 300));
+    final screens = _screens[deviceId];
+    if (screens == null) return;
+    final index = screens.indexWhere((s) => s.id == screenId);
+    if (index != -1) {
+      screens[index] = screens[index].copyWith(isShared: isShared);
+    }
+  }
+
+  @override
   Future<void> reorderScreens(String deviceId, List<String> screenIds) async {
     await Future.delayed(const Duration(milliseconds: 300));
     final screens = _screens[deviceId];

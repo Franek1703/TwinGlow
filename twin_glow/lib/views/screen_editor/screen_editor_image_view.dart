@@ -88,6 +88,7 @@ class ScreenEditorImageView extends StatelessWidget {
                   deviceId!,
                   screen,
                   imageAssets,
+                  userId: userId,
                 );
               },
             ),
@@ -238,7 +239,17 @@ class ScreenEditorImageView extends StatelessWidget {
                         ],
                         SizedBox(height: AppSpacing.xl),
                         // Asset Selection
-                        Text('Select Image', style: AppTypography.h2(context)),
+                        Text('Images on this screen',
+                            style: AppTypography.h2(context)),
+                        SizedBox(height: 2.h),
+                        Text(
+                          state.poolAssetIds.length > 1
+                              ? 'Tap to add or remove. Hold to set the starting image (★). '
+                                  'The device cycles them in this order with the action button.'
+                              : 'Tap to add images. Add more than one to cycle them '
+                                  'with the action button on the device.',
+                          style: AppTypography.small(context),
+                        ),
                         SizedBox(height: AppSpacing.md),
                         BlocBuilder<AssetsCubit, AssetsState>(
                           builder: (context, assetsState) {
@@ -250,10 +261,22 @@ class ScreenEditorImageView extends StatelessWidget {
                             return AssetSelector(
                               assets: imageAssets,
                               selectedAssetId: state.selectedAssetId,
+                              poolAssetIds: state.poolAssetIds,
+                              defaultAssetId: state.defaultAssetId,
                               onAssetSelected: (asset) {
                                 context
                                     .read<ScreenEditorImageCubit>()
                                     .selectAsset(asset.id);
+                              },
+                              onAssetToggled: (asset) {
+                                context
+                                    .read<ScreenEditorImageCubit>()
+                                    .toggleAssetInPool(asset.id);
+                              },
+                              onSetDefault: (asset) {
+                                context
+                                    .read<ScreenEditorImageCubit>()
+                                    .setDefaultAsset(asset.id);
                               },
                             );
                           },

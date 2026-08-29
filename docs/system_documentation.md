@@ -133,10 +133,26 @@ Paired users can:
 - Synchronize screen state
 - Send images or animations to each other
 
-Each screen has a **sharing flag** that determines whether it is:
+Each screen has a **sharing flag** (`isShared`) that determines whether it is:
 
 - Local only
 - Shared with the paired user
+
+### Where shared data lives
+
+A screen document owns **all of its content** — including its asset pool. The pair's
+`sharedScreens` collection stores only a **pointer** to which screen is shared, never the content
+itself:
+
+- `/devices/{deviceId}/screens/{screenId}` → `isShared`, `defaultAssetId`, `availableAssetIds`
+- `/pairs/{pairId}/sharedScreens/{sharedScreenId}` → `deviceId`, `screenId`, `ownerUid`, `type`
+
+This keeps multi-image screens working for users who are not paired, and gives a paired user a
+single place to discover what the other person has shared.
+
+> **Status:** pairing is not currently functional — see the known issues in the Firebase
+> documentation. Screens can hold multiple images today; the sharing pointer is written only once
+> a pair exists.
 
 ---
 

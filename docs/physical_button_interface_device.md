@@ -124,16 +124,18 @@ Rationale:
 
 - **● (short press)**
     
-    Switch to the next available image in the screen’s local asset pool.
+    Switch to the next image in the screen’s asset pool (`availableAssetIds` on the screen document).
     
 - **● (long press, ~2–3 seconds)**
     
-    Send the currently displayed image to the paired user (if the screen is marked as `sharedWithPair = true`).
+    Send the currently displayed image to the paired user (only when the screen has a `pairId`).
     
 
 Behavior notes:
 
-- Image switching is local and offline-safe.
+- Image switching is local and offline-safe — the whole pool is cached on config load.
+- Cycling requires at least two assets in the pool, and `allowManualSwitch` not set to `false`.
+- The pool starts on `defaultAssetId`; the current position is runtime state and is never written back to Firestore.
 - Sending content is always an explicit long-press action.
 - No automatic or accidental sharing occurs.
 
@@ -143,11 +145,11 @@ Behavior notes:
 
 - **● (short press)**
     
-    Switch to the next available animation.
+    Switch to the next animation in the pool. Same rules as IMAGE.
     
 - **● (long press, ~2–3 seconds)**
     
-    Send the currently active animation to the paired user (if shared).
+    Send the currently active animation to the paired user (only when the screen has a `pairId`).
     
 
 ---

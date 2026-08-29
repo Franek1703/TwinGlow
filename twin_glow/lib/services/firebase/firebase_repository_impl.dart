@@ -221,6 +221,7 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
         'config': screen.config,
         'previewData': screen.previewData,
         'createdAt': Timestamp.fromDate(DateTime.now()),
+        ..._poolFields(screen),
       });
 
       // Increment device configVersion
@@ -248,6 +249,7 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
         'config': screen.config,
         'previewData': screen.previewData,
         'updatedAt': Timestamp.fromDate(DateTime.now()),
+        ..._poolFields(screen),
       });
 
       // Increment device configVersion
@@ -260,17 +262,116 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
   @override
   Future<void> deleteScreen(String deviceId, String screenId) async {
     try {
-      await _firestore
+      final screenRef = _firestore
           .collection('devices')
           .doc(deviceId)
           .collection('screens')
-          .doc(screenId)
-          .delete();
+          .doc(screenId);
+
+      // Firestore has no foreign keys, so the shared-screen pointer would
+      // dangle if we only deleted the screen. The screen doc records where its
+      // pointer lives, which makes the cleanup a direct delete.
+      final snapshot = await screenRef.get();
+      final data = snapshot.data();
+      final pairId = data?['pairId'] as String?;
+      final sharedScreenId = data?['sharedScreenId'] as String?;
+
+      final batch = _firestore.batch();
+      batch.delete(screenRef);
+      if (pairId != null && sharedScreenId != null) {
+        batch.delete(_sharedScreenRef(pairId, sharedScreenId));
+      }
+      await batch.commit();
 
       // Increment device configVersion
       await _incrementDeviceConfigVersion(deviceId);
     } catch (e) {
       throw Exception('Failed to delete screen: $e');
+    }
+  }
+
+  /// Asset-pool fields, written only for IMAGE/ANIMATION screens so CLOCK and
+  /// SENSOR documents stay free of fields the device would ignore.
+  Map<String, dynamic> _poolFields(ScreenModel screen) {
+    if (!screen.supportsAssetPool) return const {};
+    return {
+      'defaultAssetId': screen.defaultAssetId,
+      'availableAssetIds': screen.availableAssetIds,
+      'allowManualSwitch': screen.allowManualSwitch,
+    };
+  }
+
+  DocumentReference<Map<String, dynamic>> _sharedScreenRef(
+    String pairId,
+    String sharedScreenId,
+  ) {
+    return _firestore
+        .collection('pairs')
+        .doc(pairId)
+        .collection('sharedScreens')
+        .doc(sharedScreenId);
+  }
+
+  @override
+  Future<void> setScreenShared(
+    String deviceId,
+    String screenId,
+    String? pairId,
+    bool isShared,
+  ) async {
+    try {
+      final screenRef = _firestore
+          .collection('devices')
+          .doc(deviceId)
+          .collection('screens')
+          .doc(screenId);
+
+      // Without a pair there is nowhere to point, so record the intent on the
+      // screen and stop. Sharing becomes effective once a pair exists.
+      if (pairId == null || pairId.isEmpty) {
+        await screenRef.update({
+          'isShared': isShared,
+          'updatedAt': Timestamp.fromDate(DateTime.now()),
+        });
+        await _incrementDeviceConfigVersion(deviceId);
+        return;
+      }
+
+      // Deterministic id keeps the operation idempotent - re-sharing the same
+      // screen overwrites its pointer instead of creating a duplicate.
+      final sharedScreenId = '${deviceId}_$screenId';
+      final batch = _firestore.batch();
+
+      if (isShared) {
+        final snapshot = await screenRef.get();
+        batch.update(screenRef, {
+          'isShared': true,
+          'pairId': pairId,
+          'sharedScreenId': sharedScreenId,
+          'updatedAt': Timestamp.fromDate(DateTime.now()),
+        });
+        // The pointer carries no content - only which screen is shared.
+        batch.set(_sharedScreenRef(pairId, sharedScreenId), {
+          'deviceId': deviceId,
+          'screenId': screenId,
+          'ownerUid': _auth.currentUser?.uid,
+          'type': (snapshot.data()?['type'] as String? ?? 'image').toUpperCase(),
+          'sharedAt': Timestamp.fromDate(DateTime.now()),
+        });
+      } else {
+        batch.update(screenRef, {
+          'isShared': false,
+          'pairId': FieldValue.delete(),
+          'sharedScreenId': FieldValue.delete(),
+          'updatedAt': Timestamp.fromDate(DateTime.now()),
+        });
+        batch.delete(_sharedScreenRef(pairId, sharedScreenId));
+      }
+
+      await batch.commit();
+      await _incrementDeviceConfigVersion(deviceId);
+    } catch (e) {
+      throw Exception('Failed to update screen sharing: $e');
     }
   }
 
@@ -431,6 +532,7 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
         if (otherUserId != null) {
           final otherUser = await _getUserById(otherUserId);
           pairing = PairingModel(
+            pairId: pairsQueryA.docs.first.id,
             pairedUserId: otherUserId,
             pairedUserName: otherUser?.displayName ?? otherUser?.email,
             sharedScreensCount: await _countSharedScreens(userId, otherUserId),
@@ -442,6 +544,7 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
         if (otherUserId != null) {
           final otherUser = await _getUserById(otherUserId);
           pairing = PairingModel(
+            pairId: pairsQueryB.docs.first.id,
             pairedUserId: otherUserId,
             pairedUserName: otherUser?.displayName ?? otherUser?.email,
             sharedScreensCount: await _countSharedScreens(userId, otherUserId),
@@ -661,6 +764,11 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
               (data['previewData'] as List).map((row) => List<int>.from(row))
             )
           : null,
+      defaultAssetId: data['defaultAssetId'],
+      availableAssetIds: data['availableAssetIds'] != null
+          ? List<String>.from(data['availableAssetIds'] as List)
+          : const [],
+      allowManualSwitch: data['allowManualSwitch'] ?? true,
     );
   }
 

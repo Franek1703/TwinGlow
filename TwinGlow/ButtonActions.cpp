@@ -56,8 +56,12 @@ void ButtonActions::handleContextActions() {
         }
     } else if (screen->type == "IMAGE" || screen->type == "ANIMATION") {
         if (actionPress == ButtonPressType::SHORT) {
-            if (screen->availableAssetIds.size() > 1) {
+            if (screen->allowManualSwitch && screen->availableAssetIds.size() > 1) {
                 screen->currentAssetIndex = (screen->currentAssetIndex + 1) % screen->availableAssetIds.size();
+                Serial.print(F("[ButtonActions] Asset "));
+                Serial.print(screen->currentAssetIndex + 1);
+                Serial.print(F("/"));
+                Serial.println(screen->availableAssetIds.size());
             }
             buttons->clearEvent(ButtonId::ACTION);
         } else if (actionPress == ButtonPressType::LONG) {

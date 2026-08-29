@@ -50,16 +50,18 @@ This is flexible and avoids hard-coding ownership in the device document.
 ### 3.1 Collections Overview
 
 ```
-/users/{uid}
-/users/{uid}/devices/{deviceId}
+/users/{uid}                                    exists
+/users/{uid}/devices/{deviceId}                 exists
 
-/devices/{deviceId}
-/devices/{deviceId}/screens/{screenId}
+/devices/{deviceId}                             exists
+/devices/{deviceId}/screens/{screenId}          exists
 
-/pairs/{pairId}
-/pairs/{pairId}/sharedScreens/{sharedScreenId}
+/pairs/{pairId}                                 EMPTY - never created, see §7
+/pairs/{pairId}/sharedScreens/{sharedScreenId}  EMPTY - never created, see §7
 
-/assets/{assetId}
+/assets/{assetId}                               exists
+
+/test/{docId}                                   leftover test data, unused
 
 ```
 
@@ -69,16 +71,22 @@ This is flexible and avoids hard-coding ownership in the device document.
 
 **Purpose:** user profile and high-level settings.
 
+What the app actually writes today:
+
 ```json
 {
-  "displayName": "Szymon",
-  "photoURL": null,
-  "createdAt": "serverTimestamp",
-  "timezone": "Europe/Warsaw",
-  "activePairId": "pair_abc"
+  "email": "user@example.com",
+  "createdAt": "serverTimestamp"
 }
 
 ```
+
+| Field | Status |
+| --- | --- |
+| `email` | Written on sign-up. Used to look up a user when sending a pairing invite |
+| `createdAt` | Written on sign-up |
+| `displayName` | Read by the app, but never written — always null in practice |
+| `photoURL`, `timezone`, `activePairId` | Planned, not implemented. Nothing reads or writes them |
 
 ---
 
@@ -107,19 +115,21 @@ Recommended roles:
 
 **Purpose:** device metadata and firmware/config management.
 
+What the device actually writes today:
+
 ```json
 {
-  "name": "TwinGlow 1",
-  "createdAt": "serverTimestamp",
   "fwVersion": "1.0.0",
   "hw": {
-    "matrix": "16x16",
-    "bme680": true
+    "bme680": false
   },
   "configVersion": 42
 }
 
 ```
+
+`name`, `createdAt` and `hw.matrix` appear in earlier drafts of this document but are never
+written by the device or the app. The app falls back to a placeholder when showing a device name.
 
 Why `configVersion`?
 
@@ -152,7 +162,8 @@ Each screen document is **local to the device**, so each user can:
 {
   "order": 10,
   "enabled": true,
-  "type": "CLOCK",
+  "type": "clock",
+  "name": "Clock Screen",
   "durationMs": 8000
 }
 
@@ -164,8 +175,13 @@ Field description:
 | --- | --- | --- |
 | `order` | number | Order in the screen playlist (device-specific) |
 | `enabled` | boolean | Whether the screen is active on this device |
-| `type` | string | Screen type |
+| `type` | string | Screen type. The app writes it **lowercase**; the device uppercases it before comparing |
+| `name` | string | Display name shown in the app |
 | `durationMs` | number | How long the screen is displayed before rotation |
+
+> **Not written today:** the app never writes `durationMs`. The device falls back to
+> `SCREEN_DEFAULT_DURATION_MS`, so every screen currently uses the firmware default. The app also
+> writes `previewData` (a 16×16 grid) which the device ignores.
 
 ---
 
@@ -179,35 +195,67 @@ Field description:
 
 ---
 
-### Shared screen linkage (`sharedRef`)
+### Asset pool (IMAGE / ANIMATION only)
 
-A screen becomes **shared** if it contains:
+A screen owns its own content. These fields are written **only** for `IMAGE` and `ANIMATION`
+screens — `CLOCK` and `SENSOR` documents never carry them:
 
 ```json
-"sharedRef": {
-  "pairId": "pair_abc",
-  "sharedScreenId": "shared_image_01"
+{
+  "isShared": false,
+  "assetId": "asset_heart_01",
+  "defaultAssetId": "asset_heart_01",
+  "availableAssetIds": [
+    "asset_heart_01",
+    "asset_smile_02",
+    "asset_sad_01"
+  ],
+  "allowManualSwitch": true
 }
 
 ```
 
-- If `sharedRef` is present → the screen’s content is loaded from `/pairs/{pairId}/sharedScreens/{sharedScreenId}`
-- If `sharedRef` is absent → the screen is fully local and does not share content
+| Field | Type | Description |
+| --- | --- | --- |
+| `isShared` | boolean | Whether this screen is shared with the paired user |
+| `assetId` | string | Legacy single-asset field, kept in sync with `defaultAssetId`. The device falls back to it when the pool is empty |
+| `defaultAssetId` | string | Asset shown first. The device starts the pool here, not at index 0 |
+| `availableAssetIds` | array&lt;string&gt; | The pool the action button cycles through, in cycle order |
+| `allowManualSwitch` | boolean | When `false`, the action button will not cycle the pool |
 
-Only these types should use `sharedRef`:
+Behavior notes:
 
-- `IMAGE`
-- `ANIMATION`
+- The device caches **every** asset in the pool on config load, so cycling is instant and works
+  offline.
+- Cycling needs at least two entries in the pool.
+- The currently displayed asset is **runtime state on the device** and is deliberately never
+  written back to Firestore — it resets to `defaultAssetId` on reboot or config reload, and the
+  paired device does not follow it.
 
 ---
 
-### Manual asset switching (from device)
+### Shared screen linkage
 
-Manual switching is configured inside the **shared screen content** (not inside the device-local screen), so both users see the same shared pool:
+A shared screen carries two **flat string fields** (not a nested `sharedRef` map — the firmware
+parses flat fields only):
 
-- the device rotates screens locally
-- but when displaying a shared screen, it can cycle through the shared asset pool
-- the currently selected asset is **runtime state** (device-side) and is **not stored in Firestore**
+```json
+{
+  "isShared": true,
+  "pairId": "pair_abc",
+  "sharedScreenId": "tg_f4ec6bb0ef83_screen_1770917521614"
+}
+
+```
+
+- These point at the pointer document under the pair (see §3.7). They record *that* the screen is
+  shared; the content stays on the screen document.
+- `sharedScreenId` is deterministic — `{deviceId}_{screenId}` — so re-sharing overwrites rather
+  than duplicating.
+- When the screen has a pool of its own, the device uses it directly. It reads the pair's document
+  only as a **fallback**, when `availableAssetIds` is empty and both `pairId` and `sharedScreenId`
+  are set.
+- Only `IMAGE` and `ANIMATION` screens are shareable.
 
 ---
 
@@ -264,36 +312,51 @@ Manual switching is configured inside the **shared screen content** (not inside 
 
 ---
 
-### 3.5.2 IMAGE screen (device-local layout + shared content)
+### 3.5.2 IMAGE screen
+
+A private screen with a three-image pool:
 
 ```json
 {
   "order": 20,
   "enabled": true,
-  "type": "IMAGE",
-  "durationMs": 8000,
-  "sharedRef": {
-    "pairId": "pair_abc",
-    "sharedScreenId": "shared_image_01"
-  }
+  "type": "image",
+  "name": "Image Screen",
+  "isShared": false,
+  "assetId": "asset_heart_01",
+  "defaultAssetId": "asset_heart_01",
+  "availableAssetIds": [
+    "asset_heart_01",
+    "asset_smile_02",
+    "asset_sad_01"
+  ],
+  "allowManualSwitch": true
 }
 
 ```
 
+The same screen once shared adds `"isShared": true`, `pairId` and `sharedScreenId`.
+
 ---
 
-### 3.5.3 ANIMATION screen (device-local layout + shared content)
+### 3.5.3 ANIMATION screen
+
+Identical to IMAGE, with animation assets:
 
 ```json
 {
   "order": 30,
   "enabled": true,
-  "type": "ANIMATION",
-  "durationMs": 12000,
-  "sharedRef": {
-    "pairId": "pair_abc",
-    "sharedScreenId": "shared_anim_01"
-  }
+  "type": "animation",
+  "name": "Animation Screen",
+  "isShared": false,
+  "assetId": "asset_anim_blink",
+  "defaultAssetId": "asset_anim_blink",
+  "availableAssetIds": [
+    "asset_anim_blink",
+    "asset_anim_wave"
+  ],
+  "allowManualSwitch": true
 }
 
 ```
@@ -378,67 +441,47 @@ Recommended `state` values:
 
 ---
 
-## 3.7 `/pairs/{pairId}/sharedScreens/{sharedScreenId}` (Shared screen content)
+## 3.7 `/pairs/{pairId}/sharedScreens/{sharedScreenId}` (Shared screen pointer)
 
 ### Purpose
 
-Defines **shared content** for a screen, editable by both users in the pair.
+Records **which screen is shared** with the pair. It holds no content.
 
-This is where shared configuration lives:
-
-- default asset
-- pool of available assets
-- manual switching settings
-- animation loop settings
-
-This document is referenced by one or more device-local screens via `sharedRef`.
-
----
-
-### Shared IMAGE screen example
+Content — the asset pool, the default asset, the manual-switch flag — lives on the screen
+document (§3.5). This document only points at it:
 
 ```json
 {
+  "deviceId": "tg_f4ec6bb0ef83",
+  "screenId": "screen_1770917521614",
+  "ownerUid": "uid_1",
   "type": "IMAGE",
-
-  "defaultAssetId": "asset_heart_01",
-  "availableAssetIds": [
-    "asset_heart_01",
-    "asset_smile_02",
-    "asset_sad_01"
-  ],
-
-  "allowManualSwitch": true,
-
-  "lastEditedBy": "uid_2",
-  "lastEditedAt": "serverTimestamp"
+  "sharedAt": "serverTimestamp"
 }
 
 ```
 
----
+| Field | Type | Description |
+| --- | --- | --- |
+| `deviceId` | string | Device that owns the shared screen |
+| `screenId` | string | The screen being shared |
+| `ownerUid` | string | User who shared it |
+| `type` | string | `IMAGE` or `ANIMATION`, uppercase |
+| `sharedAt` | timestamp | When sharing was enabled |
 
-### Shared ANIMATION screen example
+### Why a pointer rather than the content
 
-```json
-{
-  "type": "ANIMATION",
+Holding several images on one screen is a property of *that screen*, not of a pair. Storing the
+pool here would mean an unpaired user could never have more than one image on a screen. Keeping
+content on the screen document also spares the device an extra REST round-trip for its own
+screens.
 
-  "defaultAssetId": "asset_anim_blink",
-  "availableAssetIds": [
-    "asset_anim_blink",
-    "asset_anim_wave",
-    "asset_anim_heart"
-  ],
+The pointer is written together with the screen update in a single `WriteBatch`, so the two never
+drift apart. Firestore has no foreign keys, so deleting a screen must also delete its pointer —
+the screen document records `pairId` and `sharedScreenId` precisely so this cleanup is a direct
+delete rather than a collection-group query.
 
-  "loop": true,
-  "allowManualSwitch": true,
-
-  "lastEditedBy": "uid_1",
-  "lastEditedAt": "serverTimestamp"
-}
-
-```
+The document id is deterministic: `{deviceId}_{screenId}`.
 
 ---
 
@@ -471,58 +514,69 @@ Store colors as **RGB888**, because:
 
 **Collection:** `/assets/{assetId}`
 
+Document ids are `asset_{epochMillis}`.
+
 ```json
 {
-  "ownerUid": "uid_1",
+  "ownerUid": "Mafae7L0dxMvgxfVxjxmv0q1hbP2",
+  "name": "heart",
   "type": "IMAGE",
   "width": 16,
   "height": 16,
-  "encoding": "SPARSE_I16_RGB888",
+  "encoding": "SPARSE_PACKED_V1",
+  "pixelsPacked": "4700d9ff4900d9ff",
+  "isDefault": false,
+  "tags": [],
   "createdAt": "serverTimestamp",
-  "tags": ["heart"]
+  "updatedAt": "serverTimestamp"
 }
 
 ```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `ownerUid` | string | Creator. Security rules gate writes on this |
+| `name` | string | Display name in the asset library |
+| `type` | string | `IMAGE` or `ANIMATION` |
+| `encoding` | string | `SPARSE_PACKED_V1` |
+| `pixelsPacked` | string | Packed non-black pixels (see §4.4) |
+| `isDefault` | boolean | Built-in asset shown in the "Default Assets" tab |
 
 ---
 
-### 4.4 Static image asset: sparse pixels
+### 4.4 Static image asset: `SPARSE_PACKED_V1`
 
-**Sparse encoding** stores only pixels that are not black.
+Non-black pixels are packed into **one string** of fixed-width 8-character groups. Each group is
+`IIRRGGBB`:
 
-- `index` = 0..255, computed as `index = y*16 + x`
-- `color` = RGB888 integer `0xRRGGBB`
+- `II` — pixel index as 2 hex chars, `index = y*16 + x`, `00`–`FF`
+- `RRGGBB` — colour as 6 hex chars
 
-**Format:** Array of objects (Firestore-friendly format)
-
-```json
-{
-  "ownerUid": "uid_1",
-  "type": "IMAGE",
-  "width": 16,
-  "height": 16,
-  "encoding": "SPARSE_I16_RGB888",
-  "pixels": [
-    {"index": 34, "color": 16711680},
-    {"index": 35, "color": 16711680},
-    {"index": 50, "color": 16711680}
-  ],
-  "createdAt": "serverTimestamp",
-  "tags": ["heart", "default"]
-}
+```
+4700d9ff 4900d9ff
+│ └─ colour 0x00d9ff   │ └─ colour 0x00d9ff
+└─ index 0x47 = 71     └─ index 0x49 = 73
 ```
 
-**Field descriptions:**
-- `index`: Pixel position (0-255), calculated as `y * 16 + x`
-- `color`: RGB888 color value (24-bit, `0xRRGGBB` format)
+Black pixels are implicit and are not stored.
 
-Black pixels are implicit (not stored).
+**Why a packed string:** the previous per-pixel format (`pixels: [{index, color}, ...]`) produced
+Firestore documents around **23 KB**, which the device's Firebase client silently failed to
+buffer — the screen rendered blank. The packed form is roughly **1 KB** for the same image.
+See `_convertToPackedFormat` in `firebase_repository_impl.dart` and `AssetCache::parseAsset` on
+the device.
 
-Black pixels are implicit (not stored).
+> The older `SPARSE_I16_RGB888` encoding with a `pixels` array is **no longer written**. Assets in
+> the live database all use `SPARSE_PACKED_V1`.
 
 ---
 
 ### 4.5 Animation asset: delta sparse frames
+
+> **Unverified.** The live database currently contains no `ANIMATION` assets, so this section
+> could not be checked against real data. Given static images moved to `SPARSE_PACKED_V1` for
+> document-size reasons (§4.4), treat the format below as the original design rather than
+> confirmed behavior, and re-check it against `AssetCache::parseAsset` before relying on it.
 
 Store an initial frame and only changes per frame:
 
@@ -674,10 +728,16 @@ Device processing:
 
 1. Read `/devices/{deviceId}.configVersion`
 2. Fetch `/devices/{deviceId}/screens` ordered by `order`
-3. For screens with `sharedRef`, fetch `/pairs/{pairId}/sharedScreens/{sharedScreenId}`
-4. Collect all referenced `assetId`s from sharedScreens (and local screens if used later)
+3. Read each screen's own `availableAssetIds` / `defaultAssetId`. Only when a screen has an empty
+   pool **and** carries both `pairId` and `sharedScreenId`, fall back to fetching
+   `/pairs/{pairId}/sharedScreens/{sharedScreenId}`
+4. Collect every referenced `assetId` — the whole pool, not just the default
 5. Fetch required `/assets/{assetId}` documents
 6. Build local cache (RAM; optional flash later)
+
+Step 4 caches the entire pool so the action button can switch instantly and offline. If an asset
+is somehow missing at render time, the device retries that one fetch, backing off 10 s between
+attempts.
 
 ### 6.2 Runtime behavior
 
@@ -689,3 +749,48 @@ Device processing:
 
 - device periodically checks `configVersion`
 - when changed → rerun reload flow
+
+---
+
+## 7. Known issues
+
+Verified against the live `twinglow-bab2e` project. These are documented so they are not
+rediscovered from scratch.
+
+### 7.1 Pairing cannot complete — `pairingInvites` is denied by security rules
+
+`sendPairingInvite()` writes to a top-level `pairingInvites` collection, but the deployed
+Firestore rules contain **no `match` block for it**. Firestore denies anything unmatched, so
+every invite write fails.
+
+Consequences, in order:
+
+1. no invite is ever stored;
+2. `/pairs/{pairId}` is never created — the collection does not exist;
+3. no screen ever gets a `pairId`;
+4. the long-press "send to pair" action aborts with *"Cannot send to pair - no pair ID"*.
+
+Fixing this needs a rules block for `pairingInvites` allowing the sender and the addressed
+recipient. The `/pairs/**` rules themselves are already correct and require no change.
+
+### 7.2 Send-to-pair has no receiver
+
+`RtdbRepo::sendToPair()` pushes `{screenId, assetId, ts}` to RTDB `/pairs/{pairId}/events`.
+**Nothing reads that path** — not the device, not the app. The send is write-only, so the
+partner's device never displays what was sent. Two further problems in the same code: `ts` uses
+`millis()` (device uptime, not epoch), so events cannot be ordered across devices or reboots; and
+the return value is discarded, so the serial log reports success even on failure.
+
+Note that `/pairs/{pairId}/events` is an RTDB path and is not listed in §5 — it exists only in
+firmware.
+
+### 7.3 Animation screens are created with type `image`
+
+`screen_creation_view.dart` routes the Animation tile to the image editor, so an animation screen
+is stored with `"type": "image"`.
+
+### 7.4 Development-only security rules
+
+`/devices/{deviceId}` and `/devices/{deviceId}/screens/{screenId}` are `allow read, write: if true`
+— fully open, as the rules' own comments note. The device is unauthenticated and depends on this,
+so tightening it requires giving the device a credential first.

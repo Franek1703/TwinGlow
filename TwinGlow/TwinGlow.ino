@@ -475,19 +475,43 @@ void handleConfigLoading() {
                         Serial.print(F(" pairId="));
                         Serial.print(sc.pairId.length() > 0 ? sc.pairId.c_str() : "(empty)");
                         Serial.print(F(" sharedScreenId="));
-                        Serial.println(sc.sharedScreenId.length() > 0 ? sc.sharedScreenId.c_str() : "(empty)");
-                        if (sc.pairId.length() > 0 && sc.sharedScreenId.length() > 0) {
+                        Serial.print(sc.sharedScreenId.length() > 0 ? sc.sharedScreenId.c_str() : "(empty)");
+                        Serial.print(F(" poolSize="));
+                        Serial.print(sc.availableAssetIds.size());
+                        Serial.print(F(" defaultAssetId="));
+                        Serial.println(sc.defaultAssetId.length() > 0 ? sc.defaultAssetId.c_str() : "(empty)");
+                        // The screen document owns its asset pool. Only fall back
+                        // to the pair's shared document when the screen carries
+                        // no pool of its own.
+                        if (sc.availableAssetIds.empty() && sc.pairId.length() > 0 && sc.sharedScreenId.length() > 0) {
                             SharedScreenConfig sharedConfig;
                             if (firestoreRepo->getSharedScreen(sc.pairId, sc.sharedScreenId, sharedConfig)) {
-                                sc.assetId = sharedConfig.defaultAssetId;
+                                sc.defaultAssetId = sharedConfig.defaultAssetId;
                                 sc.availableAssetIds = sharedConfig.availableAssetIds;
-                                sc.currentAssetIndex = 0;
+                                sc.allowManualSwitch = sharedConfig.allowManualSwitch;
                             }
+                        }
+                        // Start on the default asset, not blindly on the first
+                        // entry of the pool.
+                        sc.currentAssetIndex = 0;
+                        if (sc.defaultAssetId.length() > 0) {
+                            sc.assetId = sc.defaultAssetId;
+                            for (size_t a = 0; a < sc.availableAssetIds.size(); a++) {
+                                if (sc.availableAssetIds[a] == sc.defaultAssetId) {
+                                    sc.currentAssetIndex = (int)a;
+                                    break;
+                                }
+                            }
+                        } else if (sc.assetId.length() == 0 && !sc.availableAssetIds.empty()) {
+                            sc.assetId = sc.availableAssetIds[0];
                         }
                         // Normalize type for comparison
                         String scTypeUpper = sc.type;
                         scTypeUpper.toUpperCase();
-                        if ((scTypeUpper == "IMAGE" || scTypeUpper == "ANIMATION") && sc.assetId.length() > 0) {
+                        // A pool with no default must still be cached, so this
+                        // cannot gate on assetId alone.
+                        if ((scTypeUpper == "IMAGE" || scTypeUpper == "ANIMATION") &&
+                            (sc.assetId.length() > 0 || !sc.availableAssetIds.empty())) {
                             Serial.print(F("[Config] Loading asset for screen["));
                             Serial.print(i);
                             Serial.print(F("]: "));

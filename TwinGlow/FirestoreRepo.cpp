@@ -273,7 +273,10 @@ bool FirestoreRepo::getScreens(std::vector<ScreenConfig>& screens) {
         sc.pairId = "";
         sc.sharedScreenId = "";
         sc.assetId = "";
+        sc.defaultAssetId = "";
         sc.currentAssetIndex = 0;
+        sc.availableAssetIds.clear();
+        sc.allowManualSwitch = true;
         sc.configJson = "";
         if (!docObj.containsKey("name") || !docObj.containsKey("fields")) continue;
         String name = docObj["name"].as<String>();
@@ -297,6 +300,18 @@ bool FirestoreRepo::getScreens(std::vector<ScreenConfig>& screens) {
         if (fields.containsKey("pairId")) firestoreFieldToString(fields["pairId"].as<JsonObject>(), sc.pairId);
         if (fields.containsKey("sharedScreenId")) firestoreFieldToString(fields["sharedScreenId"].as<JsonObject>(), sc.sharedScreenId);
         if (fields.containsKey("assetId")) firestoreFieldToString(fields["assetId"].as<JsonObject>(), sc.assetId);
+        // Asset pool lives on the screen document, so IMAGE/ANIMATION screens
+        // can cycle several assets without depending on a pair.
+        if (fields.containsKey("defaultAssetId")) firestoreFieldToString(fields["defaultAssetId"].as<JsonObject>(), sc.defaultAssetId);
+        if (fields.containsKey("allowManualSwitch")) firestoreFieldToBool(fields["allowManualSwitch"].as<JsonObject>(), sc.allowManualSwitch);
+        if (fields.containsKey("availableAssetIds") && fields["availableAssetIds"].containsKey("arrayValue")) {
+            JsonArray arr = fields["availableAssetIds"]["arrayValue"]["values"].as<JsonArray>();
+            for (JsonObject v : arr) {
+                if (v.containsKey("stringValue")) {
+                    sc.availableAssetIds.push_back(v["stringValue"].as<String>());
+                }
+            }
+        }
         // Load config JSON for CLOCK/SENSOR screens
         if (fields.containsKey("config")) {
             // Firestore stores nested objects as mapValue with fields

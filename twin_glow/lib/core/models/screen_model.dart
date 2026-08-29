@@ -13,8 +13,14 @@ class ScreenModel {
   final bool enabled;
   final bool isShared;
   final List<List<int>>? previewData; // 16x16 pixel grid
-  final String? assetId; // For IMAGE/ANIMATION screens
+  final String? assetId; // Legacy single-image field, kept as fallback
   final Map<String, dynamic>? config; // Screen-specific config
+
+  // Asset pool. IMAGE/ANIMATION only - the device cycles through these with
+  // the action button. Empty means "fall back to the single assetId".
+  final String? defaultAssetId;
+  final List<String> availableAssetIds;
+  final bool allowManualSwitch;
 
   ScreenModel({
     required this.id,
@@ -25,7 +31,14 @@ class ScreenModel {
     this.previewData,
     this.assetId,
     this.config,
+    this.defaultAssetId,
+    this.availableAssetIds = const [],
+    this.allowManualSwitch = true,
   });
+
+  /// Whether this screen type can carry an asset pool.
+  bool get supportsAssetPool =>
+      type == ScreenType.image || type == ScreenType.animation;
 
   ScreenModel copyWith({
     String? id,
@@ -36,6 +49,9 @@ class ScreenModel {
     List<List<int>>? previewData,
     String? assetId,
     Map<String, dynamic>? config,
+    String? defaultAssetId,
+    List<String>? availableAssetIds,
+    bool? allowManualSwitch,
   }) {
     return ScreenModel(
       id: id ?? this.id,
@@ -46,6 +62,9 @@ class ScreenModel {
       previewData: previewData ?? this.previewData,
       assetId: assetId ?? this.assetId,
       config: config ?? this.config,
+      defaultAssetId: defaultAssetId ?? this.defaultAssetId,
+      availableAssetIds: availableAssetIds ?? this.availableAssetIds,
+      allowManualSwitch: allowManualSwitch ?? this.allowManualSwitch,
     );
   }
 

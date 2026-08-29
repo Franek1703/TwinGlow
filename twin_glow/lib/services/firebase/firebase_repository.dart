@@ -25,6 +25,12 @@ abstract class FirebaseRepository {
   Future<void> updateScreen(String deviceId, String screenId, ScreenModel screen);
   Future<void> deleteScreen(String deviceId, String screenId);
   Future<void> reorderScreens(String deviceId, List<String> screenIds);
+  Future<void> setScreenShared(
+    String deviceId,
+    String screenId,
+    String? pairId,
+    bool isShared,
+  );
 
   // Assets
   Future<List<AssetModel>> getUserAssets(String userId);

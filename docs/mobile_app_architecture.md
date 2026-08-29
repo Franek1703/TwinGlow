@@ -305,7 +305,7 @@ Each tile shows:
 * Preview placeholder
 * Duration
 * Enabled toggle
-* Shared badge (if sharedWithPair == true)
+* Shared badge (if `isShared == true`)
 
 Shared badge does NOT show with whom.
 Details visible only in screen editor.

@@ -24,10 +24,14 @@ struct ScreenConfig {
     
     // Asset for IMAGE/ANIMATION (local or from shared defaultAssetId)
     String assetId;
-    // For shared screens with allowManualSwitch: current index into availableAssetIds
+    // Asset shown first; the pool starts here rather than at index 0.
+    String defaultAssetId;
+    // Current index into availableAssetIds, advanced by the action button
     int currentAssetIndex;
     std::vector<String> availableAssetIds;
-    
+    // When false, the action button does not cycle the pool
+    bool allowManualSwitch;
+
     // Config JSON (for CLOCK/SENSOR) - stored as string for simplicity
     String configJson;
 };
