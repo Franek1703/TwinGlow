@@ -193,7 +193,11 @@ The device exposes a custom BLE service with characteristics for:
 ### 10.1 Config Versioning
 
 - Device reads `/devices/{deviceId}.configVersion`
-- This value is periodically polled (Firestore listening is not supported via REST).
+- This value is polled every 60 s (Firestore listening is not supported via REST).
+- To avoid waiting out that minute, the device also reads the RTDB doorbell
+  `/config/{deviceId}/configVersion` every 5 s; when the app ticks it, the
+  Firestore check runs immediately. The doorbell only decides *when* to look -
+  `configVersion` is still what decides whether to reload.
 - If `configVersion` changes → reload config + assets
 
 ### 10.2 Data Loaded
@@ -296,7 +300,9 @@ RTDB is used only for **live and transient data**.
 **Paths:**
 - `/presence/{deviceId}` – heartbeat (updated every 20 seconds)
 - `/telemetry/{deviceId}` – sensor readings (optional, updated every 10 seconds if BME680 present)
-- `/commands/{deviceId}` – runtime commands (polling not yet implemented)
+- `/config/{deviceId}/configVersion` – config-change doorbell, read every 5 seconds
+- `/commands/{deviceId}` – runtime commands (dead code: `RtdbRepo::checkCommands()`
+  exists but has no call site, and the app never writes the node)
 
 **Implementation:**
 - Fields are set individually using nested paths to avoid JSON parsing issues

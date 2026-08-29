@@ -64,6 +64,10 @@ Bme680Driver bme680;
 String deviceId;
 String claimedUid;
 int currentConfigVersion = -1;
+// Last value seen on the RTDB doorbell (/config/{deviceId}/configVersion).
+// -1 means "not read yet"; the first successful read only records the value,
+// since boot has just loaded the config and a reload there would be redundant.
+int lastSeenRevision = -1;
 bool bme680Present = false;
 bool bme680Detected = false;
 float sensorTemp = 0, sensorHumidity = 0, sensorPressure = 0, sensorGas = 0;
@@ -580,6 +584,7 @@ void handleConfigLoading() {
                 scheduler.scheduleTelemetryUpdate(updateTelemetry);
             }
             scheduler.scheduleConfigPoll(checkConfigVersion);
+            scheduler.scheduleRevisionPoll(checkConfigRevision);
             scheduler.scheduleNtpSync(syncTime);
         }
 
@@ -859,8 +864,8 @@ void checkConfigVersion() {
         int version;
         String tzPosix;
         if (firestoreRepo->checkConfigVersion(version, tzPosix)) {
-            // This is the 60s poll, so it is what actually picks up a timezone
-            // the owner changed in the app. Applied before the version guard:
+            // This is what actually picks up a timezone the owner changed in
+            // the app. Applied before the version guard:
             // the doc has already been fetched, and a zone change should land
             // even if the screen config itself is untouched.
             applyTimeZone(tzPosix);
@@ -870,6 +875,33 @@ void checkConfigVersion() {
             }
         }
     }
+}
+
+void checkConfigRevision() {
+    // The doorbell only decides *when* to look; checkConfigVersion() still owns
+    // the actual comparison and the CONFIG_LOADING transition, so the RTDB
+    // counter never has to agree with Firestore's configVersion.
+    DeviceState state = fsm.getState();
+    if (state != DeviceState::RUNNING && state != DeviceState::OFFLINE_RUNNING) return;
+
+    if (rtdbRepo == nullptr || !WiFi.isConnected()) return;
+
+    int revision;
+    // Leave lastSeenRevision untouched on a failed read: a transient error must
+    // not look like a change on the next poll, nor swallow one that happened.
+    if (!rtdbRepo->getConfigRevision(revision)) return;
+
+    if (lastSeenRevision == -1) {
+        lastSeenRevision = revision;
+        return;
+    }
+    if (revision == lastSeenRevision) return;
+
+    lastSeenRevision = revision;
+    Serial.print(F("[Config] RTDB revision changed to "));
+    Serial.print(revision);
+    Serial.println(F(", checking Firestore"));
+    checkConfigVersion();
 }
 
 void syncTime() {

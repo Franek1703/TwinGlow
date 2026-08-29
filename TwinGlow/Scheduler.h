@@ -18,22 +18,26 @@ public:
     void schedulePresenceUpdate(void (*callback)());
     void scheduleTelemetryUpdate(void (*callback)());
     void scheduleConfigPoll(void (*callback)());
+    void scheduleRevisionPoll(void (*callback)());
     void scheduleNtpSync(void (*callback)());
     
 private:
     unsigned long lastPresenceMs;
     unsigned long lastTelemetryMs;
     unsigned long lastConfigPollMs;
+    unsigned long lastRevisionPollMs;
     unsigned long lastNtpSyncMs;
     
     void (*presenceCallback)();
     void (*telemetryCallback)();
     void (*configPollCallback)();
+    void (*revisionPollCallback)();
     void (*ntpSyncCallback)();
     
     void checkPresence();
     void checkTelemetry();
     void checkConfigPoll();
+    void checkRevisionPoll();
     void checkNtpSync();
 };
 

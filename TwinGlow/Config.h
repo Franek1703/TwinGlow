@@ -59,7 +59,12 @@
 // the pre-timezone behaviour rather than guessing a zone the owner may not be in.
 #define DEFAULT_TZ_POSIX "UTC0"
 #define PRESENCE_UPDATE_INTERVAL_MS 20000  // 20 seconds
-#define CONFIG_POLL_INTERVAL_MS 60000      // 60 seconds
+#define CONFIG_POLL_INTERVAL_MS 60000      // 60 seconds (Firestore fallback poll)
+// RTDB "doorbell" check. The app ticks /config/{deviceId}/configVersion on every
+// config change; seeing it move makes the device run the Firestore check straight
+// away instead of waiting out CONFIG_POLL_INTERVAL_MS. Reading one integer is
+// cheap enough to do this often.
+#define REVISION_POLL_INTERVAL_MS 5000     // 5 seconds
 #define TELEMETRY_UPDATE_INTERVAL_MS 10000 // 10 seconds (if BME680 present)
 // SENSOR screen
 #define SENSOR_CYCLE_MS 2500             // AUTO_CYCLE dwell time per metric
