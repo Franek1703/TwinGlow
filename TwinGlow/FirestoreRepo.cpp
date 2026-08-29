@@ -448,7 +448,10 @@ bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset) {
     asset.framesJson = "";
 
     Firestore::Parent parent(projectId, "");
-    DocumentMask mask;
+    // Ask only for the fields the renderer needs. An unmasked get also pulls
+    // name, ownerUid, tags, width, height and createdAt, which is dead weight
+    // on a transfer that is already at the edge of what the client can buffer.
+    DocumentMask mask("type,encoding,pixelsPacked,pixels,basePixels,frames,loop");
     GetDocumentOptions options(mask);
     String path = getAssetPath(assetId);
     Serial.print(F("[Firestore] getAsset: querying path="));
@@ -506,6 +509,15 @@ bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset) {
         Serial.print(path);
         Serial.print(F(" (document may not exist or network timeout)"));
         Serial.println();
+        // An empty body with errorCode 0 is the signature of the client failing
+        // to grow its payload String: without PSRAM it reallocs in 2KB steps
+        // with no reservation, so a large document needs a contiguous block
+        // that a TLS-fragmented heap cannot supply. Largest free block matters
+        // more than total free heap here.
+        Serial.print(F("[Firestore] Heap at failure: free="));
+        Serial.print(ESP.getFreeHeap());
+        Serial.print(F(" largestFreeBlock="));
+        Serial.println(ESP.getMaxAllocHeap());
         Serial.print(F("[Firestore] Full path should be: projects/"));
         Serial.print(projectId);
         Serial.print(F("/databases/(default)/documents/"));
@@ -591,6 +603,20 @@ bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset) {
     DynamicJsonDocument flat(16384); // Increased for larger assets
     flat["type"] = asset.type;
     flat["encoding"] = asset.encoding;
+    if (fields.containsKey("pixelsPacked")) {
+        // SPARSE_PACKED_V1 carries the whole image as one string, so it is
+        // copied straight across - no per-pixel rebuild needed.
+        String packed;
+        if (firestoreFieldToString(fields["pixelsPacked"].as<JsonObject>(), packed)) {
+            flat["pixelsPacked"] = packed;
+            Serial.print(F("[Firestore] Found 'pixelsPacked' field, chars="));
+            Serial.print(packed.length());
+            Serial.print(F(" pixels="));
+            Serial.println(packed.length() / 8);
+        } else {
+            Serial.println(F("[Firestore] 'pixelsPacked' present but not a string"));
+        }
+    }
     if (fields.containsKey("pixels")) {
         Serial.println(F("[Firestore] Found 'pixels' field, parsing..."));
         JsonArray pixels = flat.createNestedArray("pixels");

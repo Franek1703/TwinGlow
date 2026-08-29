@@ -352,17 +352,20 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
   @override
   Future<AssetModel> createAsset(String userId, AssetModel asset) async {
     try {
-      // Convert full grid to sparse format for Firestore
-      final sparsePixels = _convertToSparseFormat(asset.pixelData);
-      
+      // Packed format: one string instead of one Firestore map per pixel.
+      // The old per-pixel encoding made a 78-pixel image a ~23KB document,
+      // which the device's Firebase client could not buffer - it returned an
+      // empty body and the screen rendered black.
+      final packedPixels = _convertToPackedFormat(asset.pixelData);
+
       await _firestore.collection('assets').doc(asset.id).set({
         'name': asset.name,
         'type': asset.type.name.toUpperCase(),
         'ownerUid': userId,
         'width': 16,
         'height': 16,
-        'encoding': 'SPARSE_I16_RGB888',
-        'pixels': sparsePixels,
+        'encoding': 'SPARSE_PACKED_V1',
+        'pixelsPacked': packedPixels,
         'tags': asset.tags,
         'isDefault': false,
         'createdAt': Timestamp.fromDate(DateTime.now()),
@@ -376,13 +379,17 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
   @override
   Future<void> updateAsset(String assetId, AssetModel asset) async {
     try {
-      // Convert full grid to sparse format for Firestore
-      final sparsePixels = _convertToSparseFormat(asset.pixelData);
-      
+      final packedPixels = _convertToPackedFormat(asset.pixelData);
+
       await _firestore.collection('assets').doc(assetId).update({
         'name': asset.name,
         'tags': asset.tags,
-        'pixels': sparsePixels,
+        'encoding': 'SPARSE_PACKED_V1',
+        'pixelsPacked': packedPixels,
+        // Deleting the legacy array is what actually shrinks the document.
+        // Leaving it behind keeps the doc too large for the device to fetch,
+        // so re-saving an asset from the app doubles as its migration.
+        'pixels': FieldValue.delete(),
         'updatedAt': Timestamp.fromDate(DateTime.now()),
       });
     } catch (e) {
@@ -678,7 +685,10 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
     // Convert sparse format back to full 16x16 grid for UI
     List<List<int>>? pixelData;
     
-    if (data['pixels'] != null) {
+    if (data['pixelsPacked'] != null) {
+      // SPARSE_PACKED_V1: "IIRRGGBB" groups in a single string
+      pixelData = _convertFromPackedFormat(data['pixelsPacked'] as String);
+    } else if (data['pixels'] != null) {
       // Sparse format: [{"index": i, "color": c}, ...] or legacy [[i, c], ...]
       pixelData = _convertFromSparseFormat(data['pixels'] as List);
     } else if (data['pixelData'] != null) {
@@ -745,9 +755,61 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
     }
   }
 
+  /// Converts a full 16x16 grid to SPARSE_PACKED_V1: one string of fixed-width
+  /// 8-character groups, "IIRRGGBB" per non-black pixel, where II is the index
+  /// (y*16 + x, 0-255) and RRGGBB is the colour.
+  ///
+  /// This exists because the previous per-pixel map format produced Firestore
+  /// documents around 23KB, which the device's Firebase client silently failed
+  /// to buffer. The packed form is roughly 1KB for the same image.
+  String _convertToPackedFormat(List<List<int>>? pixelData) {
+    if (pixelData == null || pixelData.isEmpty) return '';
+
+    final buffer = StringBuffer();
+
+    for (int y = 0; y < pixelData.length && y < 16; y++) {
+      final row = pixelData[y];
+      for (int x = 0; x < row.length && x < 16; x++) {
+        final color = row[x];
+        // Skip black pixels (0 or transparent)
+        if (color != 0) {
+          // Convert ARGB to RGB888 (remove alpha channel)
+          final rgb888 = color & 0xFFFFFF;
+          final index = y * 16 + x;
+          buffer.write(index.toRadixString(16).padLeft(2, '0'));
+          buffer.write(rgb888.toRadixString(16).padLeft(6, '0'));
+        }
+      }
+    }
+
+    return buffer.toString();
+  }
+
+  /// Converts SPARSE_PACKED_V1 back to a full 16x16 grid, with alpha forced to
+  /// 255 to match [_convertFromSparseFormat].
+  List<List<int>> _convertFromPackedFormat(String packed) {
+    final grid = List.generate(16, (_) => List.filled(16, 0));
+    if (packed.isEmpty || packed.length % 8 != 0) return grid;
+
+    for (int i = 0; i < packed.length; i += 8) {
+      final index = int.tryParse(packed.substring(i, i + 2), radix: 16);
+      final rgb888 = int.tryParse(packed.substring(i + 2, i + 8), radix: 16);
+      if (index == null || rgb888 == null || index < 0 || index >= 256) continue;
+
+      final y = index ~/ 16;
+      final x = index % 16;
+      grid[y][x] = 0xFF000000 | rgb888;
+    }
+
+    return grid;
+  }
+
   /// Converts full 16x16 grid to sparse format: [{"index": i, "color": c}, ...]
   /// where index = y*16 + x (0-255) and color is RGB888 (0xRRGGBB)
   /// Uses array of maps format which is more Firestore-friendly than nested arrays
+  ///
+  /// Retained only to read assets written before SPARSE_PACKED_V1; new writes
+  /// go through [_convertToPackedFormat].
   List<Map<String, int>> _convertToSparseFormat(List<List<int>>? pixelData) {
     if (pixelData == null || pixelData.isEmpty) return [];
     

@@ -6,23 +6,26 @@ RenderAsset::RenderAsset(MatrixDriver* mat)
 
 void RenderAsset::renderImage(CachedAsset* asset, uint32_t bgColor) {
     if (asset == nullptr || !asset->isValid()) {
-        matrix->fill(bgColor);
+        // A missing asset used to fill bgColor, which is indistinguishable from
+        // a legitimately dark image. Dim red marks "asset failed to load" so the
+        // fault is visible on the matrix without a serial cable.
+        matrix->fill(matrix->color(ASSET_ERROR_COLOR));
         matrix->show();
         return;
     }
-    
-    if (asset->encoding == "SPARSE_I16_RGB888") {
+
+    if (asset->encoding == "SPARSE_PACKED_V1" || asset->encoding == "SPARSE_I16_RGB888") {
         renderPixels(asset->pixels, bgColor);
     } else {
-        matrix->fill(bgColor);
+        matrix->fill(matrix->color(ASSET_ERROR_COLOR));
     }
-    
+
     matrix->show();
 }
 
 bool RenderAsset::renderAnimation(CachedAsset* asset, uint32_t bgColor) {
     if (asset == nullptr || !asset->isValid()) {
-        matrix->fill(bgColor);
+        matrix->fill(matrix->color(ASSET_ERROR_COLOR));
         matrix->show();
         return false;
     }
