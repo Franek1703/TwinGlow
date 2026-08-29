@@ -30,6 +30,13 @@
 #include "Bme680Driver.h"
 #include "FirebaseTest.h"
 
+// Fallback for a Config.h that predates this flag (it is listed in
+// .gitignore, so local copies can drift from the tracked one).
+// Default to manual-only screen changes; set to 1 in Config.h to auto-rotate.
+#ifndef SCREEN_AUTO_ROTATE
+#define SCREEN_AUTO_ROTATE 0
+#endif
+
 // Forward declaration
 struct ScreenConfig;
 
@@ -563,9 +570,13 @@ void handleRunning() {
     // Auto-rotate the playlist. Manual navigation (the buttons) resets the
     // timer via next()/previous(), so a button press postpones the next
     // automatic change rather than fighting it.
+    // Compiled out when SCREEN_AUTO_ROTATE is 0: screens then change only on
+    // a PREV/NEXT button press.
+#if SCREEN_AUTO_ROTATE
     if (playlist.shouldRotate()) {
         playlist.next();
     }
+#endif
     
     // Render current screen
     ScreenConfig* screen = playlist.getCurrentScreen();

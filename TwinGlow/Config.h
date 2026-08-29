@@ -61,6 +61,7 @@
 #define SENSOR_CYCLE_MS 2500             // AUTO_CYCLE dwell time per metric
 
 // Screen playlist rotation
+#define SCREEN_AUTO_ROTATE 0             // 1 = cycle screens automatically, 0 = buttons only
 #define SCREEN_DEFAULT_DURATION_MS 8000  // Used when a screen doc has no durationMs
 #define SCREEN_MIN_DURATION_MS 2000      // Floor, so a bad value cannot spin the playlist
 
