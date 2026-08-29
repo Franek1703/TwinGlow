@@ -17,6 +17,20 @@ bool MatrixDriver::begin() {
     Serial.print(F(", type="));
     Serial.println(NEOPIXEL_TYPE);
     
+    // Build the sRGB -> linear PWM table before the first show(). 256 powf()
+    // calls at boot is nothing, and keeping it a runtime table (rather than
+    // Adafruit's built-in gamma8(), which hardcodes 2.6) lets GAMMA_EXPONENT be
+    // tuned against the real panel and diffuser.
+    for (uint16_t i = 0; i < 256; i++) {
+        gammaTable[i] = (uint8_t)(powf(i / 255.0f, GAMMA_EXPONENT) * 255.0f + 0.5f);
+    }
+    Serial.print(F("[Matrix] Gamma correction: "));
+#if GAMMA_CORRECTION
+    Serial.println(GAMMA_EXPONENT);
+#else
+    Serial.println(F("disabled (raw PWM)"));
+#endif
+
     // Initialize the strip (begin() is void, doesn't return bool)
     // This configures the pin and prepares the strip
     strip.begin();
@@ -64,10 +78,25 @@ void MatrixDriver::setBrightness(uint8_t brightness) {
     Serial.println(brightness);
 }
 
+uint32_t MatrixDriver::applyGamma(uint32_t argb) const {
+    // Screen configs arrive as Flutter's Color.value (0xAARRGGBB), so mask the
+    // alpha off rather than relying on setPixelColor treating the top byte as an
+    // unused white channel.
+    uint32_t rgb = argb & 0x00FFFFFF;
+#if GAMMA_CORRECTION
+    uint8_t r = gammaTable[(rgb >> 16) & 0xFF];
+    uint8_t g = gammaTable[(rgb >> 8) & 0xFF];
+    uint8_t b = gammaTable[rgb & 0xFF];
+    return ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+#else
+    return rgb;
+#endif
+}
+
 void MatrixDriver::setPixel(uint8_t x, uint8_t y, uint32_t color) {
     if (x >= MATRIX_WIDTH || y >= MATRIX_HEIGHT) return;
     uint16_t index = xyToIndex(x, y);
-    strip.setPixelColor(index, color);
+    strip.setPixelColor(index, applyGamma(color));
 }
 
 void MatrixDriver::setPixel(uint8_t x, uint8_t y, uint8_t r, uint8_t g, uint8_t b) {
@@ -84,8 +113,10 @@ void MatrixDriver::show() {
 }
 
 void MatrixDriver::fill(uint32_t color) {
+    // Corrected once here rather than per pixel - every LED gets the same value.
+    uint32_t corrected = applyGamma(color);
     for (uint16_t i = 0; i < numPixels(); i++) {
-        strip.setPixelColor(i, color);
+        strip.setPixelColor(i, corrected);
     }
 }
 

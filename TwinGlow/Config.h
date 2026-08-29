@@ -66,7 +66,10 @@
 
 // Shown instead of black when an asset fails to load or has an unknown
 // encoding, so a broken screen is visibly different from a dark image.
-#define ASSET_ERROR_COLOR 0x200000       // Dim red
+// Gamma correction crushes low values (0x20 -> 2/255, invisible), so this is
+// authored bright enough to survive it while staying clearly dimmer than a
+// real red screen.
+#define ASSET_ERROR_COLOR 0x800000       // Dim red
 
 // The panel is mounted turned, so the procedural screens transform as they
 // draw. Assets are authored in plain orientation (x = column, y = row) and
@@ -93,6 +96,14 @@
 // NeoPixel settings
 #define NEOPIXEL_TYPE NEO_GRB + NEO_KHZ800
 #define DEFAULT_BRIGHTNESS 128
+
+// The app sends gamma-encoded sRGB (what the phone screen shows), but NeoPixel
+// drives the byte out as a raw PWM duty cycle. Without correction every
+// secondary channel emits several times too much light: the app's red preset
+// (Material #F44336) put ~5x too much green and ~6.5x too much blue on the
+// panel, so it read as pink/purple. MatrixDriver applies this to every pixel.
+#define GAMMA_CORRECTION 1     // 0 = raw PWM (previous behaviour), for A/B testing
+#define GAMMA_EXPONENT 2.2f    // sRGB. Try 2.6 if the panel still looks washed out.
 
 // BLE Configuration
 #define BLE_DEVICE_NAME "TwinGlow"

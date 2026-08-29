@@ -799,13 +799,15 @@ void handleRunning() {
             }
         } else {
             if (logRender) Serial.println(F("[Render] Branch: fallback (unknown type or SENSOR without BME)"));
-            // Unknown type or SENSOR without BME680: show placeholder so display updates
-            matrix.fill(matrix.color(32, 32, 32));
+            // Unknown type or SENSOR without BME680: show placeholder so display updates.
+            // Raised from 32: gamma correction maps 32 -> 2/255, which is invisible.
+            matrix.fill(matrix.color(96, 96, 96));
             matrix.show();
         }
     } else {
-        // No screens - show default pattern
-        matrix.fill(matrix.color(64, 64, 64));
+        // No screens - show default pattern. Raised from 64: gamma correction
+        // maps 64 -> 12/255, too dim to read as "device is alive".
+        matrix.fill(matrix.color(128, 128, 128));
         matrix.show();
     }
     // Always push buffer to matrix so last drawn frame is visible
