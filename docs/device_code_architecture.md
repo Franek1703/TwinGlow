@@ -334,10 +334,9 @@ Once the device has at least one valid playlist (from cache or fresh load), it e
 4. **Periodic Jobs** (managed by `Scheduler` class)
     - RTDB presence update (every 20 seconds)
     - optional telemetry push (every 10 seconds, only if BME680 present)
-    - RTDB config doorbell check (every 5 seconds) - reads
-      `/config/{deviceId}/configVersion` and triggers the Firestore check below
-      as soon as the app changes anything
-    - configVersion polling (every 60 seconds, fallback if the doorbell is missed)
+    - RTDB config doorbell check (every 5 seconds) - disabled, see
+      ENABLE_RTDB_DOORBELL in Config.h
+    - configVersion polling (every 60 seconds) - the actual update path today
     - NTP resync every 6 hours
     - All tasks check Wi-Fi connectivity before executing
     - Failed operations are logged but don't block device operation

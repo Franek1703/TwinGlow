@@ -309,8 +309,9 @@ User edits screen:
 2. App increments `devices/{deviceId}.configVersion` (`FieldValue.increment`,
    so two edits made close together cannot overwrite each other)
 3. App ticks the RTDB doorbell `/config/{deviceId}/configVersion`
-4. Device sees the doorbell move within ~5 s and re-checks Firestore
-   (its own 60 s poll is the fallback if that read fails)
+4. Device picks the change up on its 60 s Firestore poll. (The doorbell would
+   cut this to ~5 s, but the device-side read is currently disabled - see
+   ENABLE_RTDB_DOORBELL.)
 5. Device reloads configuration
 
 Step 3 is best-effort: if RTDB is unreachable the edit still succeeds and still
@@ -446,8 +447,8 @@ If device offline:
 The TwinGlow mobile backend architecture is:
 
 * Firebase-native
-* Event-driven via configVersion, with an RTDB doorbell to cut update latency
-  from ~60 s to ~5 s
+* Event-driven via configVersion (~60 s; an RTDB doorbell to cut this to ~5 s is
+  written by the app but not yet consumed by the device)
 * Reference-based for shared content
 * Cleanly separated from UI
 * Compatible with ESP32 FirebaseClient design

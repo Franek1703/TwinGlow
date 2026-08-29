@@ -194,10 +194,9 @@ The device exposes a custom BLE service with characteristics for:
 
 - Device reads `/devices/{deviceId}.configVersion`
 - This value is polled every 60 s (Firestore listening is not supported via REST).
-- To avoid waiting out that minute, the device also reads the RTDB doorbell
-  `/config/{deviceId}/configVersion` every 5 s; when the app ticks it, the
-  Firestore check runs immediately. The doorbell only decides *when* to look -
-  `configVersion` is still what decides whether to reload.
+- A 5 s RTDB doorbell read of `/config/{deviceId}/configVersion` exists to avoid
+  waiting out that minute, but is **disabled** (`ENABLE_RTDB_DOORBELL 0`): it
+  wedged the shared TLS client on hardware. So 60 s is the real latency today.
 - If `configVersion` changes → reload config + assets
 
 ### 10.2 Data Loaded
@@ -300,7 +299,7 @@ RTDB is used only for **live and transient data**.
 **Paths:**
 - `/presence/{deviceId}` – heartbeat (updated every 20 seconds)
 - `/telemetry/{deviceId}` – sensor readings (optional, updated every 10 seconds if BME680 present)
-- `/config/{deviceId}/configVersion` – config-change doorbell, read every 5 seconds
+- `/config/{deviceId}/configVersion` – config-change doorbell, written by the app; device-side read is currently disabled
 - `/commands/{deviceId}` – runtime commands (dead code: `RtdbRepo::checkCommands()`
   exists but has no call site, and the app never writes the node)
 

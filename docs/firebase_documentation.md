@@ -736,6 +736,11 @@ A bare monotonic counter, written by the app and read by the device. It is a
 **notification, not data** - the number carries no meaning of its own and is
 deliberately *not* required to match the Firestore `configVersion`.
 
+> **Status: the firmware half is disabled** (`ENABLE_RTDB_DOORBELL 0`). Reading
+> this node every 5 s wedged the shared TLS client on hardware - see the flag's
+> comment in `TwinGlow/Config.h`. The app still writes the node, so the data is
+> there for a fixed reader; until then updates arrive on the 60 s poll.
+
 **Why it exists:** screens live in Firestore, and Firestore has no listen support
 over the REST API the firmware uses, so the device can only poll. Polling the
 device document often enough to feel instant is expensive; polling one RTDB
@@ -832,10 +837,11 @@ attempts.
 
 Two paths, both ending in the same reload:
 
-1. **Doorbell (fast, ~5 s).** The app ticks
-   `/config/{deviceId}/configVersion` in RTDB on every change. The device reads
-   that one integer every 5 s; if it moved, it runs the Firestore check straight
-   away. See §5.4.
+1. **Doorbell (currently disabled).** The app ticks
+   `/config/{deviceId}/configVersion` in RTDB on every change, and the device
+   *would* read that integer every 5 s and check Firestore as soon as it moved.
+   The firmware side is off (`ENABLE_RTDB_DOORBELL 0`) because the poll wedged
+   the shared TLS client on hardware. See §5.4.
 2. **Poll (fallback, ~60 s).** Independently, the device re-reads
    `/devices/{deviceId}` every 60 s.
 
