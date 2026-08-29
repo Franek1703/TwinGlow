@@ -57,6 +57,13 @@
 #define PRESENCE_UPDATE_INTERVAL_MS 20000  // 20 seconds
 #define CONFIG_POLL_INTERVAL_MS 60000      // 60 seconds
 #define TELEMETRY_UPDATE_INTERVAL_MS 10000 // 10 seconds (if BME680 present)
+// SENSOR screen
+#define SENSOR_CYCLE_MS 2500             // AUTO_CYCLE dwell time per metric
+
+// Screen playlist rotation
+#define SCREEN_DEFAULT_DURATION_MS 8000  // Used when a screen doc has no durationMs
+#define SCREEN_MIN_DURATION_MS 2000      // Floor, so a bad value cannot spin the playlist
+
 #define WIFI_RETRY_QUICK_COUNT 5
 #define WIFI_RETRY_BACKOFF_MAX_MS 60000
 #define WIFI_MAX_FAILURES 10

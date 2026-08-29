@@ -560,10 +560,12 @@ void handleRunning() {
         lastSensorReadMs = millis();
     }
     
-    // Screen rotation disabled - only manual button switching
-    // if (playlist.shouldRotate()) {
-    //     playlist.next();
-    // }
+    // Auto-rotate the playlist. Manual navigation (the buttons) resets the
+    // timer via next()/previous(), so a button press postpones the next
+    // automatic change rather than fighting it.
+    if (playlist.shouldRotate()) {
+        playlist.next();
+    }
     
     // Render current screen
     ScreenConfig* screen = playlist.getCurrentScreen();
@@ -642,11 +644,47 @@ void handleRunning() {
             }
         } else if (typeUpper == "SENSOR" && bme680Present) {
             if (logRender) Serial.println(F("[Render] Branch: SENSOR"));
-            // Render sensor
-            std::vector<String> metrics = {"temperature", "humidity"};
+
+            // Defaults, overridden by the screen's config document.
+            bool showTemperature = true;
+            bool showHumidity = true;
+            bool showPressure = false;
+            String units = "METRIC";
+            uint32_t numberColor = 0xFF8800;
+            uint32_t accentColor = 0xFFFFFF;
+            uint32_t backgroundColor = 0x000000;
+
+            if (screen->configJson.length() > 0) {
+                DynamicJsonDocument configDoc(1024);
+                if (deserializeJson(configDoc, screen->configJson) == DeserializationError::Ok) {
+                    if (configDoc.containsKey("showTemperature")) showTemperature = configDoc["showTemperature"].as<bool>();
+                    if (configDoc.containsKey("showHumidity")) showHumidity = configDoc["showHumidity"].as<bool>();
+                    if (configDoc.containsKey("showPressure")) showPressure = configDoc["showPressure"].as<bool>();
+                    if (configDoc.containsKey("useMetricUnits")) units = configDoc["useMetricUnits"].as<bool>() ? "METRIC" : "IMPERIAL";
+                    if (configDoc.containsKey("numberColor")) numberColor = configDoc["numberColor"].as<uint32_t>();
+                    if (configDoc.containsKey("accentColor")) accentColor = configDoc["accentColor"].as<uint32_t>();
+                    if (configDoc.containsKey("backgroundColor")) backgroundColor = configDoc["backgroundColor"].as<uint32_t>();
+                }
+            }
+
+            std::vector<String> metrics;
+            if (showTemperature) metrics.push_back("temperature");
+            if (showHumidity) metrics.push_back("humidity");
+            if (showPressure) metrics.push_back("pressure");
+            if (metrics.empty()) metrics.push_back("temperature"); // Never render an empty screen
+
+            // AUTO_CYCLE: advance the metric on a timer. sensorMetricIndex was
+            // previously passed in but never incremented, pinning the display
+            // to the first metric forever.
+            static unsigned long lastMetricSwitchMs = 0;
+            if (millis() - lastMetricSwitchMs >= SENSOR_CYCLE_MS) {
+                lastMetricSwitchMs = millis();
+                sensorMetricIndex++;
+            }
+
             renderSensor.render("AUTO_CYCLE", "BIG_VALUE_WITH_LABEL",
-                               metrics, "METRIC",
-                               0xFF8800, 0xFFFFFF, 0x000000,
+                               metrics, units,
+                               numberColor, accentColor, backgroundColor,
                                sensorTemp, sensorHumidity, sensorPressure, sensorGas,
                                sensorMetricIndex);
         } else if (typeUpper == "IMAGE" || typeUpper == "ANIMATION") {

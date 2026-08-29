@@ -1,7 +1,9 @@
 #include "RenderClock.h"
 #include "Config.h"
+#include "PixelFont.h"
 
-// 3x9 digit patterns (27 bytes each: 3 columns x 9 rows)
+// Digit patterns live in PixelFont so RenderSensor can draw from the same data.
+// Used for leading-zero suppression in drawPatternDigit().
 static const uint8_t blank[27] = {
     0, 0, 0,
     0, 0, 0,
@@ -13,128 +15,6 @@ static const uint8_t blank[27] = {
     0, 0, 0,
     0, 0, 0
 };
-
-static const uint8_t n0[27] = {
-    0, 1, 0,
-    1, 0, 1,
-    1, 0, 1,
-    1, 0, 1,
-    1, 0, 1,
-    1, 0, 1,
-    1, 0, 1,
-    1, 0, 1,
-    0, 1, 0
-};
-
-static const uint8_t n1[27] = {
-    0, 1, 1,
-    1, 0, 1,
-    0, 0, 1,
-    0, 0, 1,
-    0, 0, 1,
-    0, 0, 1,
-    0, 0, 1,
-    0, 0, 1,
-    0, 0, 1
-};
-
-static const uint8_t n2[27] = {
-    0, 1, 0,
-    1, 0, 1,
-    0, 0, 1,
-    0, 0, 1,
-    0, 1, 0,
-    0, 1, 0,
-    1, 0, 0,
-    1, 0, 0,
-    1, 1, 1
-};
-
-static const uint8_t n3[27] = {
-    0, 1, 0,
-    1, 0, 1,
-    0, 0, 1,
-    0, 0, 1,
-    1, 1, 0,
-    0, 0, 1,
-    0, 0, 1,
-    1, 0, 1,
-    0, 1, 0
-};
-
-static const uint8_t n4[27] = {
-    1, 0, 1,
-    1, 0, 1,
-    1, 0, 1,
-    1, 0, 1,
-    1, 1, 1,
-    0, 0, 1,
-    0, 0, 1,
-    0, 0, 1,
-    0, 0, 1
-};
-
-static const uint8_t n5[27] = {
-    1, 1, 1,
-    1, 0, 0,
-    1, 0, 0,
-    1, 0, 0,
-    0, 1, 0,
-    0, 0, 1,
-    0, 0, 1,
-    1, 0, 1,
-    0, 1, 0
-};
-
-static const uint8_t n6[27] = {
-    0, 1, 0,
-    1, 0, 1,
-    1, 0, 0,
-    1, 0, 0,
-    1, 1, 0,
-    1, 0, 1,
-    1, 0, 1,
-    1, 0, 1,
-    0, 1, 0
-};
-
-static const uint8_t n7[27] = {
-    1, 1, 1,
-    0, 0, 1,
-    0, 0, 1,
-    0, 0, 1,
-    0, 1, 0,
-    0, 1, 0,
-    0, 1, 0,
-    0, 1, 0,
-    0, 1, 0
-};
-
-static const uint8_t n8[27] = {
-    0, 1, 0,
-    1, 0, 1,
-    1, 0, 1,
-    1, 0, 1,
-    0, 1, 0,
-    1, 0, 1,
-    1, 0, 1,
-    1, 0, 1,
-    0, 1, 0
-};
-
-static const uint8_t n9[27] = {
-    0, 1, 0,
-    1, 0, 1,
-    1, 0, 1,
-    1, 0, 1,
-    0, 1, 1,
-    0, 0, 1,
-    0, 0, 1,
-    1, 0, 1,
-    0, 1, 0
-};
-
-static const uint8_t* number[10] = {n0, n1, n2, n3, n4, n5, n6, n7, n8, n9};
 
 RenderClock::RenderClock(MatrixDriver* mat) : matrix(mat) {
 }
@@ -269,7 +149,8 @@ void RenderClock::drawPatternDigit(uint8_t x, uint8_t y, uint8_t digit, uint32_t
     if (digit == 0 && x == 0 && y == 0) {
         pattern = blank; // Special case for leading zero
     } else {
-        pattern = number[digit];
+        pattern = PixelFont::digitBig(digit);
+        if (pattern == nullptr) return;
     }
     
     // Draw 3x9 pattern (3 columns, 9 rows)
