@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import '../../config/app_colors.dart';
@@ -7,6 +6,7 @@ import '../../config/app_spacing.dart';
 import '../../config/app_typography.dart';
 import '../../core/models/screen_model.dart';
 import '../../core/widgets/app_card.dart';
+
 class ScreenCreationView extends StatelessWidget {
   final String? deviceId;
 
@@ -24,9 +24,7 @@ class ScreenCreationView extends StatelessWidget {
             onPressed: () => context.pop(),
           ),
         ),
-        body: const Center(
-          child: Text('No active device found'),
-        ),
+        body: const Center(child: Text('No active device found')),
       );
     }
     return Scaffold(
@@ -44,10 +42,7 @@ class ScreenCreationView extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Select Screen Type',
-                style: AppTypography.h2(context),
-              ),
+              Text('Select Screen Type', style: AppTypography.h2(context)),
               SizedBox(height: AppSpacing.sm),
               Text(
                 'Choose the type of screen you want to add to your playlist',
@@ -59,7 +54,9 @@ class ScreenCreationView extends StatelessWidget {
                   crossAxisCount: 2,
                   crossAxisSpacing: AppSpacing.lg,
                   mainAxisSpacing: AppSpacing.lg,
-                  childAspectRatio: 0.9,
+                  // Leave enough vertical room for two-line descriptions on
+                  // compact phones while keeping the grid scrollable.
+                  childAspectRatio: 0.72,
                   children: [
                     _ScreenTypeCard(
                       type: ScreenType.clock,
@@ -68,7 +65,8 @@ class ScreenCreationView extends StatelessWidget {
                       description: 'Digital clock display',
                       onTap: () {
                         // Generate new screen ID and navigate to editor with deviceId
-                        final newId = 'screen_${DateTime.now().millisecondsSinceEpoch}';
+                        final newId =
+                            'screen_${DateTime.now().millisecondsSinceEpoch}';
                         context.push('/screen/clock/$newId?deviceId=$deviceId');
                       },
                     ),
@@ -78,7 +76,8 @@ class ScreenCreationView extends StatelessWidget {
                       title: 'Image',
                       description: 'Static image display',
                       onTap: () {
-                        final newId = 'screen_${DateTime.now().millisecondsSinceEpoch}';
+                        final newId =
+                            'screen_${DateTime.now().millisecondsSinceEpoch}';
                         context.push('/screen/image/$newId?deviceId=$deviceId');
                       },
                     ),
@@ -88,7 +87,8 @@ class ScreenCreationView extends StatelessWidget {
                       title: 'Animation',
                       description: 'Animated sequence',
                       onTap: () {
-                        final newId = 'screen_${DateTime.now().millisecondsSinceEpoch}';
+                        final newId =
+                            'screen_${DateTime.now().millisecondsSinceEpoch}';
                         context.push(
                           '/screen/animation/$newId?deviceId=$deviceId',
                         );
@@ -100,8 +100,11 @@ class ScreenCreationView extends StatelessWidget {
                       title: 'Sensor',
                       description: 'Sensor data display',
                       onTap: () {
-                        final newId = 'screen_${DateTime.now().millisecondsSinceEpoch}';
-                        context.push('/screen/sensor/$newId?deviceId=$deviceId');
+                        final newId =
+                            'screen_${DateTime.now().millisecondsSinceEpoch}';
+                        context.push(
+                          '/screen/sensor/$newId?deviceId=$deviceId',
+                        );
                       },
                     ),
                   ],
@@ -145,11 +148,7 @@ class _ScreenTypeCard extends StatelessWidget {
               gradient: AppColors.primaryGradient,
               borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
             ),
-            child: Icon(
-              icon,
-              size: 32.sp,
-              color: Colors.white,
-            ),
+            child: Icon(icon, size: 32.sp, color: Colors.white),
           ),
           SizedBox(height: AppSpacing.md),
           Text(
