@@ -65,9 +65,12 @@ void Scheduler::checkConfigPoll() {
 
 void Scheduler::checkNtpSync() {
     if (ntpSyncCallback == nullptr) return;
-    
+
+    // Ticks at the short retry cadence; TimeSync::shouldSync() decides whether
+    // an attempt actually happens, holding the 6-hour interval once synced and
+    // retrying every NTP_RETRY_INTERVAL_MS while the clock is still unusable.
     unsigned long now = millis();
-    if (now - lastNtpSyncMs >= NTP_SYNC_INTERVAL_MS) {
+    if (now - lastNtpSyncMs >= NTP_RETRY_INTERVAL_MS) {
         ntpSyncCallback();
         lastNtpSyncMs = now;
     }

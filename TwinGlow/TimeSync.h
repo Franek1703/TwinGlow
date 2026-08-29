@@ -15,7 +15,13 @@ public:
     
     bool sync(FirebaseApp* app);
     bool shouldSync() const;
-    
+
+    // True once the system clock holds a plausible wall-clock time.
+    // The ESP32 SNTP client keeps running in the background, so the clock can
+    // become valid after sync() has already returned false - this, not sync()'s
+    // return value, is the authoritative check.
+    static bool isTimeValid();
+
     unsigned long getLastSyncMs() const { return lastSyncMs; }
     bool isSynced() const { return synced; }
     

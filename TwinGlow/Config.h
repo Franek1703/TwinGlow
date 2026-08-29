@@ -49,7 +49,11 @@
 #include "FirebaseSecrets.h"
 
 // Timing constants
-#define NTP_SYNC_INTERVAL_MS 21600000      // 6 hours
+#define NTP_SYNC_INTERVAL_MS 21600000      // 6 hours (after a successful sync)
+#define NTP_RETRY_INTERVAL_MS 300000       // 5 minutes (while the clock is unsynced)
+#define NTP_WAIT_MS 8000                   // How long one sync attempt waits for the first NTP packet
+#define TIME_SYNC_STATE_TIMEOUT_MS 45000   // Hard deadline for the TIME_SYNC state before continuing unsynced
+#define TIME_SYNC_RECONFIG_INTERVAL_MS 15000 // How often TIME_SYNC re-issues configTime() while waiting
 #define PRESENCE_UPDATE_INTERVAL_MS 20000  // 20 seconds
 #define CONFIG_POLL_INTERVAL_MS 60000      // 60 seconds
 #define TELEMETRY_UPDATE_INTERVAL_MS 10000 // 10 seconds (if BME680 present)

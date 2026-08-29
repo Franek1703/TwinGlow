@@ -272,48 +272,55 @@ void handleWifiConnecting() {
 }
 
 void handleTimeSync() {
-    static bool syncAttempted = false;
-    static unsigned long syncStartMs = 0;
+    static unsigned long stateStartMs = 0;
+    static unsigned long lastAttemptMs = 0;
+    static uint8_t attempts = 0;
 
     // Per-entry reset, so re-entering TIME_SYNC retries instead of no-opping.
+    // stateStartMs is set ONCE per entry - setting it every pass (as the old
+    // code did) made the timeout below unreachable and stranded the device here.
     if (fsm.justEntered()) {
-        syncAttempted = false;
-        syncStartMs = 0;
+        stateStartMs = millis();
+        lastAttemptMs = 0;
+        attempts = 0;
     }
 
-    if (!syncAttempted) {
-        syncStartMs = millis();
-        if (timeSync.sync(firebaseClient.getApp())) {
-            // Verify time is valid before proceeding
-            delay(100); // Small delay to let time() update
-            time_t now = time(nullptr);
-            if (now >= 1000000000) {
-                Serial.print(F("[TimeSync] Success, time verified: epoch="));
-                Serial.println(now);
-                syncAttempted = true;
-                fsm.transition(DeviceState::FIREBASE_CONNECTING);
-            } else {
-                Serial.println(F("[TimeSync] Sync reported success but time invalid, waiting..."));
-                // Will retry on next loop
-            }
-        } else {
-            // Wait a bit and check if time becomes valid (NTP might still be syncing)
-            if (millis() - syncStartMs > 3000) {
-                delay(100);
-                time_t now = time(nullptr);
-                if (now >= 1000000000) {
-                    Serial.print(F("[TimeSync] Time became valid after wait: epoch="));
-                    Serial.println(now);
-                    syncAttempted = true;
-                    fsm.transition(DeviceState::FIREBASE_CONNECTING);
-                } else {
-                    Serial.println(F("[TimeSync] Failed, continuing anyway (time may sync later)"));
-                    syncAttempted = true;
-                    fsm.transition(DeviceState::FIREBASE_CONNECTING);
-                }
-            }
-        }
+    // Checked first, every pass: the ESP32 SNTP client keeps running in the
+    // background, so the clock can land between attempts even when the previous
+    // sync() reported failure.
+    if (TimeSync::isTimeValid()) {
+        time_t now = time(nullptr);
+        Serial.print(F("[TimeSync] Time valid, epoch="));
+        Serial.println(now);
+        timeSync.setSynced(true);
+        firebaseClient.getApp()->setTime(now);
+        fsm.transition(DeviceState::FIREBASE_CONNECTING);
+        return;
     }
+
+    // Hard deadline. Firebase may still fail TLS without a correct clock, in
+    // which case FIREBASE_CONNECTING falls through to OFFLINE_RUNNING and the
+    // scheduled NTP task keeps retrying every NTP_RETRY_INTERVAL_MS.
+    if (millis() - stateStartMs >= TIME_SYNC_STATE_TIMEOUT_MS) {
+        Serial.print(F("[TimeSync] Giving up after "));
+        Serial.print(attempts);
+        Serial.print(F(" attempts / "));
+        Serial.print(millis() - stateStartMs);
+        Serial.println(F("ms, continuing with unsynced clock"));
+        fsm.transition(DeviceState::FIREBASE_CONNECTING);
+        return;
+    }
+
+    // Space attempts out. Each sync() blocks for up to NTP_WAIT_MS, and
+    // re-issuing configTime() restarts the SNTP client, so don't do it often.
+    if (attempts > 0 && (millis() - lastAttemptMs) < TIME_SYNC_RECONFIG_INTERVAL_MS) return;
+
+    attempts++;
+    Serial.print(F("[TimeSync] Attempt "));
+    Serial.println(attempts);
+    timeSync.sync(firebaseClient.getApp());
+    lastAttemptMs = millis();
+    // Outcome is decided by the isTimeValid() check on the next pass.
 }
 
 void handleFirebaseConnecting() {
