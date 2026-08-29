@@ -8,6 +8,7 @@ import 'package:twin_glow/features/assets_library/cubit/assets_cubit.dart';
 import 'package:twin_glow/features/device/cubit/devices_cubit.dart';
 import 'package:twin_glow/features/pairing/cubit/pairing_cubit.dart';
 import 'package:twin_glow/features/screens_playlist/cubit/screens_playlist_cubit.dart';
+import 'package:twin_glow/services/local/onboarding_status_store.dart';
 
 void main() {
   test('data states start in initial loading instead of an empty state', () {
@@ -50,11 +51,21 @@ void main() {
   });
 
   test('bottom tabs use persistent stateful navigation branches', () {
-    final shellRoutes = appRouter.configuration.routes
+    final router = createAppRouter(_FakeOnboardingStatusStore());
+    addTearDown(router.dispose);
+    final shellRoutes = router.configuration.routes
         .whereType<StatefulShellRoute>()
         .toList();
 
     expect(shellRoutes, hasLength(1));
     expect(shellRoutes.single.branches, hasLength(3));
   });
+}
+
+class _FakeOnboardingStatusStore implements OnboardingStatusStore {
+  @override
+  bool get hasCompletedOnboarding => false;
+
+  @override
+  Future<void> setHasCompletedOnboarding(bool value) async {}
 }

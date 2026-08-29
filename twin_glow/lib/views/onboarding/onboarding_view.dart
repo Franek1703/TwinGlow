@@ -5,9 +5,12 @@ import '../../config/app_colors.dart';
 import '../../config/app_spacing.dart';
 import '../../config/app_typography.dart';
 import '../../core/widgets/app_button.dart';
+import '../../services/local/onboarding_status_store.dart';
 
 class OnboardingView extends StatefulWidget {
-  const OnboardingView({super.key});
+  final OnboardingStatusStore onboardingStatusStore;
+
+  const OnboardingView({super.key, required this.onboardingStatusStore});
 
   @override
   State<OnboardingView> createState() => _OnboardingViewState();
@@ -15,6 +18,7 @@ class OnboardingView extends StatefulWidget {
 
 class _OnboardingViewState extends State<OnboardingView> {
   int _currentSlide = 0;
+  bool _isCompleting = false;
 
   final List<_SlideData> _slides = [
     _SlideData(
@@ -40,18 +44,34 @@ class _OnboardingViewState extends State<OnboardingView> {
     ),
   ];
 
-  void _handleNext() {
+  Future<void> _handleNext() async {
     if (_currentSlide < _slides.length - 1) {
       setState(() {
         _currentSlide++;
       });
     } else {
-      context.go('/auth');
+      await _completeOnboarding();
     }
   }
 
-  void _handleSkip() {
-    context.go('/auth');
+  Future<void> _handleSkip() => _completeOnboarding();
+
+  Future<void> _completeOnboarding() async {
+    if (_isCompleting) return;
+
+    setState(() => _isCompleting = true);
+    try {
+      await widget.onboardingStatusStore.setHasCompletedOnboarding(true);
+      if (mounted) context.go('/auth');
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isCompleting = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not save tutorial progress. Please try again.'),
+        ),
+      );
+    }
   }
 
   @override
@@ -72,12 +92,12 @@ class _OnboardingViewState extends State<OnboardingView> {
               Align(
                 alignment: Alignment.topRight,
                 child: TextButton(
-                  onPressed: _handleSkip,
+                  onPressed: _isCompleting ? null : _handleSkip,
                   child: Text(
                     'Skip',
-                    style: AppTypography.small(context).copyWith(
-                      color: AppColors.textMuted,
-                    ),
+                    style: AppTypography.small(
+                      context,
+                    ).copyWith(color: AppColors.textMuted),
                   ),
                 ),
               ),
@@ -93,20 +113,18 @@ class _OnboardingViewState extends State<OnboardingView> {
                       height: 128.w,
                       decoration: BoxDecoration(
                         gradient: slide.gradient,
-                        borderRadius: BorderRadius.circular(AppSpacing.radius3xl),
+                        borderRadius: BorderRadius.circular(
+                          AppSpacing.radius3xl,
+                        ),
                         boxShadow: [
                           BoxShadow(
-                            color: AppColors.accentCyan.withOpacity(0.3),
+                            color: AppColors.accentCyan.withValues(alpha: 0.3),
                             blurRadius: 20,
                             spreadRadius: 5,
                           ),
                         ],
                       ),
-                      child: Icon(
-                        slide.icon,
-                        size: 64.sp,
-                        color: Colors.white,
-                      ),
+                      child: Icon(slide.icon, size: 64.sp, color: Colors.white),
                     ),
                     SizedBox(height: AppSpacing.xxl),
                     // Title
@@ -155,9 +173,10 @@ class _OnboardingViewState extends State<OnboardingView> {
                 text: _currentSlide == _slides.length - 1
                     ? 'Get Started'
                     : 'Next',
-                onPressed: _handleNext,
+                onPressed: _isCompleting ? null : _handleNext,
                 size: AppButtonSize.lg,
                 fullWidth: true,
+                isLoading: _isCompleting,
               ),
             ],
           ),

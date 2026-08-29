@@ -5,9 +5,25 @@ import 'config/app_theme.dart';
 import 'config/app_router.dart';
 import 'features/auth/cubit/auth_cubit.dart';
 import 'services/firebase/firebase_repository_impl.dart';
+import 'services/local/onboarding_status_store.dart';
 
-class App extends StatelessWidget {
-  const App({super.key});
+class App extends StatefulWidget {
+  final OnboardingStatusStore onboardingStatusStore;
+
+  const App({super.key, required this.onboardingStatusStore});
+
+  @override
+  State<App> createState() => _AppState();
+}
+
+class _AppState extends State<App> {
+  late final _router = createAppRouter(widget.onboardingStatusStore);
+
+  @override
+  void dispose() {
+    _router.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -21,7 +37,7 @@ class App extends StatelessWidget {
           child: MaterialApp.router(
             title: 'TwinGlow',
             theme: AppTheme.darkTheme,
-            routerConfig: appRouter,
+            routerConfig: _router,
             debugShowCheckedModeBanner: false,
           ),
         );

@@ -19,142 +19,144 @@ import '../../views/profile/profile_view.dart';
 import '../../views/device_config/device_config_view.dart';
 import '../../views/screen_creation/screen_creation_view.dart';
 import '../core/models/screen_model.dart';
+import '../services/local/onboarding_status_store.dart';
 
-final appRouter = GoRouter(
-  initialLocation: '/onboarding',
-  routes: [
-    GoRoute(
-      path: '/onboarding',
-      builder: (context, state) => const OnboardingView(),
-    ),
-    GoRoute(
-      path: '/auth',
-      builder: (context, state) => const AuthView(),
-    ),
-    GoRoute(
-      path: '/provision',
-      builder: (context, state) => const DeviceProvisioningView(),
-    ),
-    GoRoute(
-      path: '/screen/create',
-      builder: (context, state) {
-        final deviceId = state.uri.queryParameters['deviceId'];
-        return ScreenCreationView(deviceId: deviceId);
-      },
-    ),
-    GoRoute(
-      path: '/settings/profile',
-      builder: (context, state) => const ProfileView(),
-    ),
-    GoRoute(
-      path: '/device/:deviceId/config',
-      builder: (context, state) {
-        final deviceId = state.pathParameters['deviceId']!;
-        return DeviceConfigView(deviceId: deviceId);
-      },
-    ),
-    // Each bottom-navigation branch keeps its widget tree and cubits alive.
-    // Switching tabs therefore restores the existing state instead of
-    // recreating the page and reloading Firebase from an empty state.
-    StatefulShellRoute.indexedStack(
-      builder: (context, state, navigationShell) =>
-          MainShell(navigationShell: navigationShell),
-      branches: [
-        StatefulShellBranch(
-          routes: [
-            GoRoute(
-              path: '/home',
-              pageBuilder: (context, state) => NoTransitionPage<void>(
-                key: state.pageKey,
-                child: const HomeView(),
-              ),
+GoRouter createAppRouter(OnboardingStatusStore onboardingStatusStore) =>
+    GoRouter(
+      initialLocation: onboardingStatusStore.hasCompletedOnboarding
+          ? '/auth'
+          : '/onboarding',
+      routes: [
+        GoRoute(
+          path: '/onboarding',
+          builder: (context, state) =>
+              OnboardingView(onboardingStatusStore: onboardingStatusStore),
+        ),
+        GoRoute(path: '/auth', builder: (context, state) => const AuthView()),
+        GoRoute(
+          path: '/provision',
+          builder: (context, state) => const DeviceProvisioningView(),
+        ),
+        GoRoute(
+          path: '/screen/create',
+          builder: (context, state) {
+            final deviceId = state.uri.queryParameters['deviceId'];
+            return ScreenCreationView(deviceId: deviceId);
+          },
+        ),
+        GoRoute(
+          path: '/settings/profile',
+          builder: (context, state) => const ProfileView(),
+        ),
+        GoRoute(
+          path: '/device/:deviceId/config',
+          builder: (context, state) {
+            final deviceId = state.pathParameters['deviceId']!;
+            return DeviceConfigView(deviceId: deviceId);
+          },
+        ),
+        // Each bottom-navigation branch keeps its widget tree and cubits alive.
+        // Switching tabs therefore restores the existing state instead of
+        // recreating the page and reloading Firebase from an empty state.
+        StatefulShellRoute.indexedStack(
+          builder: (context, state, navigationShell) =>
+              MainShell(navigationShell: navigationShell),
+          branches: [
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/home',
+                  pageBuilder: (context, state) => NoTransitionPage<void>(
+                    key: state.pageKey,
+                    child: const HomeView(),
+                  ),
+                ),
+              ],
+            ),
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/assets',
+                  pageBuilder: (context, state) => NoTransitionPage<void>(
+                    key: state.pageKey,
+                    child: const AssetsView(),
+                  ),
+                ),
+              ],
+            ),
+            StatefulShellBranch(
+              routes: [
+                GoRoute(
+                  path: '/settings',
+                  pageBuilder: (context, state) => NoTransitionPage<void>(
+                    key: state.pageKey,
+                    child: const SettingsView(),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
-        StatefulShellBranch(
-          routes: [
-            GoRoute(
-              path: '/assets',
-              pageBuilder: (context, state) => NoTransitionPage<void>(
-                key: state.pageKey,
-                child: const AssetsView(),
-              ),
-            ),
-          ],
+        // Screen editors
+        GoRoute(
+          path: '/screen/clock/:id',
+          builder: (context, state) {
+            final id = state.pathParameters['id']!;
+            final deviceId = state.uri.queryParameters['deviceId'];
+            return ScreenEditorClockView(screenId: id, deviceId: deviceId);
+          },
         ),
-        StatefulShellBranch(
-          routes: [
-            GoRoute(
-              path: '/settings',
-              pageBuilder: (context, state) => NoTransitionPage<void>(
-                key: state.pageKey,
-                child: const SettingsView(),
-              ),
-            ),
-          ],
+        GoRoute(
+          path: '/screen/image/:id',
+          builder: (context, state) {
+            final id = state.pathParameters['id']!;
+            final deviceId = state.uri.queryParameters['deviceId'];
+            return ScreenEditorImageView(screenId: id, deviceId: deviceId);
+          },
+        ),
+        GoRoute(
+          path: '/screen/animation/:id',
+          builder: (context, state) {
+            final id = state.pathParameters['id']!;
+            final deviceId = state.uri.queryParameters['deviceId'];
+            return ScreenEditorImageView(
+              screenId: id,
+              deviceId: deviceId,
+              screenType: ScreenType.animation,
+            );
+          },
+        ),
+        GoRoute(
+          path: '/screen/sensor/:id',
+          builder: (context, state) {
+            final id = state.pathParameters['id']!;
+            final deviceId = state.uri.queryParameters['deviceId'];
+            return ScreenEditorSensorView(screenId: id, deviceId: deviceId);
+          },
+        ),
+        // Asset editors
+        GoRoute(
+          path: '/asset/create/image',
+          builder: (context, state) => const AssetEditorImageView(),
+        ),
+        GoRoute(
+          path: '/asset/create/animation',
+          builder: (context, state) => const AssetEditorAnimationView(),
+        ),
+        GoRoute(
+          path: '/asset/edit/:id',
+          builder: (context, state) {
+            final id = state.pathParameters['id']!;
+            return AssetEditorImageView(assetId: id);
+          },
+        ),
+        // Pairing
+        GoRoute(
+          path: '/settings/pairing',
+          builder: (context, state) => const PairingManagementView(),
         ),
       ],
-    ),
-    // Screen editors
-    GoRoute(
-      path: '/screen/clock/:id',
-      builder: (context, state) {
-        final id = state.pathParameters['id']!;
-        final deviceId = state.uri.queryParameters['deviceId'];
-        return ScreenEditorClockView(screenId: id, deviceId: deviceId);
-      },
-    ),
-    GoRoute(
-      path: '/screen/image/:id',
-      builder: (context, state) {
-        final id = state.pathParameters['id']!;
-        final deviceId = state.uri.queryParameters['deviceId'];
-        return ScreenEditorImageView(screenId: id, deviceId: deviceId);
-      },
-    ),
-    GoRoute(
-      path: '/screen/animation/:id',
-      builder: (context, state) {
-        final id = state.pathParameters['id']!;
-        final deviceId = state.uri.queryParameters['deviceId'];
-        return ScreenEditorImageView(
-          screenId: id,
-          deviceId: deviceId,
-          screenType: ScreenType.animation,
-        );
-      },
-    ),
-    GoRoute(
-      path: '/screen/sensor/:id',
-      builder: (context, state) {
-        final id = state.pathParameters['id']!;
-        final deviceId = state.uri.queryParameters['deviceId'];
-        return ScreenEditorSensorView(screenId: id, deviceId: deviceId);
-      },
-    ),
-    // Asset editors
-    GoRoute(
-      path: '/asset/create/image',
-      builder: (context, state) => const AssetEditorImageView(),
-    ),
-    GoRoute(
-      path: '/asset/create/animation',
-      builder: (context, state) => const AssetEditorAnimationView(),
-    ),
-    GoRoute(
-      path: '/asset/edit/:id',
-      builder: (context, state) {
-        final id = state.pathParameters['id']!;
-        return AssetEditorImageView(assetId: id);
-      },
-    ),
-    // Pairing
-    GoRoute(
-      path: '/settings/pairing',
-      builder: (context, state) => const PairingManagementView(),
-    ),
-  ],
-);
+    );
 
 class MainShell extends StatelessWidget {
   final StatefulNavigationShell navigationShell;
