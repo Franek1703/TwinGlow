@@ -64,6 +64,14 @@
 // encoding, so a broken screen is visibly different from a dark image.
 #define ASSET_ERROR_COLOR 0x200000       // Dim red
 
+// The panel is mounted turned, so the procedural screens transform as they
+// draw. Assets are authored in plain orientation (x = column, y = row) and
+// need the same treatment, or an IMAGE lands 90 degrees off from the CLOCK.
+//   1 = transpose, setPixel(y, x)          - matches RenderClock's digits
+//   0 = 90-degree rotation, setPixel(W-1-y, x) - matches its colon/seconds bar
+// Those two differ by a mirror. Switch to 0 if images come out mirrored.
+#define ASSET_ORIENT_TRANSPOSE 1
+
 // Screen playlist rotation
 #define SCREEN_AUTO_ROTATE 0             // 1 = cycle screens automatically, 0 = buttons only
 #define SCREEN_DEFAULT_DURATION_MS 8000  // Used when a screen doc has no durationMs

@@ -1,6 +1,18 @@
 #include "RenderAsset.h"
 
-RenderAsset::RenderAsset(MatrixDriver* mat) 
+// Map an authored pixel (x = column, y = row) onto the panel's mounted
+// orientation. The procedural screens each do this inline as they draw;
+// assets previously did not, so an IMAGE appeared turned 90 degrees against
+// the CLOCK. See ASSET_ORIENT_TRANSPOSE in Config.h.
+static inline void setOriented(MatrixDriver* matrix, uint8_t x, uint8_t y, uint32_t color) {
+#if ASSET_ORIENT_TRANSPOSE
+    matrix->setPixel(y, x, color);
+#else
+    matrix->setPixel((uint8_t)(MATRIX_WIDTH - 1 - y), x, color);
+#endif
+}
+
+RenderAsset::RenderAsset(MatrixDriver* mat)
     : matrix(mat), lastFrameMs(0), currentFrameIndex(0), currentAnimation(nullptr) {
 }
 
@@ -88,9 +100,9 @@ void RenderAsset::renderPixels(const std::vector<Pixel>& pixels, uint32_t bgColo
     
     // Render pixels
     for (const auto& pixel : pixels) {
-        uint8_t x = pixel.index % 16;
-        uint8_t y = pixel.index / 16;
-        matrix->setPixel(x, y, matrix->color(pixel.color));
+        uint8_t x = pixel.index % MATRIX_WIDTH;
+        uint8_t y = pixel.index / MATRIX_WIDTH;
+        setOriented(matrix, x, y, matrix->color(pixel.color));
     }
 }
 
@@ -100,12 +112,12 @@ void RenderAsset::applyDeltaFrame(const std::vector<Pixel>& basePixels, const st
     
     // Apply delta pixels (can include black to turn off)
     for (const auto& pixel : deltaPixels) {
-        uint8_t x = pixel.index % 16;
-        uint8_t y = pixel.index / 16;
+        uint8_t x = pixel.index % MATRIX_WIDTH;
+        uint8_t y = pixel.index / MATRIX_WIDTH;
         if (pixel.color == 0) {
-            matrix->setPixel(x, y, bgColor);
+            setOriented(matrix, x, y, bgColor);
         } else {
-            matrix->setPixel(x, y, matrix->color(pixel.color));
+            setOriented(matrix, x, y, matrix->color(pixel.color));
         }
     }
     matrix->show();
