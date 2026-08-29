@@ -129,6 +129,8 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
         'hasSensor': device.hasSensor,
         'isOnline': false,
         'configVersion': 1,
+        'timezone': device.timezone,
+        'tzPosix': device.tzPosix,
         'createdAt': Timestamp.fromDate(DateTime.now()),
       });
       return device;
@@ -149,6 +151,11 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
         'hasSensor': device.hasSensor,
         'configVersion': currentVersion + 1,
         'updatedAt': Timestamp.fromDate(DateTime.now()),
+        // Only written when set, so an update that carries no timezone (an
+        // older caller, or a model built without one) cannot wipe the zone the
+        // device is already running on.
+        if (device.timezone != null) 'timezone': device.timezone,
+        if (device.tzPosix != null) 'tzPosix': device.tzPosix,
       });
     } catch (e) {
       throw Exception('Failed to update device: $e');
@@ -745,6 +752,8 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
       isOnline: data['isOnline'] ?? false,
       hasSensor: data['hasSensor'] ?? false,
       userId: data['userId'],
+      timezone: data['timezone'],
+      tzPosix: data['tzPosix'],
     );
   }
 

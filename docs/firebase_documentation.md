@@ -115,7 +115,8 @@ Recommended roles:
 
 **Purpose:** device metadata and firmware/config management.
 
-What the device actually writes today:
+What is actually written today — `fwVersion`, `hw` and `configVersion` by the device,
+`timezone` and `tzPosix` by the app:
 
 ```json
 {
@@ -123,13 +124,37 @@ What the device actually writes today:
   "hw": {
     "bme680": false
   },
-  "configVersion": 42
+  "configVersion": 42,
+  "timezone": "Europe/Warsaw",
+  "tzPosix": "CET-1CEST,M3.5.0,M10.5.0/3"
 }
 
 ```
 
 `name`, `createdAt` and `hw.matrix` appear in earlier drafts of this document but are never
 written by the device or the app. The app falls back to a placeholder when showing a device name.
+
+Why both timezone fields?
+
+The device carries no tzdata, so it cannot turn `Europe/Warsaw` into an offset.
+The app resolves the IANA name to a POSIX TZ rule and writes both:
+
+- `timezone` — the IANA name. Display only; the firmware never reads it. It
+  exists so the zone is legible in the app and in the Firestore console.
+- `tzPosix` — what the firmware actually applies, via `setenv("TZ", ...)` and
+  `configTzTime()`. The rule carries its own DST transitions, so the device
+  handles the March/October changeovers itself even if it never hears from the
+  app again.
+
+The app fills these in from the phone's timezone the first time it sees a device
+without one, and only then — a set zone is changed by the picker in Device
+Settings, never silently by a phone that has travelled. The firmware caches
+`tzPosix` in NVS, so the clock is correct at boot and while offline. When the
+field is absent the device falls back to `DEFAULT_TZ_POSIX` (`UTC0`).
+
+The app's table is generated from the system tzdata by
+`tools/gen_posix_timezones.js`; see `twin_glow/lib/core/utils/posix_timezones.dart`.
+
 
 Why `configVersion`?
 
@@ -308,6 +333,8 @@ parses flat fields only):
 - CLOCK screen is **not shareable**
 - Fully generated locally on the ESP32
 - Time is obtained via **NTP**, not Firebase
+- The **timezone** does come from Firebase: `tzPosix` on `/devices/{deviceId}`
+  (see 3.4). NTP supplies the epoch, `tzPosix` turns it into local time.
 - Firebase stores **configuration only**, never pixel data
 
 ---

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/models/device_model.dart';
+import '../../../core/utils/device_timezone.dart';
 import '../../../services/firebase/firebase_repository.dart';
 
 class DevicesState {
@@ -63,9 +64,46 @@ class DevicesCubit extends Cubit<DevicesState> {
       if (activeDevice != null) {
         _subscribeToPresence(activeDevice.id);
       }
+
+      // Not awaited: the device list should not wait on a platform channel.
+      unawaited(_backfillTimeZones(devices));
     } catch (e) {
       emit(state.copyWith(isLoading: false, error: e.toString()));
     }
+  }
+
+  /// Gives a device its first timezone, taken from the phone.
+  ///
+  /// Only fills the field when it is absent. A zone that is already set is left
+  /// alone even when the phone disagrees - travelling abroad should not re-zone
+  /// the clock sitting at home. After this, only the picker changes it.
+  Future<void> _backfillTimeZones(List<DeviceModel> devices) async {
+    final missing = devices
+        .where((d) => d.tzPosix == null || d.tzPosix!.isEmpty)
+        .toList();
+    if (missing.isEmpty) return;
+
+    final zone = await resolvePhoneTimeZone();
+    final updated = <String, DeviceModel>{};
+    for (final device in missing) {
+      final withZone =
+          device.copyWith(timezone: zone.iana, tzPosix: zone.posix);
+      try {
+        // The repository directly, not updateDevice(): that reloads the list,
+        // which is what called this in the first place.
+        await firebaseRepository.updateDevice(device.id, withZone);
+        updated[device.id] = withZone;
+      } catch (_) {
+        // A device we cannot write to keeps running on the firmware default.
+        // The picker is still there to set it by hand.
+      }
+    }
+    if (updated.isEmpty || isClosed) return;
+
+    emit(state.copyWith(
+      devices: state.devices.map((d) => updated[d.id] ?? d).toList(),
+      activeDevice: updated[state.activeDevice?.id] ?? state.activeDevice,
+    ));
   }
 
   void _subscribeToPresence(String deviceId) {

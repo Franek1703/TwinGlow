@@ -34,17 +34,21 @@ void RenderClock::render(const String& format, const String& layout,
         return;
     }
     
-    struct tm* timeinfo = localtime(&now);
-    if (timeinfo == nullptr) {
+    // localtime_r, not localtime: the result is broken out into a local buffer
+    // rather than libc's shared static one, and the fields are read once here
+    // and passed down. The layout helpers used to re-read the clock themselves,
+    // which silently discarded whatever render() had computed.
+    struct tm tmBuf;
+    if (localtime_r(&now, &tmBuf) == nullptr) {
         matrix->fill(matrix->color(255, 0, 0)); // Red
         matrix->show();
         return;
     }
-    
-    int hour = timeinfo->tm_hour;
-    int minute = timeinfo->tm_min;
-    int second = timeinfo->tm_sec;
-    
+
+    int hour = tmBuf.tm_hour;
+    int minute = tmBuf.tm_min;
+    int second = tmBuf.tm_sec;
+
     // Log time being rendered (only every 5 seconds to avoid spam)
     static unsigned long lastTimeLogMs = 0;
     static int lastLoggedSecond = -1;
@@ -72,25 +76,20 @@ void RenderClock::render(const String& format, const String& layout,
     
     // Render based on layout
     if (layout == "BIG_HHMM") {
-        renderBigHHMM(fgColor, accentColor, bgColor, blinkColon);
+        renderBigHHMM(hour, minute, fgColor, accentColor, bgColor, blinkColon);
     } else if (layout == "HHMM_PLUS_SECONDS_BAR") {
-        renderHHMMPlusSecondsBar(fgColor, accentColor, bgColor, blinkColon);
+        renderHHMMPlusSecondsBar(hour, minute, second, fgColor, accentColor, bgColor, blinkColon);
     } else if (layout == "MINIMAL") {
-        renderMinimal(fgColor, accentColor, bgColor, blinkColon);
+        renderMinimal(hour, minute, fgColor, accentColor, bgColor, blinkColon);
     } else {
         // Default to BIG_HHMM
-        renderBigHHMM(fgColor, accentColor, bgColor, blinkColon);
+        renderBigHHMM(hour, minute, fgColor, accentColor, bgColor, blinkColon);
     }
     
     matrix->show();
 }
 
-void RenderClock::renderBigHHMM(uint32_t fgColor, uint32_t accentColor, uint32_t bgColor, bool blinkColon) {
-    time_t now = time(nullptr);
-    struct tm* timeinfo = localtime(&now);
-    int hour = timeinfo->tm_hour;
-    int minute = timeinfo->tm_min;
-    
+void RenderClock::renderBigHHMM(int hour, int minute, uint32_t fgColor, uint32_t accentColor, uint32_t bgColor, bool blinkColon) {
     // Draw HH:MM - digits are 3 pixels wide, no spacing
     // First digit starts at x=0, second at x=3, colon at x=6, minutes at x=8 and x=11
     drawDigit(0, 4, hour / 10, fgColor);
@@ -100,13 +99,7 @@ void RenderClock::renderBigHHMM(uint32_t fgColor, uint32_t accentColor, uint32_t
     drawDigit(13, 4, minute % 10, fgColor);
 }
 
-void RenderClock::renderHHMMPlusSecondsBar(uint32_t fgColor, uint32_t accentColor, uint32_t bgColor, bool blinkColon) {
-    time_t now = time(nullptr);
-    struct tm* timeinfo = localtime(&now);
-    int hour = timeinfo->tm_hour;
-    int minute = timeinfo->tm_min;
-    int second = timeinfo->tm_sec;
-    
+void RenderClock::renderHHMMPlusSecondsBar(int hour, int minute, int second, uint32_t fgColor, uint32_t accentColor, uint32_t bgColor, bool blinkColon) {
     // Draw HH:MM - digits are 3 pixels wide, no spacing
     // First digit starts at x=0, second at x=3, colon at x=6, minutes at x=8 and x=11
     drawDigit(0, 4, hour / 10, fgColor);
@@ -119,12 +112,7 @@ void RenderClock::renderHHMMPlusSecondsBar(uint32_t fgColor, uint32_t accentColo
     drawSecondsBar(second, accentColor);
 }
 
-void RenderClock::renderMinimal(uint32_t fgColor, uint32_t accentColor, uint32_t bgColor, bool blinkColon) {
-    time_t now = time(nullptr);
-    struct tm* timeinfo = localtime(&now);
-    int hour = timeinfo->tm_hour;
-    int minute = timeinfo->tm_min;
-    
+void RenderClock::renderMinimal(int hour, int minute, uint32_t fgColor, uint32_t accentColor, uint32_t bgColor, bool blinkColon) {
     // Smaller digits
     drawDigit(2, 6, hour / 10, fgColor);
     drawDigit(6, 6, hour % 10, fgColor);

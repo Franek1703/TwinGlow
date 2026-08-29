@@ -34,6 +34,8 @@ class FirebaseFakeRepository implements FirebaseRepository {
       isOnline: true,
       hasSensor: true,
       userId: 'user1',
+      timezone: 'Europe/Warsaw',
+      tzPosix: 'CET-1CEST,M3.5.0,M10.5.0/3',
     );
     _devices.add(device);
 

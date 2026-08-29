@@ -62,7 +62,9 @@ public:
     FirestoreRepo(FirebaseClientWrap* wrap, const String& projectId, const String& deviceId);
     
     // Device operations
-    bool getDeviceDoc(int& configVersion, bool& bme680Present);
+    // tzPosix receives the device's POSIX TZ rule, or "" when the doc has no
+    // timezone yet (firmware-created docs, or a device the app has never seen).
+    bool getDeviceDoc(int& configVersion, bool& bme680Present, String& tzPosix);
     bool createDeviceDoc(const String& fwVersion);
     bool updateDeviceCapability(bool bme680Present);
     
@@ -76,8 +78,9 @@ public:
     // Asset operations
     bool getAsset(const String& assetId, AssetData& asset);
     
-    // Config version polling
-    bool checkConfigVersion(int& version);
+    // Config version polling. The device doc is fetched whole anyway, so the
+    // timezone rides along on the existing 60s poll at no extra network cost.
+    bool checkConfigVersion(int& version, String& tzPosix);
     
 private:
     FirebaseClientWrap* wrap;

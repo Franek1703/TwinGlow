@@ -7,7 +7,18 @@
 // 1000000000 = 2001-09-09.
 static const time_t TIME_VALID_EPOCH_MIN = 1000000000;
 
-TimeSync::TimeSync() : lastSyncMs(0), synced(false) {
+TimeSync::TimeSync() : lastSyncMs(0), synced(false), tzPosix(DEFAULT_TZ_POSIX) {
+}
+
+void TimeSync::setTimeZone(const String& posixTz) {
+    if (posixTz.length() == 0) return;
+    tzPosix = posixTz;
+    // setenv+tzset takes effect immediately, so a screen already on the panel
+    // picks up the new zone without waiting for the next NTP sync.
+    setenv("TZ", tzPosix.c_str(), 1);
+    tzset();
+    Serial.print(F("[TimeSync] Timezone applied: "));
+    Serial.println(tzPosix);
 }
 
 bool TimeSync::isTimeValid() {
@@ -63,14 +74,19 @@ bool TimeSync::shouldSync() const {
 }
 
 time_t TimeSync::getNtpTime() {
-    const int timeZone = 0; // UTC
-
-    // Three servers: configTime falls back in order if the first is unreachable.
-    Serial.print(F("[TimeSync] configTime(0, 0, pool.ntp.org, time.google.com, time.cloudflare.com), waiting up to "));
+    // configTzTime, not configTime: the latter derives TZ from its two offset
+    // arguments and overwrites whatever setTimeZone() installed. Since this runs
+    // again every TIME_SYNC_RECONFIG_INTERVAL_MS while waiting and every
+    // NTP_SYNC_INTERVAL_MS thereafter, configTime would wipe the zone within
+    // seconds of it being applied.
+    // Three servers: it falls back in order if the first is unreachable.
+    Serial.print(F("[TimeSync] configTzTime("));
+    Serial.print(tzPosix);
+    Serial.print(F(", pool.ntp.org, time.google.com, time.cloudflare.com), waiting up to "));
     Serial.print(NTP_WAIT_MS);
     Serial.println(F("ms"));
 
-    configTime(timeZone * 3600, 0, "pool.ntp.org", "time.google.com", "time.cloudflare.com");
+    configTzTime(tzPosix.c_str(), "pool.ntp.org", "time.google.com", "time.cloudflare.com");
 
     // A cold DNS lookup plus an NTP round trip routinely takes several seconds,
     // so this waits NTP_WAIT_MS rather than the 1s the old retry count allowed.

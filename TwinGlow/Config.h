@@ -53,7 +53,11 @@
 #define NTP_RETRY_INTERVAL_MS 300000       // 5 minutes (while the clock is unsynced)
 #define NTP_WAIT_MS 8000                   // How long one sync attempt waits for the first NTP packet
 #define TIME_SYNC_STATE_TIMEOUT_MS 45000   // Hard deadline for the TIME_SYNC state before continuing unsynced
-#define TIME_SYNC_RECONFIG_INTERVAL_MS 15000 // How often TIME_SYNC re-issues configTime() while waiting
+#define TIME_SYNC_RECONFIG_INTERVAL_MS 15000 // How often TIME_SYNC re-issues configTzTime() while waiting
+
+// POSIX TZ rule applied until the app writes one to the device doc. "UTC0" keeps
+// the pre-timezone behaviour rather than guessing a zone the owner may not be in.
+#define DEFAULT_TZ_POSIX "UTC0"
 #define PRESENCE_UPDATE_INTERVAL_MS 20000  // 20 seconds
 #define CONFIG_POLL_INTERVAL_MS 60000      // 60 seconds
 #define TELEMETRY_UPDATE_INTERVAL_MS 10000 // 10 seconds (if BME680 present)
@@ -63,6 +67,14 @@
 // Shown instead of black when an asset fails to load or has an unknown
 // encoding, so a broken screen is visibly different from a dark image.
 #define ASSET_ERROR_COLOR 0x200000       // Dim red
+
+// The panel is mounted turned, so the procedural screens transform as they
+// draw. Assets are authored in plain orientation (x = column, y = row) and
+// need the same treatment, or an IMAGE lands 90 degrees off from the CLOCK.
+//   1 = transpose, setPixel(y, x)          - matches RenderClock's digits
+//   0 = 90-degree rotation, setPixel(W-1-y, x) - matches its colon/seconds bar
+// Those two differ by a mirror. Switch to 0 if images come out mirrored.
+#define ASSET_ORIENT_TRANSPOSE 1
 
 // Screen playlist rotation
 #define SCREEN_AUTO_ROTATE 0             // 1 = cycle screens automatically, 0 = buttons only
@@ -97,6 +109,7 @@
 #define NVS_KEY_CLAIMED_UID "claimed_uid"
 #define NVS_KEY_PROVISIONED "provisioned"
 #define NVS_KEY_BRIGHTNESS "brightness"
+#define NVS_KEY_TZ_POSIX "tz_posix"
 
 // Firmware version
 #define FW_VERSION "1.0.0"

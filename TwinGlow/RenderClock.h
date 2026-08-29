@@ -6,7 +6,9 @@
 
 /**
  * Clock screen renderer
- * Procedural rendering using local time
+ * Procedural rendering using local time, per the POSIX TZ rule TimeSync applies.
+ * render() resolves the time once and hands the fields to the layout helpers, so
+ * the zone and the 12H conversion reach every layout.
  */
 class RenderClock {
 public:
@@ -19,9 +21,9 @@ public:
 private:
     MatrixDriver* matrix;
     
-    void renderBigHHMM(uint32_t fgColor, uint32_t accentColor, uint32_t bgColor, bool blinkColon);
-    void renderHHMMPlusSecondsBar(uint32_t fgColor, uint32_t accentColor, uint32_t bgColor, bool blinkColon);
-    void renderMinimal(uint32_t fgColor, uint32_t accentColor, uint32_t bgColor, bool blinkColon);
+    void renderBigHHMM(int hour, int minute, uint32_t fgColor, uint32_t accentColor, uint32_t bgColor, bool blinkColon);
+    void renderHHMMPlusSecondsBar(int hour, int minute, int second, uint32_t fgColor, uint32_t accentColor, uint32_t bgColor, bool blinkColon);
+    void renderMinimal(int hour, int minute, uint32_t fgColor, uint32_t accentColor, uint32_t bgColor, bool blinkColon);
     
     void drawDigit(uint8_t x, uint8_t y, uint8_t digit, uint32_t color);
     void drawColon(uint8_t x, uint8_t y, uint32_t color, bool blink);
