@@ -2,7 +2,7 @@
 #include <Arduino.h>
 #include <cstring>
 
-StateMachine::StateMachine() : currentState(DeviceState::BOOT) {
+StateMachine::StateMachine() : currentState(DeviceState::BOOT), entryPending(false) {
     lastError[0] = '\0';
 }
 
@@ -17,7 +17,14 @@ void StateMachine::setState(DeviceState newState) {
         Serial.print(F(" -> "));
         Serial.println(stateToString(newState));
         currentState = newState;
+        entryPending = true;
     }
+}
+
+bool StateMachine::justEntered() {
+    if (!entryPending) return false;
+    entryPending = false;
+    return true;
 }
 
 void StateMachine::transition(DeviceState newState) {

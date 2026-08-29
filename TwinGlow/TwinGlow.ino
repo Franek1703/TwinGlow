@@ -274,7 +274,13 @@ void handleWifiConnecting() {
 void handleTimeSync() {
     static bool syncAttempted = false;
     static unsigned long syncStartMs = 0;
-    
+
+    // Per-entry reset, so re-entering TIME_SYNC retries instead of no-opping.
+    if (fsm.justEntered()) {
+        syncAttempted = false;
+        syncStartMs = 0;
+    }
+
     if (!syncAttempted) {
         syncStartMs = millis();
         if (timeSync.sync(firebaseClient.getApp())) {
@@ -311,108 +317,110 @@ void handleTimeSync() {
 }
 
 void handleFirebaseConnecting() {
-    static bool firebaseStarted = false;
-    
-    if (!firebaseStarted) {
-        if (firebaseClient.begin()) {
+    // OFFLINE_RUNNING re-enters this state to retry, so the guard is per-entry.
+    if (!fsm.justEntered()) return;
+
+    if (firebaseClient.begin()) {
+        // begin() is idempotent - only allocate the repos on the first success.
+        if (firestoreRepo == nullptr) {
             firestoreRepo = new FirestoreRepo(
                 &firebaseClient,
                 FIREBASE_PROJECT_ID,
                 deviceId
             );
+        }
+        if (rtdbRepo == nullptr) {
             rtdbRepo = new RtdbRepo(
                 &firebaseClient,
                 deviceId
             );
-            firebaseStarted = true;
-            Serial.println(F("[Firebase] Connected"));
-#if FIREBASE_RUN_TEST
-            runFirebaseTest(firebaseClient);
-#endif
-            fsm.transition(DeviceState::DEVICE_CLAIMING);
-        } else {
-            Serial.println(F("[Firebase] Connection failed"));
-            delay(2000);
-            // Retry or go offline
-            fsm.transition(DeviceState::OFFLINE_RUNNING);
         }
+        Serial.println(F("[Firebase] Connected"));
+#if FIREBASE_RUN_TEST
+        runFirebaseTest(firebaseClient);
+#endif
+        fsm.transition(DeviceState::DEVICE_CLAIMING);
+    } else {
+        Serial.println(F("[Firebase] Connection failed"));
+        delay(2000);
+        // Retry or go offline
+        fsm.transition(DeviceState::OFFLINE_RUNNING);
     }
 }
 
 void handleDeviceClaiming() {
-    static bool claimingAttempted = false;
-    
-    if (!claimingAttempted && firestoreRepo != nullptr) {
-        if (claimedUid.length() > 0) {
-            Serial.print(F("[Claiming] Attempting claim for uid len="));
-            Serial.println(claimedUid.length());
-            if (firestoreRepo->claimDevice(claimedUid)) {
-                claimingAttempted = true;
-                Serial.println(F("[Claiming] Success"));
-                fsm.transition(DeviceState::CAPABILITY_DETECT);
-            } else {
-                Serial.println(F("[Claiming] Failed, continuing anyway"));
-                claimingAttempted = true;
-                fsm.transition(DeviceState::CAPABILITY_DETECT);
-            }
+    if (!fsm.justEntered()) return;
+
+    if (firestoreRepo == nullptr) {
+        // Previously this state had no exit when the repo was null.
+        Serial.println(F("[Claiming] firestoreRepo is null, skipping"));
+    } else if (claimedUid.length() > 0) {
+        Serial.print(F("[Claiming] Attempting claim for uid len="));
+        Serial.println(claimedUid.length());
+        if (firestoreRepo->claimDevice(claimedUid)) {
+            Serial.println(F("[Claiming] Success"));
         } else {
-            Serial.println(F("[Claiming] No UID, skipping"));
-            claimingAttempted = true;
-            fsm.transition(DeviceState::CAPABILITY_DETECT);
+            Serial.println(F("[Claiming] Failed, continuing anyway"));
         }
+    } else {
+        Serial.println(F("[Claiming] No UID, skipping"));
     }
+
+    fsm.transition(DeviceState::CAPABILITY_DETECT);
 }
 
 void handleCapabilityDetect() {
-    static bool detectAttempted = false;
-    
-    if (!detectAttempted) {
-        // Try to detect BME680
+    if (!fsm.justEntered()) return;
+
+    // Probe the sensor once per boot - Bme680Driver::detect() allocates.
+    static bool sensorProbed = false;
+    if (!sensorProbed) {
+        sensorProbed = true;
         bme680Detected = bme680.begin();
-        
-        if (firestoreRepo != nullptr) {
-            // Read current state from Firestore
-            int dummy;
-            firestoreRepo->getDeviceDoc(dummy, bme680Present);
-            
-            // Update if changed
-            if (bme680Detected != bme680Present) {
-                firestoreRepo->updateDeviceCapability(bme680Detected);
-                bme680Present = bme680Detected;
-            }
-        } else {
+    }
+
+    if (firestoreRepo != nullptr) {
+        // Read current state from Firestore
+        int dummy;
+        firestoreRepo->getDeviceDoc(dummy, bme680Present);
+
+        // Update if changed
+        if (bme680Detected != bme680Present) {
+            firestoreRepo->updateDeviceCapability(bme680Detected);
             bme680Present = bme680Detected;
         }
-        
-        detectAttempted = true;
-        Serial.print(F("[Capability] BME680: "));
-        Serial.println(bme680Present ? "present" : "not present");
-        
-        fsm.transition(DeviceState::CONFIG_LOADING);
+    } else {
+        bme680Present = bme680Detected;
     }
+
+    Serial.print(F("[Capability] BME680: "));
+    Serial.println(bme680Present ? "present" : "not present");
+
+    fsm.transition(DeviceState::CONFIG_LOADING);
 }
 
 void handleConfigLoading() {
-    static bool loadingStarted = false;
-    
-    if (!loadingStarted) {
-        if (firestoreRepo == nullptr) {
-            Serial.println(F("[Config] firestoreRepo is null, skipping"));
-            // Still transition to RUNNING even without config
-            loadingStarted = true;
-            fsm.transition(DeviceState::RUNNING);
-            return;
-        }
-        
-        loadingStarted = true;
-        
+    // Runs once per entry into CONFIG_LOADING. The 60s config poll re-enters
+    // this state whenever configVersion changes, so the guard must be tied to
+    // state entry - a permanent `static bool` would make every reload after the
+    // first a no-op and strand the device here forever.
+    if (!fsm.justEntered()) return;
+
+    if (firestoreRepo == nullptr) {
+        Serial.println(F("[Config] firestoreRepo is null, skipping"));
+        // Still transition to RUNNING even without config
+        fsm.transition(DeviceState::RUNNING);
+        return;
+    }
+
+    {
         // Read config version
         int configVersion;
         if (firestoreRepo->checkConfigVersion(configVersion)) {
             if (configVersion != currentConfigVersion) {
                 Serial.print(F("[Config] Loading config version: "));
                 Serial.println(configVersion);
-                
+
                 std::vector<ScreenConfig> screens;
                 if (firestoreRepo->getScreens(screens)) {
                     Serial.print(F("[Config] Firestore returned "));
@@ -484,10 +492,13 @@ void handleConfigLoading() {
                         }
                     }
                     playlist.setScreens(screens);
+                    // Only mark this version as consumed once it actually loaded.
+                    // Leaving it unchanged on failure lets the next poll retry
+                    // instead of silently dropping the update.
+                    currentConfigVersion = configVersion;
                     } else {
-                        Serial.println(F("[Config] getScreens() returned false"));
+                        Serial.println(F("[Config] getScreens() returned false, keeping cached playlist"));
                     }
-                currentConfigVersion = configVersion;
             } else {
                 Serial.print(F("[Config] Config version unchanged: "));
                 Serial.println(configVersion);
@@ -501,14 +512,19 @@ void handleConfigLoading() {
             buttonActions = new ButtonActions(&buttons, &playlist, &matrix, &nvs, rtdbRepo);
         }
         
-        // Schedule periodic tasks
-        scheduler.schedulePresenceUpdate(updatePresence);
-        if (bme680Present) {
-            scheduler.scheduleTelemetryUpdate(updateTelemetry);
+        // Schedule periodic tasks. Once per boot - re-registering on every
+        // config reload would reset each task's interval timer.
+        static bool tasksScheduled = false;
+        if (!tasksScheduled) {
+            tasksScheduled = true;
+            scheduler.schedulePresenceUpdate(updatePresence);
+            if (bme680Present) {
+                scheduler.scheduleTelemetryUpdate(updateTelemetry);
+            }
+            scheduler.scheduleConfigPoll(checkConfigVersion);
+            scheduler.scheduleNtpSync(syncTime);
         }
-        scheduler.scheduleConfigPoll(checkConfigVersion);
-        scheduler.scheduleNtpSync(syncTime);
-        
+
         Serial.println(F("[Config] Transitioning to RUNNING"));
         fsm.transition(DeviceState::RUNNING);
     }
@@ -722,6 +738,12 @@ void updateTelemetry() {
 }
 
 void checkConfigVersion() {
+    // Only request a reload from a state that can actually service one.
+    // Re-entering CONFIG_LOADING from CONFIG_LOADING is not a state change, so
+    // it would not raise the entry latch and the device would never leave.
+    DeviceState state = fsm.getState();
+    if (state != DeviceState::RUNNING && state != DeviceState::OFFLINE_RUNNING) return;
+
     if (firestoreRepo != nullptr && WiFi.isConnected()) {
         int version;
         if (firestoreRepo->checkConfigVersion(version)) {
