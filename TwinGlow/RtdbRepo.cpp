@@ -11,9 +11,11 @@ RtdbRepo::RtdbRepo(FirebaseClientWrap* wrap, const String& devId)
 String RtdbRepo::getPresencePath() const { return ""; }
 String RtdbRepo::getTelemetryPath() const { return ""; }
 String RtdbRepo::getCommandsPath() const { return ""; }
+String RtdbRepo::getConfigPath() const { return ""; }
 String RtdbRepo::getPairEventsPath(const String& pairId) const { (void)pairId; return ""; }
 bool RtdbRepo::updatePresence(bool) { return false; }
 bool RtdbRepo::pushTelemetry(float, float, float, float) { return false; }
+bool RtdbRepo::getConfigRevision(int&) { return false; }
 bool RtdbRepo::checkCommands() { return false; }
 bool RtdbRepo::acknowledgeCommand(const String&, bool) { return false; }
 bool RtdbRepo::sendToPair(const String&, const String&, const String&) { return false; }
@@ -45,6 +47,10 @@ String RtdbRepo::getCommandsPath() const {
 
 String RtdbRepo::getPairEventsPath(const String& pairId) const {
     return "/pairs/" + pairId + "/events";
+}
+
+String RtdbRepo::getConfigPath() const {
+    return "/config/" + deviceId + "/configVersion";
 }
 
 bool RtdbRepo::updatePresence(bool online) {
@@ -175,6 +181,21 @@ bool RtdbRepo::pushTelemetry(float temperature, float humidity, float pressure, 
     }
     
     Serial.println(F("[RtdbRepo] pushTelemetry SUCCESS"));
+    return true;
+}
+
+bool RtdbRepo::getConfigRevision(int& revision) {
+    if (wrap == nullptr) return false;
+    FirebaseRTDBType* rtdb = static_cast<FirebaseRTDBType*>(wrap->getRtdb());
+    AsyncClientClass* aClient = wrap->getAsyncClient();
+    if (rtdb == nullptr || aClient == nullptr) return false;
+    // Read as String rather than int: an absent node answers "null", which
+    // get<int>() would flatten to 0 and make indistinguishable from a real 0.
+    String raw = rtdb->get<String>(*aClient, getConfigPath());
+    if (aClient->lastError().code() != 0) return false;
+    raw.trim();
+    if (raw.length() == 0 || raw == "null") return false;
+    revision = raw.toInt();
     return true;
 }
 

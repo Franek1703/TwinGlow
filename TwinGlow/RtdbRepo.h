@@ -22,6 +22,13 @@ public:
     // Telemetry (BME680)
     bool pushTelemetry(float temperature, float humidity, float pressure, float gas);
     
+    // Config revision "doorbell" - a single integer the app ticks on every
+    // config change. The value itself is meaningless to the device; only the
+    // fact that it moved matters, which is what makes it safe to compare
+    // against a locally remembered copy without agreeing with Firestore's
+    // own configVersion.
+    bool getConfigRevision(int& revision);
+
     // Commands
     bool checkCommands(); // Poll for new commands
     bool acknowledgeCommand(const String& commandId, bool success);
@@ -36,6 +43,7 @@ private:
     String getPresencePath() const;
     String getTelemetryPath() const;
     String getCommandsPath() const;
+    String getConfigPath() const;
     String getPairEventsPath(const String& pairId) const;
 };
 

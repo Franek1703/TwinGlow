@@ -306,11 +306,15 @@ This prevents duplication of configuration across devices.
 User edits screen:
 
 1. App updates Firestore
-2. App increments configVersion
-3. Device detects version change
-4. Device reloads configuration
+2. App increments `devices/{deviceId}.configVersion` (`FieldValue.increment`,
+   so two edits made close together cannot overwrite each other)
+3. App ticks the RTDB doorbell `/config/{deviceId}/configVersion`
+4. Device sees the doorbell move within ~5 s and re-checks Firestore
+   (its own 60 s poll is the fallback if that read fails)
+5. Device reloads configuration
 
-No direct push required.
+Step 3 is best-effort: if RTDB is unreachable the edit still succeeds and still
+reaches the device, just via the slower poll.
 
 ---
 
@@ -319,8 +323,18 @@ No direct push required.
 User edits asset:
 
 1. Update `/assets/{assetId}`
-2. Update configVersion
+2. Find the devices showing it and bump `configVersion` on each, ringing the
+   doorbell with it. Asset writes carry no device context, so this lookup is
+   what makes the flow possible at all. Since the asset pool moved onto the
+   screen document a screen can reference an asset three ways, and Firestore
+   cannot OR across fields, so it takes three collection-group queries whose
+   results are unioned - on `assetId`, `defaultAssetId` and
+   `availableAssetIds` (array-contains). Each needs its own collection-group
+   index on `screens`.
 3. Device reloads asset data
+
+Not yet covered: an asset referenced only through a shared screen
+(`pairs/{pairId}/sharedScreens`), which needs a pair → device traversal.
 
 ---
 
@@ -432,7 +446,8 @@ If device offline:
 The TwinGlow mobile backend architecture is:
 
 * Firebase-native
-* Event-driven via configVersion
+* Event-driven via configVersion, with an RTDB doorbell to cut update latency
+  from ~60 s to ~5 s
 * Reference-based for shared content
 * Cleanly separated from UI
 * Compatible with ESP32 FirebaseClient design

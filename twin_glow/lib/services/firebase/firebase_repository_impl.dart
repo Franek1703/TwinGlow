@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -143,13 +144,13 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
   Future<void> updateDevice(String deviceId, DeviceModel device) async {
     try {
       final deviceRef = _firestore.collection('devices').doc(deviceId);
-      final currentData = await deviceRef.get();
-      final currentVersion = currentData.data()?['configVersion'] ?? 0;
 
       await deviceRef.update({
         'name': device.name,
         'hasSensor': device.hasSensor,
-        'configVersion': currentVersion + 1,
+        // Kept inside this one update so the bump lands atomically with the
+        // data it describes; increment avoids the lost-update race.
+        'configVersion': FieldValue.increment(1),
         'updatedAt': Timestamp.fromDate(DateTime.now()),
         // Only written when set, so an update that carries no timezone (an
         // older caller, or a model built without one) cannot wipe the zone the
@@ -157,6 +158,8 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
         if (device.timezone != null) 'timezone': device.timezone,
         if (device.tzPosix != null) 'tzPosix': device.tzPosix,
       });
+
+      await _ringConfigDoorbell(deviceId);
     } catch (e) {
       throw Exception('Failed to update device: $e');
     }
@@ -478,6 +481,7 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
         'isDefault': false,
         'createdAt': Timestamp.fromDate(DateTime.now()),
       });
+      await _bumpDevicesUsingAsset(asset.id);
       return asset;
     } catch (e) {
       throw Exception('Failed to create asset: $e');
@@ -500,6 +504,7 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
         'pixels': FieldValue.delete(),
         'updatedAt': Timestamp.fromDate(DateTime.now()),
       });
+      await _bumpDevicesUsingAsset(assetId);
     } catch (e) {
       throw Exception('Failed to update asset: $e');
     }
@@ -509,6 +514,9 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
   Future<void> deleteAsset(String assetId) async {
     try {
       await _firestore.collection('assets').doc(assetId).delete();
+      // The screen docs still carry the id, so the lookup works after the
+      // delete and the device gets told to drop the cached pixels.
+      await _bumpDevicesUsingAsset(assetId);
     } catch (e) {
       throw Exception('Failed to delete asset: $e');
     }
@@ -829,12 +837,73 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
   }
 
   Future<void> _incrementDeviceConfigVersion(String deviceId) async {
-    final deviceRef = _firestore.collection('devices').doc(deviceId);
-    final currentData = await deviceRef.get();
-    final currentVersion = currentData.data()?['configVersion'] ?? 0;
-    await deviceRef.update({
-      'configVersion': currentVersion + 1,
+    // FieldValue.increment rather than a read-then-write: two edits made close
+    // together used to read the same version and both write n+1, so one screen
+    // change was silently dropped and never reached the device.
+    await _firestore.collection('devices').doc(deviceId).update({
+      'configVersion': FieldValue.increment(1),
     });
+    await _ringConfigDoorbell(deviceId);
+  }
+
+  /// Ticks the RTDB node the device watches every few seconds. The value is a
+  /// bare counter - the device only reacts to it *changing*, then re-reads the
+  /// authoritative configVersion from Firestore - so this never has to agree
+  /// with the Firestore field. Without it the device waits out its 60s poll.
+  ///
+  /// Deliberately swallows failures: the doorbell is an accelerator, and the
+  /// 60s poll still delivers the change. A screen edit must not surface as an
+  /// error just because RTDB was unreachable.
+  Future<void> _ringConfigDoorbell(String deviceId) async {
+    try {
+      await _database
+          .ref('config/$deviceId/configVersion')
+          .set(ServerValue.increment(1));
+    } catch (e) {
+      // Logged, not rethrown: the Firestore poll still delivers the change.
+      debugPrint('Config doorbell failed for $deviceId (device will still '
+          'update on its 60s poll): $e');
+    }
+  }
+
+  /// Assets carry no device context, so find the screens pointing at one and
+  /// bump every device that shows it. Without this an asset edit never bumped
+  /// anything at all and the panel kept rendering the old pixels indefinitely.
+  ///
+  /// A screen can reference an asset three ways since the asset pool moved onto
+  /// the screen document: the legacy `assetId`, the pool's `defaultAssetId`, or
+  /// any entry of `availableAssetIds`. Firestore cannot OR across different
+  /// fields in one query, so this runs all three and unions the results -
+  /// checking only `assetId` would silently miss every pooled image.
+  ///
+  /// Each query needs its own collection-group index on `screens`.
+  ///
+  /// Not covered: an asset reached solely through a shared-screen pointer
+  /// (pairs/{pairId}/sharedScreens), which needs a pair to device traversal
+  /// that does not exist yet.
+  Future<void> _bumpDevicesUsingAsset(String assetId) async {
+    try {
+      final screens = _firestore.collectionGroup('screens');
+      final results = await Future.wait([
+        screens.where('assetId', isEqualTo: assetId).get(),
+        screens.where('defaultAssetId', isEqualTo: assetId).get(),
+        screens.where('availableAssetIds', arrayContains: assetId).get(),
+      ]);
+      final deviceIds = results
+          .expand((r) => r.docs)
+          .map((d) => d.reference.parent.parent?.id)
+          .whereType<String>()
+          .toSet();
+      for (final id in deviceIds) {
+        await _incrementDeviceConfigVersion(id);
+      }
+    } catch (e) {
+      // Never fail the asset save over the notification - but do say so. A
+      // missing collection-group index on screens.assetId lands here, and
+      // silently swallowing it would look exactly like the bug this fixes.
+      debugPrint('Could not notify devices using asset $assetId; they will '
+          'show stale pixels until another edit bumps them: $e');
+    }
   }
 
   Future<UserModel?> _getUserById(String userId) async {

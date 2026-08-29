@@ -675,6 +675,7 @@ RTDB is for live state only.
 ```
 /presence/{deviceId}
 /telemetry/{deviceId}
+/config/{deviceId}/configVersion
 /commands/{deviceId}/{commandId}
 
 ```
@@ -722,7 +723,62 @@ Fields are set individually (not as a JSON object) to avoid JSON parsing issues 
 
 ---
 
-### 5.4 `/commands/{deviceId}/{commandId}` (optional)
+### 5.4 `/config/{deviceId}/configVersion` (config-change doorbell)
+
+```json
+{
+  "configVersion": 17
+}
+
+```
+
+A bare monotonic counter, written by the app and read by the device. It is a
+**notification, not data** - the number carries no meaning of its own and is
+deliberately *not* required to match the Firestore `configVersion`.
+
+**Why it exists:** screens live in Firestore, and Firestore has no listen support
+over the REST API the firmware uses, so the device can only poll. Polling the
+device document often enough to feel instant is expensive; polling one RTDB
+integer is not. The app ticks this node on every config change, the device reads
+it every `REVISION_POLL_INTERVAL_MS` (5 s), and any change makes it run the
+Firestore check immediately instead of waiting out the 60 s poll.
+
+**Writer:** `_ringConfigDoorbell()` in
+`twin_glow/lib/services/firebase/firebase_repository_impl.dart`, called from
+`_incrementDeviceConfigVersion()` (screen add/update/delete/reorder, asset
+add/update/delete) and from `updateDevice()`. The asset path resolves which
+devices to ring with three collection-group queries over `screens` -
+`assetId`, `defaultAssetId` and `availableAssetIds` - since the asset pool
+lives on the screen document.
+
+**Reader:** `RtdbRepo::getConfigRevision()` →
+`checkConfigRevision()` in `TwinGlow.ino`, which delegates the real comparison to
+`checkConfigVersion()`.
+
+**Failure behaviour:** the write is best-effort and its failure never fails the
+edit; the read failing leaves the device's remembered value untouched. In both
+cases the 60 s Firestore poll still delivers the change, just slower.
+
+**Security rules.** The device bypasses rules (legacy database secret), but the
+app writes this node as the signed-in user, so the rules must permit it. Rules
+for this project are maintained in the Firebase console and are not in this repo
+- **merge** the following into the existing ruleset rather than replacing it:
+
+```json
+"config": {
+  "$deviceId": {
+    ".read": "auth != null",
+    ".write": "auth != null && root.child('users').child(auth.uid)
+                 .child('devices').child($deviceId).exists()",
+    "configVersion": { ".validate": "newData.isNumber()" }
+  }
+}
+```
+
+---
+
+### 5.5 `/commands/{deviceId}/{commandId}` (optional, not implemented)
+
 
 ```json
 {
@@ -774,8 +830,22 @@ attempts.
 
 ### 6.3 Detecting configuration updates
 
-- device periodically checks `configVersion`
-- when changed → rerun reload flow
+Two paths, both ending in the same reload:
+
+1. **Doorbell (fast, ~5 s).** The app ticks
+   `/config/{deviceId}/configVersion` in RTDB on every change. The device reads
+   that one integer every 5 s; if it moved, it runs the Firestore check straight
+   away. See §5.4.
+2. **Poll (fallback, ~60 s).** Independently, the device re-reads
+   `/devices/{deviceId}` every 60 s.
+
+Either way the decision is the same: compare Firestore's `configVersion` against
+the last one successfully loaded, and rerun the reload flow when they differ. The
+doorbell only changes *when* that comparison happens, so a missed or failed RTDB
+read costs latency, never correctness.
+
+Note the reload is marked consumed only after the screens actually load, so a
+failed fetch leaves the old version in place and the next poll retries.
 
 ---
 
