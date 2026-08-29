@@ -8,26 +8,36 @@ class DevicesState {
   final List<DeviceModel> devices;
   final DeviceModel? activeDevice;
   final bool isLoading;
+  final bool hasLoaded;
   final String? error;
 
   DevicesState({
     this.devices = const [],
     this.activeDevice,
-    this.isLoading = false,
+    this.isLoading = true,
+    this.hasLoaded = false,
     this.error,
   });
+
+  bool get isInitialLoading => isLoading && !hasLoaded;
+  bool get isRefreshing => isLoading && hasLoaded;
 
   DevicesState copyWith({
     List<DeviceModel>? devices,
     DeviceModel? activeDevice,
     bool? isLoading,
+    bool? hasLoaded,
     String? error,
+    bool clearActiveDevice = false,
+    bool clearError = false,
   }) {
     return DevicesState(
       devices: devices ?? this.devices,
-      activeDevice: activeDevice ?? this.activeDevice,
+      activeDevice:
+          clearActiveDevice ? null : (activeDevice ?? this.activeDevice),
       isLoading: isLoading ?? this.isLoading,
-      error: error ?? this.error,
+      hasLoaded: hasLoaded ?? this.hasLoaded,
+      error: clearError ? null : (error ?? this.error),
     );
   }
 }
@@ -49,7 +59,7 @@ class DevicesCubit extends Cubit<DevicesState> {
   }
 
   Future<void> loadDevices() async {
-    emit(state.copyWith(isLoading: true));
+    emit(state.copyWith(isLoading: true, clearError: true));
     try {
       final devices = await firebaseRepository.getDevices(userId);
       final activeDevice = devices.isNotEmpty ? devices.first : null;
@@ -58,6 +68,9 @@ class DevicesCubit extends Cubit<DevicesState> {
         devices: devices,
         activeDevice: activeDevice,
         isLoading: false,
+        hasLoaded: true,
+        clearActiveDevice: activeDevice == null,
+        clearError: true,
       ));
 
       // Subscribe to presence updates for active device
@@ -68,7 +81,11 @@ class DevicesCubit extends Cubit<DevicesState> {
       // Not awaited: the device list should not wait on a platform channel.
       unawaited(_backfillTimeZones(devices));
     } catch (e) {
-      emit(state.copyWith(isLoading: false, error: e.toString()));
+      emit(state.copyWith(
+        isLoading: false,
+        hasLoaded: true,
+        error: e.toString(),
+      ));
     }
   }
 

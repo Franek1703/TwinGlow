@@ -53,30 +53,45 @@ final appRouter = GoRouter(
         return DeviceConfigView(deviceId: deviceId);
       },
     ),
-    // Main app shell with bottom navigation
-    ShellRoute(
-      builder: (context, state, child) => MainShell(child: child),
-      routes: [
-        GoRoute(
-          path: '/home',
-          pageBuilder: (context, state) => NoTransitionPage<void>(
-            key: state.pageKey,
-            child: const HomeView(),
-          ),
+    // Each bottom-navigation branch keeps its widget tree and cubits alive.
+    // Switching tabs therefore restores the existing state instead of
+    // recreating the page and reloading Firebase from an empty state.
+    StatefulShellRoute.indexedStack(
+      builder: (context, state, navigationShell) =>
+          MainShell(navigationShell: navigationShell),
+      branches: [
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/home',
+              pageBuilder: (context, state) => NoTransitionPage<void>(
+                key: state.pageKey,
+                child: const HomeView(),
+              ),
+            ),
+          ],
         ),
-        GoRoute(
-          path: '/assets',
-          pageBuilder: (context, state) => NoTransitionPage<void>(
-            key: state.pageKey,
-            child: const AssetsView(),
-          ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/assets',
+              pageBuilder: (context, state) => NoTransitionPage<void>(
+                key: state.pageKey,
+                child: const AssetsView(),
+              ),
+            ),
+          ],
         ),
-        GoRoute(
-          path: '/settings',
-          pageBuilder: (context, state) => NoTransitionPage<void>(
-            key: state.pageKey,
-            child: const SettingsView(),
-          ),
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/settings',
+              pageBuilder: (context, state) => NoTransitionPage<void>(
+                key: state.pageKey,
+                child: const SettingsView(),
+              ),
+            ),
+          ],
         ),
       ],
     ),
@@ -142,24 +157,34 @@ final appRouter = GoRouter(
 );
 
 class MainShell extends StatelessWidget {
-  final Widget child;
+  final StatefulNavigationShell navigationShell;
 
-  const MainShell({super.key, required this.child});
+  const MainShell({super.key, required this.navigationShell});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: child,
-      bottomNavigationBar: _BottomNav(),
+      body: navigationShell,
+      bottomNavigationBar: _BottomNav(
+        currentIndex: navigationShell.currentIndex,
+        onSelect: (index) {
+          if (index != navigationShell.currentIndex) {
+            navigationShell.goBranch(index);
+          }
+        },
+      ),
     );
   }
 }
 
 class _BottomNav extends StatelessWidget {
+  final int currentIndex;
+  final ValueChanged<int> onSelect;
+
+  const _BottomNav({required this.currentIndex, required this.onSelect});
+
   @override
   Widget build(BuildContext context) {
-    final currentLocation = GoRouterState.of(context).uri.path;
-
     return Container(
       decoration: const BoxDecoration(
         color: AppColors.bgCard,
@@ -176,20 +201,20 @@ class _BottomNav extends StatelessWidget {
               _NavItem(
                 icon: Icons.home,
                 label: 'Home',
-                path: '/home',
-                isActive: currentLocation == '/home',
+                isActive: currentIndex == 0,
+                onTap: () => onSelect(0),
               ),
               _NavItem(
                 icon: Icons.image,
                 label: 'Assets',
-                path: '/assets',
-                isActive: currentLocation == '/assets',
+                isActive: currentIndex == 1,
+                onTap: () => onSelect(1),
               ),
               _NavItem(
                 icon: Icons.settings,
                 label: 'Settings',
-                path: '/settings',
-                isActive: currentLocation == '/settings',
+                isActive: currentIndex == 2,
+                onTap: () => onSelect(2),
               ),
             ],
           ),
@@ -202,20 +227,20 @@ class _BottomNav extends StatelessWidget {
 class _NavItem extends StatelessWidget {
   final IconData icon;
   final String label;
-  final String path;
   final bool isActive;
+  final VoidCallback onTap;
 
   const _NavItem({
     required this.icon,
     required this.label,
-    required this.path,
     required this.isActive,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => context.go(path),
+      onTap: onTap,
       child: Container(
         padding: EdgeInsets.symmetric(
           horizontal: AppSpacing.lg,

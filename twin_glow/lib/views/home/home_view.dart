@@ -54,23 +54,20 @@ class HomeView extends StatelessWidget {
           );
         }
 
-        return MultiBlocProvider(
-          providers: [
-            BlocProvider(
-              create: (_) => DevicesCubit(firebaseRepo, userId),
-            ),
-            BlocProvider(
-              create: (_) {
-                final devicesCubit = DevicesCubit(firebaseRepo, userId);
-                devicesCubit.loadDevices();
-                return devicesCubit;
-              },
-            ),
-          ],
+        return BlocProvider(
+          create: (_) => DevicesCubit(firebaseRepo, userId),
           child: BlocBuilder<DevicesCubit, DevicesState>(
             builder: (context, devicesState) {
+              if (devicesState.isInitialLoading) {
+                return const Scaffold(
+                  backgroundColor: AppColors.bgPrimary,
+                  body: Center(child: CircularProgressIndicator()),
+                );
+              }
+
               final activeDevice = devicesState.activeDevice;
               if (activeDevice == null) {
+                final loadFailed = devicesState.error != null;
                 return Scaffold(
                   backgroundColor: AppColors.bgPrimary,
                   body: Center(
@@ -78,13 +75,26 @@ class HomeView extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
-                          'No devices found',
+                          loadFailed
+                              ? 'Couldn\'t load devices'
+                              : 'No devices found',
                           style: AppTypography.h2(context),
                         ),
+                        if (loadFailed) ...[
+                          SizedBox(height: AppSpacing.sm),
+                          Text(
+                            'Check your connection and try again.',
+                            style: AppTypography.body(context),
+                          ),
+                        ],
                         SizedBox(height: AppSpacing.lg),
                         AppButton(
-                          text: 'Add Device',
-                          onPressed: () => context.go('/provision'),
+                          text: loadFailed ? 'Retry' : 'Add Device',
+                          onPressed: loadFailed
+                              ? () => context
+                                  .read<DevicesCubit>()
+                                  .loadDevices()
+                              : () => context.go('/provision'),
                         ),
                       ],
                     ),
@@ -93,6 +103,7 @@ class HomeView extends StatelessWidget {
               }
 
               return BlocProvider(
+                key: ValueKey(activeDevice.id),
                 create: (_) =>
                     ScreensPlaylistCubit(firebaseRepo, activeDevice.id),
                 child: _HomeContent(device: activeDevice),
@@ -150,7 +161,7 @@ class _HomeContent extends StatelessWidget {
               // Screen List
               BlocBuilder<ScreensPlaylistCubit, ScreensPlaylistState>(
                 builder: (context, state) {
-                  if (state.isLoading) {
+                  if (state.isInitialLoading) {
                     return const Center(
                       child: CircularProgressIndicator(),
                     );
@@ -158,14 +169,55 @@ class _HomeContent extends StatelessWidget {
 
                   return Column(
                     children: [
+                      if (state.isRefreshing) ...[
+                        const LinearProgressIndicator(),
+                        SizedBox(height: AppSpacing.lg),
+                      ],
+                      if (state.screens.isEmpty && state.error != null)
+                        Padding(
+                          padding: EdgeInsets.symmetric(
+                            vertical: AppSpacing.xl,
+                          ),
+                          child: Column(
+                            children: [
+                              Text(
+                                'Couldn\'t load screens',
+                                style: AppTypography.body(context),
+                              ),
+                              TextButton(
+                                onPressed: () => context
+                                    .read<ScreensPlaylistCubit>()
+                                    .loadScreens(),
+                                child: const Text('Retry'),
+                              ),
+                            ],
+                          ),
+                        )
+                      else if (state.screens.isEmpty)
+                        Padding(
+                          padding: EdgeInsets.symmetric(
+                            vertical: AppSpacing.xl,
+                          ),
+                          child: Text(
+                            'No screens yet',
+                            style: AppTypography.body(context),
+                          ),
+                        ),
                       ...state.screens.map((screen) => Padding(
                             padding: EdgeInsets.only(bottom: AppSpacing.lg),
                             child: ScreenCard(
                               screen: screen,
                               assets: state.assets,
-                              onTap: () {
+                              onTap: () async {
                                 final type = screen.type.name.toLowerCase();
-                                context.push('/screen/$type/${screen.id}?deviceId=${device.id}');
+                                await context.push(
+                                  '/screen/$type/${screen.id}?deviceId=${device.id}',
+                                );
+                                if (context.mounted) {
+                                  context
+                                      .read<ScreensPlaylistCubit>()
+                                      .loadScreens();
+                                }
                               },
                               onToggle: () {
                                 context
@@ -182,8 +234,13 @@ class _HomeContent extends StatelessWidget {
               // Add Screen Button
               AppButton(
                 text: 'Add New Screen',
-                onPressed: () {
-                  context.push('/screen/create?deviceId=${device.id}');
+                onPressed: () async {
+                  await context.push(
+                    '/screen/create?deviceId=${device.id}',
+                  );
+                  if (context.mounted) {
+                    context.read<ScreensPlaylistCubit>().loadScreens();
+                  }
                 },
                 variant: AppButtonVariant.secondary,
                 fullWidth: true,

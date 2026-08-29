@@ -7,26 +7,34 @@ class ScreensPlaylistState {
   final List<ScreenModel> screens;
   final List<AssetModel> assets;
   final bool isLoading;
+  final bool hasLoaded;
   final String? error;
 
   ScreensPlaylistState({
     this.screens = const [],
     this.assets = const [],
-    this.isLoading = false,
+    this.isLoading = true,
+    this.hasLoaded = false,
     this.error,
   });
+
+  bool get isInitialLoading => isLoading && !hasLoaded;
+  bool get isRefreshing => isLoading && hasLoaded;
 
   ScreensPlaylistState copyWith({
     List<ScreenModel>? screens,
     List<AssetModel>? assets,
     bool? isLoading,
+    bool? hasLoaded,
     String? error,
+    bool clearError = false,
   }) {
     return ScreensPlaylistState(
       screens: screens ?? this.screens,
       assets: assets ?? this.assets,
       isLoading: isLoading ?? this.isLoading,
-      error: error ?? this.error,
+      hasLoaded: hasLoaded ?? this.hasLoaded,
+      error: clearError ? null : (error ?? this.error),
     );
   }
 }
@@ -41,7 +49,7 @@ class ScreensPlaylistCubit extends Cubit<ScreensPlaylistState> {
   }
 
   Future<void> loadScreens() async {
-    emit(state.copyWith(isLoading: true));
+    emit(state.copyWith(isLoading: true, clearError: true));
     try {
       final screens = await firebaseRepository.getScreens(deviceId);
       final assetIds = screens
@@ -64,10 +72,16 @@ class ScreensPlaylistCubit extends Cubit<ScreensPlaylistState> {
         screens: screens,
         assets: assets,
         isLoading: false,
+        hasLoaded: true,
         error: assetError,
+        clearError: assetError == null,
       ));
     } catch (e) {
-      emit(state.copyWith(isLoading: false, error: e.toString()));
+      emit(state.copyWith(
+        isLoading: false,
+        hasLoaded: true,
+        error: e.toString(),
+      ));
     }
   }
 

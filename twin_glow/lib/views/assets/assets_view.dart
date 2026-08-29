@@ -59,6 +59,7 @@ class _AssetsViewState extends State<AssetsView> {
         }
 
         return BlocProvider(
+          key: ValueKey(userId),
           create: (_) => AssetsCubit(FirebaseRepositoryImpl(), userId),
       child: Scaffold(
         backgroundColor: AppColors.bgPrimary,
@@ -116,26 +117,69 @@ class _AssetsViewState extends State<AssetsView> {
                         ? state.myAssets
                         : state.defaultAssets;
 
-                    if (state.isLoading) {
+                    if (state.isInitialLoading) {
                       return const Center(
                         child: CircularProgressIndicator(),
                       );
                     }
 
-                    return GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        crossAxisSpacing: AppSpacing.lg,
-                        mainAxisSpacing: AppSpacing.lg,
-                        childAspectRatio: 0.85,
-                      ),
-                      itemCount: assets.length,
-                      itemBuilder: (context, index) {
-                        final asset = assets[index];
-                        return AppCard(
-                          onTap: () => context.push('/asset/edit/${asset.id}'),
+                    return Column(
+                      children: [
+                        if (state.isRefreshing) ...[
+                          const LinearProgressIndicator(),
+                          SizedBox(height: AppSpacing.lg),
+                        ],
+                        if (assets.isEmpty && state.error != null)
+                          Padding(
+                            padding: EdgeInsets.symmetric(
+                              vertical: AppSpacing.xl,
+                            ),
+                            child: Column(
+                              children: [
+                                Text(
+                                  'Couldn\'t load assets',
+                                  style: AppTypography.body(context),
+                                ),
+                                TextButton(
+                                  onPressed: () => context
+                                      .read<AssetsCubit>()
+                                      .loadAssets(),
+                                  child: const Text('Retry'),
+                                ),
+                              ],
+                            ),
+                          )
+                        else if (assets.isEmpty)
+                          Padding(
+                            padding: EdgeInsets.symmetric(
+                              vertical: AppSpacing.xl,
+                            ),
+                            child: Text(
+                              _isMyAssets
+                                  ? 'No assets yet'
+                                  : 'No default assets available',
+                              style: AppTypography.body(context),
+                            ),
+                          )
+                        else
+                          GridView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            gridDelegate:
+                                SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              crossAxisSpacing: AppSpacing.lg,
+                              mainAxisSpacing: AppSpacing.lg,
+                              childAspectRatio: 0.85,
+                            ),
+                            itemCount: assets.length,
+                            itemBuilder: (context, index) {
+                              final asset = assets[index];
+                              return AppCard(
+                          onTap: () => _openAndRefresh(
+                            context,
+                            '/asset/edit/${asset.id}',
+                          ),
                           hoverable: true,
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -237,8 +281,10 @@ class _AssetsViewState extends State<AssetsView> {
                               ),
                             ],
                           ),
-                        );
-                      },
+                              );
+                            },
+                          ),
+                      ],
                     );
                   },
                 ),
@@ -249,7 +295,10 @@ class _AssetsViewState extends State<AssetsView> {
                     children: [
                       AppButton(
                         text: 'Create New Image',
-                        onPressed: () => context.push('/asset/create/image'),
+                        onPressed: () => _openAndRefresh(
+                          context,
+                          '/asset/create/image',
+                        ),
                         fullWidth: true,
                         icon: Icon(
                           Icons.add,
@@ -260,8 +309,10 @@ class _AssetsViewState extends State<AssetsView> {
                       SizedBox(height: AppSpacing.md),
                       AppButton(
                         text: 'Create New Animation',
-                        onPressed: () =>
-                            context.push('/asset/create/animation'),
+                        onPressed: () => _openAndRefresh(
+                          context,
+                          '/asset/create/animation',
+                        ),
                         variant: AppButtonVariant.secondary,
                         fullWidth: true,
                         icon: Icon(
@@ -281,6 +332,13 @@ class _AssetsViewState extends State<AssetsView> {
         );
       },
     );
+  }
+
+  Future<void> _openAndRefresh(BuildContext context, String location) async {
+    await context.push(location);
+    if (context.mounted) {
+      context.read<AssetsCubit>().loadAssets();
+    }
   }
 
   IconData _getAssetIcon(AssetType type) {

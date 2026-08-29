@@ -11,6 +11,7 @@ import '../../core/widgets/app_input.dart';
 import '../../core/widgets/device_header.dart';
 import '../../core/models/device_model.dart';
 import '../../core/utils/posix_timezones.dart';
+import '../../features/auth/cubit/auth_cubit.dart';
 import '../../features/device/cubit/devices_cubit.dart';
 import '../../services/firebase/firebase_repository_impl.dart';
 
@@ -35,16 +36,19 @@ class _DeviceConfigViewState extends State<DeviceConfigView> {
 
   @override
   Widget build(BuildContext context) {
-    // TODO: Get userId from AuthCubit
-    const userId = 'user1';
+    final userId = context.watch<AuthCubit>().state.user?.id ?? '';
     final firebaseRepo = FirebaseRepositoryImpl();
 
+    if (userId.isEmpty) {
+      return const Scaffold(
+        backgroundColor: AppColors.bgPrimary,
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return BlocProvider(
-      create: (_) {
-        final cubit = DevicesCubit(firebaseRepo, userId);
-        cubit.loadDevices();
-        return cubit;
-      },
+      key: ValueKey(userId),
+      create: (_) => DevicesCubit(firebaseRepo, userId),
       child: Scaffold(
         backgroundColor: AppColors.bgPrimary,
         appBar: AppBar(
@@ -57,10 +61,36 @@ class _DeviceConfigViewState extends State<DeviceConfigView> {
         body: SafeArea(
           child: BlocBuilder<DevicesCubit, DevicesState>(
             builder: (context, state) {
-              final device = state.devices.firstWhere(
-                (d) => d.id == widget.deviceId,
-                orElse: () => state.devices.isNotEmpty ? state.devices.first : _createDummyDevice(),
-              );
+              if (state.isInitialLoading) {
+                return const Center(child: CircularProgressIndicator());
+              }
+
+              final matchingDevices =
+                  state.devices.where((d) => d.id == widget.deviceId).toList();
+              if (matchingDevices.isEmpty) {
+                return Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        state.error != null
+                            ? 'Couldn\'t load device'
+                            : 'Device not found',
+                        style: AppTypography.body(context),
+                      ),
+                      if (state.error != null) ...[
+                        SizedBox(height: AppSpacing.md),
+                        AppButton(
+                          text: 'Retry',
+                          onPressed: () =>
+                              context.read<DevicesCubit>().loadDevices(),
+                        ),
+                      ],
+                    ],
+                  ),
+                );
+              }
+              final device = matchingDevices.first;
 
               if (!_isEditing && _nameController.text.isEmpty) {
                 _nameController.text = device.name;
@@ -242,14 +272,6 @@ class _DeviceConfigViewState extends State<DeviceConfigView> {
     ));
   }
 
-  DeviceModel _createDummyDevice() {
-    return DeviceModel(
-      id: widget.deviceId,
-      name: 'Unknown Device',
-      isOnline: false,
-      hasSensor: false,
-    );
-  }
 }
 
 /// Like [_InfoRow] but tappable, for the one row that opens a picker.

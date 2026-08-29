@@ -8,6 +8,7 @@ import '../../config/app_typography.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_card.dart';
 import '../../core/widgets/app_input.dart';
+import '../../features/auth/cubit/auth_cubit.dart';
 import '../../features/pairing/cubit/pairing_cubit.dart';
 import '../../services/firebase/firebase_repository_impl.dart';
 
@@ -29,10 +30,17 @@ class _PairingManagementViewState extends State<PairingManagementView> {
 
   @override
   Widget build(BuildContext context) {
-    // TODO: Get userId from AuthCubit
-    const userId = 'user1';
+    final userId = context.watch<AuthCubit>().state.user?.id ?? '';
+
+    if (userId.isEmpty) {
+      return const Scaffold(
+        backgroundColor: AppColors.bgPrimary,
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
 
     return BlocProvider(
+      key: ValueKey(userId),
       create: (_) => PairingCubit(FirebaseRepositoryImpl(), userId),
       child: Scaffold(
         backgroundColor: AppColors.bgPrimary,
@@ -48,6 +56,29 @@ class _PairingManagementViewState extends State<PairingManagementView> {
             padding: EdgeInsets.all(AppSpacing.xl),
             child: BlocBuilder<PairingCubit, PairingState>(
               builder: (context, state) {
+                if (state.isInitialLoading) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (state.error != null) {
+                  return Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Couldn\'t load pairing details',
+                          style: AppTypography.body(context),
+                        ),
+                        SizedBox(height: AppSpacing.md),
+                        AppButton(
+                          text: 'Retry',
+                          onPressed: () =>
+                              context.read<PairingCubit>().loadPairing(),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -70,10 +101,10 @@ class _PairingManagementViewState extends State<PairingManagementView> {
                           Row(
                             children: [
                               Icon(
-                                state.pairing != null
+                                state.pairing.isPaired
                                     ? Icons.favorite
                                     : Icons.favorite_border,
-                                color: state.pairing != null
+                                color: state.pairing.isPaired
                                     ? AppColors.accentMagenta
                                     : AppColors.textMuted,
                                 size: 24.sp,
@@ -84,15 +115,15 @@ class _PairingManagementViewState extends State<PairingManagementView> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Text(
-                                      state.pairing != null
+                                      state.pairing.isPaired
                                           ? 'Paired'
                                           : 'Not Paired',
                                       style: AppTypography.h3(context),
                                     ),
                                     SizedBox(height: 2.h),
                                     Text(
-                                      state.pairing != null
-                                          ? '${state.pairing!.sharedScreensCount} shared screens'
+                                      state.pairing.isPaired
+                                          ? '${state.pairing.sharedScreensCount} shared screens'
                                           : 'No active pairing',
                                       style: AppTypography.small(context),
                                     ),
@@ -101,7 +132,7 @@ class _PairingManagementViewState extends State<PairingManagementView> {
                               ),
                             ],
                           ),
-                          if (state.pairing != null) ...[
+                          if (state.pairing.isPaired) ...[
                             SizedBox(height: AppSpacing.lg),
                             AppButton(
                               text: 'Unpair',

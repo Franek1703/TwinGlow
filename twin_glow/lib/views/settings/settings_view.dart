@@ -58,6 +58,7 @@ class _SettingsViewState extends State<SettingsView> {
         }
 
         return BlocProvider(
+          key: ValueKey(userId),
           create: (_) => PairingCubit(FirebaseRepositoryImpl(), userId),
       child: Scaffold(
         backgroundColor: AppColors.bgPrimary,
@@ -137,9 +138,40 @@ class _SettingsViewState extends State<SettingsView> {
                   builder: (context, state) {
                     final pairing = state.pairing;
                     return AppCard(
-                      onTap: () => context.push('/settings/pairing'),
+                      onTap: state.isInitialLoading || state.error != null
+                          ? null
+                          : () async {
+                              await context.push('/settings/pairing');
+                              if (context.mounted) {
+                                context.read<PairingCubit>().loadPairing();
+                              }
+                            },
                       hoverable: true,
-                      child: Row(
+                      child: state.isInitialLoading
+                          ? const Center(child: CircularProgressIndicator())
+                          : state.error != null
+                          ? Row(
+                              children: [
+                                const Icon(
+                                  Icons.error_outline,
+                                  color: AppColors.statusError,
+                                ),
+                                SizedBox(width: AppSpacing.md),
+                                Expanded(
+                                  child: Text(
+                                    'Couldn\'t load pairing status',
+                                    style: AppTypography.body(context),
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: () => context
+                                      .read<PairingCubit>()
+                                      .loadPairing(),
+                                  child: const Text('Retry'),
+                                ),
+                              ],
+                            )
+                          : Row(
                         children: [
                           Container(
                             width: 40.w,
@@ -181,6 +213,16 @@ class _SettingsViewState extends State<SettingsView> {
                             color: AppColors.textMuted,
                             size: 20.sp,
                           ),
+                          if (state.isRefreshing) ...[
+                            SizedBox(width: AppSpacing.sm),
+                            SizedBox(
+                              width: 14.w,
+                              height: 14.w,
+                              child: const CircularProgressIndicator(
+                                strokeWidth: 2,
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     );

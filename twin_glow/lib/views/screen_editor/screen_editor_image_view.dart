@@ -173,10 +173,22 @@ class ScreenEditorImageView extends StatelessWidget {
                               SizedBox(
                                 width: double.infinity,
                                 height: 200.h,
-                                child: ScreenPreview(
-                                  screen: previewScreen,
-                                  assets: compatibleAssets,
-                                ),
+                                child: assetsState.isInitialLoading
+                                    ? const Center(
+                                        child: CircularProgressIndicator(),
+                                      )
+                                    : assetsState.error != null &&
+                                          compatibleAssets.isEmpty
+                                    ? Center(
+                                        child: Text(
+                                          'Couldn\'t load assets',
+                                          style: AppTypography.body(context),
+                                        ),
+                                      )
+                                    : ScreenPreview(
+                                        screen: previewScreen,
+                                        assets: compatibleAssets,
+                                      ),
                               ),
                             ],
                           ),
@@ -257,27 +269,45 @@ class ScreenEditorImageView extends StatelessWidget {
                           style: AppTypography.small(context),
                         ),
                         SizedBox(height: AppSpacing.md),
-                        AssetSelector(
-                          assets: compatibleAssets,
-                          selectedAssetId: state.selectedAssetId,
-                          poolAssetIds: state.poolAssetIds,
-                          defaultAssetId: state.defaultAssetId,
-                          onAssetSelected: (asset) {
-                            context
-                                .read<ScreenEditorImageCubit>()
-                                .selectAsset(asset.id);
-                          },
-                          onAssetToggled: (asset) {
-                            context
-                                .read<ScreenEditorImageCubit>()
-                                .toggleAssetInPool(asset.id);
-                          },
-                          onSetDefault: (asset) {
-                            context
-                                .read<ScreenEditorImageCubit>()
-                                .setDefaultAsset(asset.id);
-                          },
-                        ),
+                        if (assetsState.isInitialLoading)
+                          const Center(child: CircularProgressIndicator())
+                        else if (assetsState.error != null &&
+                            compatibleAssets.isEmpty)
+                          Center(
+                            child: TextButton(
+                              onPressed: () => context
+                                  .read<AssetsCubit>()
+                                  .loadAssets(),
+                              child: const Text('Retry loading assets'),
+                            ),
+                          )
+                        else ...[
+                          if (assetsState.isRefreshing) ...[
+                            const LinearProgressIndicator(),
+                            SizedBox(height: AppSpacing.md),
+                          ],
+                          AssetSelector(
+                            assets: compatibleAssets,
+                            selectedAssetId: state.selectedAssetId,
+                            poolAssetIds: state.poolAssetIds,
+                            defaultAssetId: state.defaultAssetId,
+                            onAssetSelected: (asset) {
+                              context
+                                  .read<ScreenEditorImageCubit>()
+                                  .selectAsset(asset.id);
+                            },
+                            onAssetToggled: (asset) {
+                              context
+                                  .read<ScreenEditorImageCubit>()
+                                  .toggleAssetInPool(asset.id);
+                            },
+                            onSetDefault: (asset) {
+                              context
+                                  .read<ScreenEditorImageCubit>()
+                                  .setDefaultAsset(asset.id);
+                            },
+                          ),
+                        ],
                         SizedBox(height: AppSpacing.xxl),
                         // Save Button
                         AppButton(

@@ -19,11 +19,13 @@ class AuthState {
     UserModel? user,
     bool? isLoading,
     String? error,
+    bool clearUser = false,
+    bool clearError = false,
   }) {
     return AuthState(
-      user: user ?? this.user,
+      user: clearUser ? null : (user ?? this.user),
       isLoading: isLoading ?? this.isLoading,
-      error: error ?? this.error,
+      error: clearError ? null : (error ?? this.error),
     );
   }
 }
@@ -31,7 +33,7 @@ class AuthState {
 class AuthCubit extends Cubit<AuthState> {
   final FirebaseRepository firebaseRepository;
 
-  AuthCubit(this.firebaseRepository) : super(AuthState()) {
+  AuthCubit(this.firebaseRepository) : super(AuthState(isLoading: true)) {
     _checkAuth();
   }
 
@@ -46,7 +48,7 @@ class AuthCubit extends Cubit<AuthState> {
   }
 
   Future<void> signIn(String email, String password) async {
-    emit(state.copyWith(isLoading: true, error: null));
+    emit(state.copyWith(isLoading: true, clearError: true));
     try {
       final user = await firebaseRepository.signIn(email, password);
       emit(state.copyWith(user: user, isLoading: false));
@@ -56,7 +58,7 @@ class AuthCubit extends Cubit<AuthState> {
   }
 
   Future<void> signUp(String email, String password) async {
-    emit(state.copyWith(isLoading: true, error: null));
+    emit(state.copyWith(isLoading: true, clearError: true));
     try {
       final user = await firebaseRepository.signUp(email, password);
       emit(state.copyWith(user: user, isLoading: false));
@@ -69,7 +71,7 @@ class AuthCubit extends Cubit<AuthState> {
     emit(state.copyWith(isLoading: true));
     try {
       await firebaseRepository.signOut();
-      emit(state.copyWith(user: null, isLoading: false));
+      emit(state.copyWith(clearUser: true, isLoading: false));
     } catch (e) {
       emit(state.copyWith(isLoading: false, error: e.toString()));
     }

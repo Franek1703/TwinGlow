@@ -6,26 +6,34 @@ class AssetsState {
   final List<AssetModel> myAssets;
   final List<AssetModel> defaultAssets;
   final bool isLoading;
+  final bool hasLoaded;
   final String? error;
 
   AssetsState({
     this.myAssets = const [],
     this.defaultAssets = const [],
-    this.isLoading = false,
+    this.isLoading = true,
+    this.hasLoaded = false,
     this.error,
   });
+
+  bool get isInitialLoading => isLoading && !hasLoaded;
+  bool get isRefreshing => isLoading && hasLoaded;
 
   AssetsState copyWith({
     List<AssetModel>? myAssets,
     List<AssetModel>? defaultAssets,
     bool? isLoading,
+    bool? hasLoaded,
     String? error,
+    bool clearError = false,
   }) {
     return AssetsState(
       myAssets: myAssets ?? this.myAssets,
       defaultAssets: defaultAssets ?? this.defaultAssets,
       isLoading: isLoading ?? this.isLoading,
-      error: error ?? this.error,
+      hasLoaded: hasLoaded ?? this.hasLoaded,
+      error: clearError ? null : (error ?? this.error),
     );
   }
 }
@@ -39,7 +47,7 @@ class AssetsCubit extends Cubit<AssetsState> {
   }
 
   Future<void> loadAssets() async {
-    emit(state.copyWith(isLoading: true));
+    emit(state.copyWith(isLoading: true, clearError: true));
     try {
       final myAssets = await firebaseRepository.getUserAssets(userId);
       final defaultAssets = await firebaseRepository.getDefaultAssets();
@@ -47,9 +55,15 @@ class AssetsCubit extends Cubit<AssetsState> {
         myAssets: myAssets,
         defaultAssets: defaultAssets,
         isLoading: false,
+        hasLoaded: true,
+        clearError: true,
       ));
     } catch (e) {
-      emit(state.copyWith(isLoading: false, error: e.toString()));
+      emit(state.copyWith(
+        isLoading: false,
+        hasLoaded: true,
+        error: e.toString(),
+      ));
     }
   }
 
