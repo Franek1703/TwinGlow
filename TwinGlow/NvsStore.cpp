@@ -122,6 +122,19 @@ void NvsStore::setBrightness(uint8_t brightness) {
     Serial.println(brightness);
 }
 
+bool NvsStore::getTzPosix(String& tz) {
+    if (!initialized) return false;
+    tz = prefs.getString(NVS_KEY_TZ_POSIX, "");
+    return tz.length() > 0;
+}
+
+void NvsStore::setTzPosix(const String& tz) {
+    if (!initialized) return;
+    prefs.putString(NVS_KEY_TZ_POSIX, tz);
+    Serial.print(F("[NVS] Saved timezone: "));
+    Serial.println(tz);
+}
+
 void NvsStore::factoryReset() {
     if (!initialized) return;
     
@@ -129,6 +142,7 @@ void NvsStore::factoryReset() {
     prefs.remove(NVS_KEY_WIFI_SSID);
     prefs.remove(NVS_KEY_WIFI_PASS);
     prefs.remove(NVS_KEY_CLAIMED_UID);
+    prefs.remove(NVS_KEY_TZ_POSIX);
     prefs.putBool(NVS_KEY_PROVISIONED, false);
     
     Serial.println(F("[NVS] Factory reset complete (deviceId preserved)"));

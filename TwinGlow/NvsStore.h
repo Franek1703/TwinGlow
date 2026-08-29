@@ -38,6 +38,11 @@ public:
     // Brightness (0-255)
     uint8_t getBrightness();
     void setBrightness(uint8_t brightness);
+
+    // POSIX TZ rule (e.g. "CET-1CEST,M3.5.0,M10.5.0/3"), cached from the device
+    // doc so the clock is right at boot, before Firestore is reachable.
+    bool getTzPosix(String& tz);
+    void setTzPosix(const String& tz);
     
     // Factory reset
     void factoryReset(); // Clear all except deviceId
