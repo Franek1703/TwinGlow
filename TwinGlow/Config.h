@@ -62,9 +62,26 @@
 #define CONFIG_POLL_INTERVAL_MS 60000      // 60 seconds (Firestore fallback poll)
 // RTDB "doorbell" check. The app ticks /config/{deviceId}/configVersion on every
 // config change; seeing it move makes the device run the Firestore check straight
-// away instead of waiting out CONFIG_POLL_INTERVAL_MS. Reading one integer is
-// cheap enough to do this often.
-#define REVISION_POLL_INTERVAL_MS 5000     // 5 seconds
+// away instead of waiting out CONFIG_POLL_INTERVAL_MS.
+//
+// DISABLED pending a fix. Measured on hardware 2026-08-29: with the poll active
+// the device ran clean for about a minute after boot, then hit
+// "TCP connection failed" on presence AND Firestore and never recovered - the
+// render loop stalled for 74 s at a stretch, repeatedly. The same build with the
+// poll off is stable indefinitely (presence every 20 s, render every 5 s, no
+// errors), so this is the cause, not the network.
+//
+// Why: FirebaseClientWrap shares ONE WiFiClientSecure and ONE AsyncClientClass
+// between RTDB and Firestore, and every call is blocking. This is also the only
+// production use of rtdb->get<>() - presence and telemetry only set/push. Once
+// any transient error occurs, re-issuing a blocking read every 5 s never leaves
+// the client room to re-establish, so a momentary failure becomes permanent.
+//
+// A working version needs backoff on failure and to stand down while the shared
+// client is in an error state, or a second TLS client - not just a longer
+// interval. Set to 1 only together with such a fix.
+#define ENABLE_RTDB_DOORBELL 0
+#define REVISION_POLL_INTERVAL_MS 5000     // 5 seconds (only used when enabled)
 #define TELEMETRY_UPDATE_INTERVAL_MS 10000 // 10 seconds (if BME680 present)
 // SENSOR screen
 #define SENSOR_CYCLE_MS 2500             // AUTO_CYCLE dwell time per metric

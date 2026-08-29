@@ -608,7 +608,9 @@ void handleConfigLoading() {
                 scheduler.scheduleTelemetryUpdate(updateTelemetry);
             }
             scheduler.scheduleConfigPoll(checkConfigVersion);
+#if ENABLE_RTDB_DOORBELL
             scheduler.scheduleRevisionPoll(checkConfigRevision);
+#endif
             scheduler.scheduleNtpSync(syncTime);
         }
 
@@ -901,6 +903,7 @@ void checkConfigVersion() {
     }
 }
 
+#if ENABLE_RTDB_DOORBELL
 void checkConfigRevision() {
     // The doorbell only decides *when* to look; checkConfigVersion() still owns
     // the actual comparison and the CONFIG_LOADING transition, so the RTDB
@@ -927,6 +930,7 @@ void checkConfigRevision() {
     Serial.println(F(", checking Firestore"));
     checkConfigVersion();
 }
+#endif // ENABLE_RTDB_DOORBELL
 
 void syncTime() {
     if (WiFi.isConnected() && timeSync.shouldSync()) {
