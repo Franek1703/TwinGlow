@@ -295,18 +295,6 @@ class _SettingsViewState extends State<SettingsView> {
                               ],
                             ),
                           ),
-                          TextButton(
-                            onPressed: () {
-                              // TODO: Navigate to device config
-                            },
-                            child: Text(
-                              'Configure',
-                              style: TextStyle(
-                                color: AppColors.accentCyan,
-                                fontSize: 14.sp,
-                              ),
-                            ),
-                          ),
                         ],
                       ),
                     ],
