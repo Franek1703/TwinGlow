@@ -94,7 +94,7 @@ class HomeView extends StatelessWidget {
                               ? () => context
                                   .read<DevicesCubit>()
                                   .loadDevices()
-                              : () => context.go('/provision'),
+                              : () => context.push('/provision'),
                         ),
                       ],
                     ),

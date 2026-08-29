@@ -303,7 +303,7 @@ class _SettingsViewState extends State<SettingsView> {
                 SizedBox(height: AppSpacing.md),
                 AppButton(
                   text: 'Add New Device',
-                  onPressed: () => context.go('/provision'),
+                  onPressed: () => context.push('/provision'),
                   variant: AppButtonVariant.secondary,
                   fullWidth: true,
                 ),

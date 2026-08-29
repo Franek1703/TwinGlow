@@ -31,6 +31,14 @@ class _DeviceProvisioningViewState extends State<DeviceProvisioningView> {
   String? _error;
   String? _successMessage;
 
+  void _handleBack() {
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/home');
+    }
+  }
+
   @override
   void dispose() {
     _ssidController.dispose();
@@ -124,7 +132,7 @@ class _DeviceProvisioningViewState extends State<DeviceProvisioningView> {
         title: const Text('Device Provisioning'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.pop(),
+          onPressed: _handleBack,
         ),
       ),
       body: SafeArea(
