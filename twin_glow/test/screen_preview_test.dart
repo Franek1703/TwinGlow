@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:twin_glow/core/models/asset_model.dart';
 import 'package:twin_glow/core/models/screen_model.dart';
 import 'package:twin_glow/core/widgets/screen_preview.dart';
+import 'package:twin_glow/features/screen_editor/cubit/screen_editor_clock_cubit.dart';
+import 'package:twin_glow/services/firebase/firebase_fake_repository.dart';
 
 void main() {
   test(
@@ -78,6 +80,36 @@ void main() {
     expect(find.text('72°F'), findsOneWidget);
     expect(find.text('Humidity'), findsNothing);
     expect(find.text('Pressure'), findsNothing);
+  });
+
+  testWidgets('clock preview stays minute-only for legacy configurations', (
+    tester,
+  ) async {
+    final screen = ScreenModel(
+      id: 'clock',
+      type: ScreenType.clock,
+      config: const {'showSeconds': true},
+    );
+
+    await tester.pumpWidget(_harness(ScreenPreview(screen: screen)));
+
+    expect(find.text(':'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  test('clock configuration no longer persists the seconds option', () async {
+    final cubit = ScreenEditorClockCubit(
+      FirebaseFakeRepository(),
+      'device1',
+      ScreenModel(
+        id: 'clock',
+        type: ScreenType.clock,
+        config: const {'showSeconds': true},
+      ),
+    );
+
+    expect(cubit.getConfig().containsKey('showSeconds'), isFalse);
+    await cubit.close();
   });
 }
 

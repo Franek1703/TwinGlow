@@ -369,7 +369,6 @@ class _ClockScreenPreviewState extends State<_ClockScreenPreview> {
 
   @override
   Widget build(BuildContext context) {
-    final showSeconds = widget.config?['showSeconds'] as bool? ?? true;
     final digitColor = _colorFromConfig(
       widget.config,
       'digitColor',
@@ -388,7 +387,6 @@ class _ClockScreenPreviewState extends State<_ClockScreenPreview> {
     final parts = [
       _now.hour.toString().padLeft(2, '0'),
       _now.minute.toString().padLeft(2, '0'),
-      if (showSeconds) _now.second.toString().padLeft(2, '0'),
     ];
 
     return _ConfiguredPreviewFrame(
