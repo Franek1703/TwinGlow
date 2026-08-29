@@ -429,7 +429,10 @@ bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset) {
     if (wrap == nullptr) return false;
     FirebaseFirestoreType* documents = static_cast<FirebaseFirestoreType*>(wrap->getFirestore());
     AsyncClientClass* aClient = wrap->getAsyncClient();
-    if (documents == nullptr || aClient == nullptr) return false;
+    if (documents == nullptr || aClient == nullptr) {
+        Serial.println(F("[Firestore] getAsset: documents or aClient is null"));
+        return false;
+    }
 
     asset.id = assetId;
     asset.type = "";
@@ -447,9 +450,35 @@ bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset) {
     Serial.print(F(" projectId="));
     Serial.println(projectId);
     
+    // Call get() - exact same pattern as getDeviceDoc which works
+    // Note: FirebaseClient get() is synchronous and blocks until response or timeout
     String response = documents->get(*aClient, parent, path, options);
     
-    // Check for async client errors
+    // Log response details immediately for debugging
+    Serial.print(F("[Firestore] getAsset response length: "));
+    Serial.println(response.length());
+    
+    // Log raw response (first 1000 chars) even if empty
+    if (response.length() > 0) {
+        Serial.print(F("[Firestore] getAsset raw response (first 1000 chars): "));
+        String preview = response.length() > 1000 ? response.substring(0, 1000) : response;
+        Serial.println(preview);
+        
+        // Also log hex dump of first 200 bytes to see exact data
+        Serial.print(F("[Firestore] getAsset hex dump (first 200 bytes): "));
+        int dumpLen = response.length() < 200 ? response.length() : 200;
+        for (int i = 0; i < dumpLen; i++) {
+            if (response[i] < 0x10) Serial.print('0');
+            Serial.print((unsigned char)response[i], HEX);
+            Serial.print(' ');
+            if ((i + 1) % 32 == 0) Serial.println();
+        }
+        Serial.println();
+    } else {
+        Serial.println(F("[Firestore] getAsset raw response: (EMPTY - no data received)"));
+    }
+    
+    // Check for async client errors first (like getDeviceDoc does)
     int errorCode = aClient->lastError().code();
     if (errorCode != 0) {
         Serial.print(F("[Firestore] getAsset failed: id="));
@@ -463,21 +492,31 @@ bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset) {
         return false;
     }
     
-    // Check if response is empty
+    // Check if response is empty - this shouldn't happen if document exists
     if (response.length() == 0) {
         Serial.print(F("[Firestore] getAsset empty response: id="));
         Serial.print(assetId);
         Serial.print(F(" path="));
         Serial.print(path);
-        Serial.print(F(" (document may not exist or async not ready)"));
+        Serial.print(F(" (document may not exist or network timeout)"));
         Serial.println();
+        Serial.print(F("[Firestore] Full path should be: projects/"));
+        Serial.print(projectId);
+        Serial.print(F("/databases/(default)/documents/"));
+        Serial.println(path);
+        Serial.print(F("[Firestore] Compare with working getDeviceDoc path: projects/"));
+        Serial.print(projectId);
+        Serial.print(F("/databases/(default)/documents/"));
+        Serial.println(getDevicePath());
+        
+        // Try to get more info from async client
+        Serial.print(F("[Firestore] AsyncClient status - code: "));
+        Serial.print(errorCode);
+        Serial.print(F(", message: "));
+        Serial.println(aClient->lastError().message());
+        
         return false;
     }
-
-    // Log raw response for debugging (first 500 chars)
-    Serial.print(F("[Firestore] getAsset raw response (first 500): "));
-    String responsePreview = response.length() > 500 ? response.substring(0, 500) : response;
-    Serial.println(responsePreview);
     
     DynamicJsonDocument doc(16384); // Increased from 8192 for larger assets
     DeserializationError error = deserializeJson(doc, response);
@@ -488,15 +527,58 @@ bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset) {
         Serial.print(error.c_str());
         Serial.print(F(" responseLen="));
         Serial.println(response.length());
+        Serial.print(F("[Firestore] getAsset parse error - raw response start: "));
+        if (response.length() > 200) {
+            Serial.println(response.substring(0, 200));
+        } else {
+            Serial.println(response);
+        }
         return false;
     }
+    
+    // Log what keys are in the parsed JSON
+    Serial.print(F("[Firestore] getAsset parsed JSON keys: "));
+    JsonObject rootObj = doc.as<JsonObject>();
+    for (JsonPair kv : rootObj) {
+        Serial.print(kv.key().c_str());
+        Serial.print(' ');
+    }
+    Serial.println();
+    
+    // Check if document exists (Firestore returns error object if not found)
+    if (doc.containsKey("error")) {
+        Serial.print(F("[Firestore] getAsset document not found: id="));
+        Serial.print(assetId);
+        Serial.print(F(" path="));
+        Serial.print(path);
+        Serial.print(F(" error="));
+        Serial.println(doc["error"].as<String>());
+        return false;
+    }
+    
+    // Check for 'fields' key (required for Firestore document)
     if (!doc.containsKey("fields")) {
-        Serial.print(F("[Firestore] getAsset: no 'fields' for id="));
-        Serial.println(assetId);
+        Serial.print(F("[Firestore] getAsset response missing 'fields' key: id="));
+        Serial.print(assetId);
+        Serial.print(F(" available keys: "));
+        for (JsonPair kv : doc.as<JsonObject>()) {
+            Serial.print(kv.key().c_str());
+            Serial.print(' ');
+        }
+        Serial.println();
         return false;
     }
-
+    
+    // Get fields object
     JsonObject fields = doc["fields"].as<JsonObject>();
+    
+    // Log what fields we found
+    Serial.print(F("[Firestore] getAsset found fields: "));
+    for (JsonPair kv : fields) {
+        Serial.print(kv.key().c_str());
+        Serial.print(' ');
+    }
+    Serial.println();
     if (fields.containsKey("type")) firestoreFieldToString(fields["type"].as<JsonObject>(), asset.type);
     if (fields.containsKey("encoding")) firestoreFieldToString(fields["encoding"].as<JsonObject>(), asset.encoding);
 

@@ -325,6 +325,7 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
       }
 
       return allDocs.entries.map((entry) {
+        print("entry: ${entry.value}");
         return _assetFromFirestore(entry.key, entry.value);
       }).toList();
     } catch (e) {
@@ -686,7 +687,6 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
         (data['pixelData'] as List).map((row) => List<int>.from(row))
       );
     }
-    print('pixelData: $pixelData');
     
     return AssetModel(
       id: id,
