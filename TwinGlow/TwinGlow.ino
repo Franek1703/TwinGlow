@@ -324,6 +324,9 @@ void handleWifiConnecting() {
     
     if (wifiManager.isConnected()) {
         Serial.println(F("[WiFi] Connected!"));
+        // From this point onward a network outage is not a provisioning error.
+        // Retry forever in the background while cached content keeps running.
+        wifiManager.setPersistentReconnect(true);
         wifiStarted = false;
         fsm.transition(DeviceState::TIME_SYNC);
     } else if (wifiManager.shouldEnterProvisioning()) {
@@ -744,6 +747,11 @@ void handleConfigLoading() {
 }
 
 void handleRunning() {
+    // Runtime Wi-Fi maintenance is local/non-blocking and never paints status
+    // colors. It was previously called only from WIFI_CONNECTING, leaving a
+    // device that lost its AP permanently offline in RUNNING.
+    wifiManager.update();
+
     // Dim or blank for the sleep window before anything is drawn. When the
     // window asks for a blank panel we return before the render body, not just
     // before show(): letting RenderAsset keep advancing frames behind a dark

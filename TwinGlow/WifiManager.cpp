@@ -1,8 +1,13 @@
 #include "WifiManager.h"
 
+WifiManager* WifiManager::activeInstance = nullptr;
+
 WifiManager::WifiManager() 
     : lastAttemptMs(0), retryDelayMs(1000), failureCount(0), 
-      quickRetryCount(0), connecting(false) {
+      quickRetryCount(0), connecting(false), persistentReconnect(false),
+      wasConnected(false), everConnected(false),
+      disconnectEventPending(false), gotIpEventPending(false),
+      lastDisconnectReason(0), eventHandlerRegistered(false) {
 }
 
 bool WifiManager::begin(const String& ssid, const String& password) {
@@ -12,6 +17,9 @@ bool WifiManager::begin(const String& ssid, const String& password) {
     quickRetryCount = 0;
     retryDelayMs = 1000;
     connecting = false;
+    persistentReconnect = false;
+    wasConnected = false;
+    everConnected = false;
     
     if (ssid.length() == 0) {
         Serial.println(F("[WiFi] No SSID provided"));
@@ -23,6 +31,16 @@ bool WifiManager::begin(const String& ssid, const String& password) {
     
     WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(true);
+
+    // Arduino's built-in auto-reconnect only retries a subset of disconnect
+    // reasons. Keep the event for diagnostics; update() below supplies the
+    // deterministic retry/backoff path for every runtime disconnect.
+    if (!eventHandlerRegistered) {
+        activeInstance = this;
+        WiFi.onEvent(handleWiFiEvent);
+        eventHandlerRegistered = true;
+    }
+
     WiFi.begin(ssid.c_str(), password.length() > 0 ? password.c_str() : NULL);
     
     connecting = true;
@@ -32,39 +50,60 @@ bool WifiManager::begin(const String& ssid, const String& password) {
 }
 
 void WifiManager::update() {
-    if (connecting) {
-        if (isConnected()) {
+    logPendingEvents();
+
+    unsigned long now = millis();
+    if (isConnected()) {
+        if (!wasConnected) {
             Serial.print(F("[WiFi] Connected! IP: "));
             Serial.println(WiFi.localIP());
-            connecting = false;
-            failureCount = 0;
-            quickRetryCount = 0;
-        } else {
-            unsigned long now = millis();
-            unsigned long elapsed = now - lastAttemptMs;
-            
-            // Check if connection attempt timed out
-            if (elapsed > 10000) { // 10 second timeout
-                Serial.println(F("[WiFi] Connection timeout"));
-                failureCount++;
-                quickRetryCount++;
-                
-                if (shouldRetry()) {
-                    retryDelayMs = calculateBackoffDelay();
-                    Serial.print(F("[WiFi] Retrying in "));
-                    Serial.print(retryDelayMs);
-                    Serial.println(F("ms"));
-                    lastAttemptMs = now;
-                } else {
-                    connecting = false;
-                }
+            if (everConnected) {
+                Serial.println(F("[WiFi] Runtime connection restored; cached screen stayed active"));
             }
         }
-    } else if (!isConnected() && shouldRetry()) {
-        unsigned long now = millis();
-        if (now - lastAttemptMs >= retryDelayMs) {
-            attemptConnection();
+
+        wasConnected = true;
+        everConnected = true;
+        connecting = false;
+        failureCount = 0;
+        quickRetryCount = 0;
+        retryDelayMs = 1000;
+        return;
+    }
+
+    if (wasConnected) {
+        // A runtime loss starts a fresh quick-retry sequence. Do not transition
+        // the FSM or touch the matrix: local content continues to render.
+        wasConnected = false;
+        connecting = false;
+        failureCount = 0;
+        quickRetryCount = 0;
+        retryDelayMs = 1000;
+        lastAttemptMs = now;
+        Serial.println(F("[WiFi] Runtime connection lost; keeping cached screen active"));
+    }
+
+    if (connecting) {
+        if (now - lastAttemptMs < WIFI_CONNECT_ATTEMPT_TIMEOUT_MS) return;
+
+        failureCount++;
+        quickRetryCount++;
+        connecting = false;
+        retryDelayMs = calculateBackoffDelay();
+        lastAttemptMs = now;
+
+        Serial.print(F("[WiFi] Connection attempt timed out; failures="));
+        Serial.println(failureCount);
+        if (shouldRetry()) {
+            Serial.print(F("[WiFi] Next retry in "));
+            Serial.print(retryDelayMs);
+            Serial.println(F("ms"));
         }
+        return;
+    }
+
+    if (shouldRetry() && now - lastAttemptMs >= retryDelayMs) {
+        attemptConnection();
     }
 }
 
@@ -74,8 +113,9 @@ void WifiManager::attemptConnection() {
     Serial.print(F(": Connecting to "));
     Serial.println(currentSsid);
     
-    WiFi.disconnect();
-    delay(100);
+    // Both calls are non-blocking. In particular, do not delay here: this also
+    // runs from RUNNING, where button scanning must remain responsive.
+    WiFi.disconnect(false, false, 0);
     WiFi.begin(currentSsid.c_str(), currentPassword.length() > 0 ? currentPassword.c_str() : NULL);
     
     connecting = true;
@@ -99,11 +139,11 @@ unsigned long WifiManager::calculateBackoffDelay() {
 }
 
 bool WifiManager::shouldRetry() const {
-    return failureCount < WIFI_MAX_FAILURES;
+    return persistentReconnect || failureCount < WIFI_MAX_FAILURES;
 }
 
 bool WifiManager::shouldEnterProvisioning() const {
-    return failureCount >= WIFI_MAX_FAILURES;
+    return !persistentReconnect && failureCount >= WIFI_MAX_FAILURES;
 }
 
 void WifiManager::reset() {
@@ -112,4 +152,37 @@ void WifiManager::reset() {
     failureCount = 0;
     quickRetryCount = 0;
     retryDelayMs = 1000;
+    persistentReconnect = false;
+    wasConnected = false;
+    everConnected = false;
+}
+
+void WifiManager::handleWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
+    WifiManager* manager = activeInstance;
+    if (manager == nullptr) return;
+
+    if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
+        manager->lastDisconnectReason = info.wifi_sta_disconnected.reason;
+        manager->disconnectEventPending = true;
+    } else if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP) {
+        manager->gotIpEventPending = true;
+    }
+}
+
+void WifiManager::logPendingEvents() {
+    if (disconnectEventPending) {
+        uint8_t reason = lastDisconnectReason;
+        disconnectEventPending = false;
+        Serial.print(F("[WiFi] STA disconnected: reason="));
+        Serial.print(reason);
+        Serial.print(F(" ("));
+        Serial.print(WiFi.disconnectReasonName((wifi_err_reason_t)reason));
+        Serial.println(F(")"));
+    }
+
+    if (gotIpEventPending) {
+        gotIpEventPending = false;
+        Serial.print(F("[WiFi] STA got IP: "));
+        Serial.println(WiFi.localIP());
+    }
 }
