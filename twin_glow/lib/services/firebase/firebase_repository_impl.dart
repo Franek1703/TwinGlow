@@ -7,6 +7,8 @@ import '../../core/models/device_model.dart';
 import '../../core/models/screen_model.dart';
 import '../../core/models/screen_asset_references.dart';
 import '../../core/models/asset_model.dart';
+import '../../core/codecs/animation_codec.dart';
+import 'asset_document.dart';
 import '../../core/models/user_model.dart';
 import '../../core/models/pairing_model.dart';
 
@@ -498,23 +500,17 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
   @override
   Future<AssetModel> createAsset(String userId, AssetModel asset) async {
     try {
-      // Packed format: one string instead of one Firestore map per pixel.
-      // The old per-pixel encoding made a 78-pixel image a ~23KB document,
-      // which the device's Firebase client could not buffer - it returned an
-      // empty body and the screen rendered black.
-      final packedPixels = _convertToPackedFormat(asset.pixelData);
-
       await _firestore.collection('assets').doc(asset.id).set({
         'name': asset.name,
         'type': asset.type.name.toUpperCase(),
         'ownerUid': userId,
         'width': 16,
         'height': 16,
-        'encoding': 'SPARSE_PACKED_V1',
-        'pixelsPacked': packedPixels,
         'tags': asset.tags,
         'isDefault': false,
         'createdAt': Timestamp.fromDate(DateTime.now()),
+        // A create writes a fresh document, so there is nothing to delete.
+        ...buildAssetPixelFields(asset).values,
       });
       await _bumpDevicesUsingAsset(asset.id);
       return asset;
@@ -526,18 +522,18 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
   @override
   Future<void> updateAsset(String assetId, AssetModel asset) async {
     try {
-      final packedPixels = _convertToPackedFormat(asset.pixelData);
-
+      // One update() call, so the new encoding and the removal of the fields it
+      // replaces land together. A legacy animation edited here is rewritten in
+      // the packed format as a side effect; nothing migrates in bulk.
+      final fields = buildAssetPixelFields(asset);
       await _firestore.collection('assets').doc(assetId).update({
         'name': asset.name,
         'tags': asset.tags,
-        'encoding': 'SPARSE_PACKED_V1',
-        'pixelsPacked': packedPixels,
-        // Deleting the legacy array is what actually shrinks the document.
-        // Leaving it behind keeps the doc too large for the device to fetch,
-        // so re-saving an asset from the app doubles as its migration.
-        'pixels': FieldValue.delete(),
+        'type': asset.type.name.toUpperCase(),
         'updatedAt': Timestamp.fromDate(DateTime.now()),
+        ...fields.values,
+        for (final name in fields.obsoleteFieldNames)
+          name: FieldValue.delete(),
       });
       await _bumpDevicesUsingAsset(assetId);
     } catch (e) {
@@ -917,10 +913,22 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
   }
 
   AssetModel _assetFromFirestore(String id, Map<String, dynamic> data) {
+    final type = (data['type'] as String?)?.toLowerCase() == 'animation'
+        ? AssetType.animation
+        : AssetType.image;
+
+    final frames = type == AssetType.animation
+        ? _animationFramesFromFirestore(data)
+        : null;
+
     // Convert sparse format back to full 16x16 grid for UI
     List<List<int>>? pixelData;
-    
-    if (data['pixelsPacked'] != null) {
+
+    if (frames != null && frames.isNotEmpty) {
+      // Thumbnails and any caller that predates animations read pixelData, so
+      // an animation still exposes its first frame there.
+      pixelData = frames.first.pixels;
+    } else if (data['pixelsPacked'] != null) {
       // SPARSE_PACKED_V1: "IIRRGGBB" groups in a single string
       pixelData = _convertFromPackedFormat(data['pixelsPacked'] as String);
     } else if (data['pixels'] != null) {
@@ -932,18 +940,46 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
         (data['pixelData'] as List).map((row) => List<int>.from(row))
       );
     }
-    
+
     return AssetModel(
       id: id,
       name: data['name'] ?? 'Unnamed Asset',
-      type: (data['type'] as String?)?.toLowerCase() == 'animation' 
-          ? AssetType.animation 
-          : AssetType.image,
+      type: type,
       tags: data['tags'] != null ? List<String>.from(data['tags']) : [],
       pixelData: pixelData,
+      frames: frames != null && frames.isNotEmpty ? frames : null,
       isDefault: data['isDefault'] ?? false,
       createdAt: data['createdAt']?.toDate(),
     );
+  }
+
+  /// Reads an animation in either the packed encoding or the legacy one.
+  ///
+  /// Returns null when the document carries neither, which is how an asset
+  /// typed ANIMATION but holding a single image still opens in the editor.
+  List<AnimationFrameModel>? _animationFramesFromFirestore(
+    Map<String, dynamic> data,
+  ) {
+    if (data['basePixelsPacked'] != null) {
+      return AnimationCodec.decode(
+        basePixelsPacked: data['basePixelsPacked'] as String? ?? '',
+        frameDeltasPacked: data['frameDeltasPacked'] != null
+            ? List<String>.from(data['frameDeltasPacked'] as List)
+            : const [],
+        frameDurationsMs: data['frameDurationsMs'] != null
+            ? List<int>.from(data['frameDurationsMs'] as List)
+            : const [],
+      );
+    }
+
+    if (data['frames'] != null) {
+      return AnimationCodec.decodeLegacy(
+        basePixels: data['basePixels'] as List? ?? const [],
+        legacyFrames: data['frames'] as List,
+      );
+    }
+
+    return null;
   }
 
   Future<void> _incrementDeviceConfigVersion(String deviceId) async {
@@ -1078,36 +1114,6 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
     } catch (e) {
       return 0;
     }
-  }
-
-  /// Converts a full 16x16 grid to SPARSE_PACKED_V1: one string of fixed-width
-  /// 8-character groups, "IIRRGGBB" per non-black pixel, where II is the index
-  /// (y*16 + x, 0-255) and RRGGBB is the colour.
-  ///
-  /// This exists because the previous per-pixel map format produced Firestore
-  /// documents around 23KB, which the device's Firebase client silently failed
-  /// to buffer. The packed form is roughly 1KB for the same image.
-  String _convertToPackedFormat(List<List<int>>? pixelData) {
-    if (pixelData == null || pixelData.isEmpty) return '';
-
-    final buffer = StringBuffer();
-
-    for (int y = 0; y < pixelData.length && y < 16; y++) {
-      final row = pixelData[y];
-      for (int x = 0; x < row.length && x < 16; x++) {
-        final color = row[x];
-        // Skip black pixels (0 or transparent)
-        if (color != 0) {
-          // Convert ARGB to RGB888 (remove alpha channel)
-          final rgb888 = color & 0xFFFFFF;
-          final index = y * 16 + x;
-          buffer.write(index.toRadixString(16).padLeft(2, '0'));
-          buffer.write(rgb888.toRadixString(16).padLeft(6, '0'));
-        }
-      }
-    }
-
-    return buffer.toString();
   }
 
   /// Converts SPARSE_PACKED_V1 back to a full 16x16 grid, with alpha forced to

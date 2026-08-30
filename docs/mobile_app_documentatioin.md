@@ -282,9 +282,10 @@ If shared:
 
 ### 7.4 ANIMATION Screen Editor
 
-- Same as IMAGE
-- Loop control
+- Same as IMAGE; `/screen/animation/:id` already passes `ScreenType.animation`, so the editor
+  filters the asset pool to animations
 - Frame timing info
+- **No loop control** — every animation loops, by design
 
 ---
 
@@ -348,15 +349,43 @@ Save:
 
 ### 9.2 Animation Editor
 
-- Frame timeline
-- Per-frame delay
-- Frame duplication
-- Preview playback
+`AssetEditorAnimationView` + `AnimationEditorCubit`, separate from the image editor.
+
+- Horizontally reorderable frame timeline: select, add blank, duplicate, delete
+- Per-frame duration, stepped in 50 ms, with inline validation
+- Duplication deep-copies, so editing a copy never writes through to its source
+- The pixel grid reloads when the selected frame changes
+- Always-looping preview with play/pause and restart; frames stay editable while paused
+- The same pencil, eraser, fill, clear, mirror, colour, name and tag controls as the image editor
+
+A new animation opens on **two blank 200 ms frames**.
+
+**Limits** (`AnimationCodec`, enforced before the write and again on the device):
+
+| Limit | Value |
+|---|---|
+| Frames | 2–16 |
+| Duration per frame | 50–5000 ms |
+| Packed characters, base + all deltas | 8192 |
+| Visible pixels | at least one |
+
+An animation that breaks a limit is **rejected, not truncated**: the save fails with an inline
+message and the frames stay in the editor for the retry.
 
 Storage:
 
-- Sparse pixel format (delta frames)
+- One `/assets/{assetId}` document, `DELTA_SPARSE_PACKED_V1` (see the Firebase doc §4.5)
+- First frame packed in full, every later frame packed as the change from the one before it
 - Optimized for ESP32 memory
+
+**Routing.** `/asset/create/animation` opens the animation editor. `/asset/edit/:id` dispatches on
+a `?type=` query parameter that the library builds from the asset it already holds
+(`assetEditorFor` in `app_router.dart`); without it, the link keeps the previous image behaviour.
+Editing previously opened the image editor for *every* asset, which flattened an animation to its
+first frame on the next save.
+
+**Previews.** Library and selector thumbnails show the first frame with a play badge; the editor
+and the active screen preview play the whole sequence.
 
 ---
 

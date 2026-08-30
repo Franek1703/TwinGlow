@@ -49,8 +49,12 @@ A clean Arduino/PlatformIO structure (logical modules) can look like this:
     RenderClock.h/.cpp          // procedural CLOCK screen renderer
     RenderSensor.h/.cpp         // procedural SENSOR (BME680) renderer
     RenderAsset.h/.cpp          // IMAGE/ANIMATION renderer from cached assets
+                                //   holds the cumulative 256-pixel frame buffer
     ScreenPlaylist.h/.cpp       // ordered list of screens, current index, duration
-    AssetCache.h/.cpp           // cache for parsed asset data (pixels/frames)
+    AssetCache.h/.cpp           // cache for parsed asset data (pixels, cumulative frames)
+                                //   SPARSE_PACKED_V1 / SPARSE_I16_RGB888 (IMAGE)
+                                //   DELTA_SPARSE_PACKED_V1 (ANIMATION)
+                                //   DELTA_SPARSE_I16_RGB888 (legacy, converted on parse)
 
   input/
     Buttons.h/.cpp              // debounce, short/long/very long press events

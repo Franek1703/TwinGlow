@@ -283,6 +283,34 @@ TwinGlow supports both:
 - **Asset-driven screens** (IMAGE, ANIMATION) → rendered from cached Firestore assets
 - **Procedural screens** (CLOCK, SENSOR) → generated locally on ESP32 using config from Firestore
 
+#### ANIMATION playback
+
+Animations arrive as `DELTA_SPARSE_PACKED_V1`: frame 0 packed in full, then one packed transition
+per later frame (see the Firebase doc §4.5). `RenderAsset` keeps a 256-entry colour buffer and
+applies each transition onto it, so a frame costs only what actually changed.
+
+- Frame 0 is on screen immediately; `frameDurationsMs[i]` is how long frame *i* stays visible.
+- Deltas are cumulative; a delta group with colour `000000` clears that pixel.
+- Every animation loops. The last frame returns to frame 0, which rebuilds the buffer from frame 0
+  because deltas only move forward. A legacy `loop: false` does not change this.
+- Playback resets to frame 0 when a screen is entered, when the asset changes, on wake from a
+  blanked sleep window, and after a config reload. Nothing advances while the panel is hidden, so
+  a stale timer can never make an animation jump on wake.
+- The older `DELTA_SPARSE_I16_RGB888` form is still read; `AssetCache` converts its base-relative
+  frames into the cumulative model at parse time so playback has one code path.
+
+Limits are re-checked on the device rather than trusted from the document — frame count (2–16),
+per-frame duration (50–5000 ms), total packed length (8192 chars), pixel index range, and
+delta/duration array agreement. A malformed asset **fails to parse** and the previous cached copy
+is kept, rather than rendering as a wrong or endless animation.
+
+#### Asset cache refresh
+
+On a config reload the device collects every asset id referenced by any screen, fetches **each
+one exactly once** (cached or not — skipping cached ids meant an edited asset kept rendering its
+old pixels until reboot), swaps a cache entry in only after the new copy parses, keeps the
+previous copy on a transient failure, and drops entries no screen references any more.
+
 ### 11.2.1 CLOCK (procedural, local)
 
 - Uses locally synchronized time (NTP boot + periodic every 6h)

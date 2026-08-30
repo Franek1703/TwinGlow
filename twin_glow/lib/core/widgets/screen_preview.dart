@@ -8,6 +8,7 @@ import '../../config/app_spacing.dart';
 import '../../config/app_typography.dart';
 import '../models/asset_model.dart';
 import '../models/screen_model.dart';
+import 'animated_pixel_preview.dart';
 import 'pixel_preview.dart';
 
 /// Returns every asset referenced by [screen] in device cycle order.
@@ -246,11 +247,14 @@ class _AssetPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final data = asset?.pixelData ?? fallbackData;
+    final data = asset?.previewPixelData ?? fallbackData;
     final isAnimation =
         asset?.type == AssetType.animation ||
         screenType == ScreenType.animation;
     final name = asset?.name ?? 'Asset unavailable';
+    // The active page plays the whole sequence; library thumbnails elsewhere
+    // stay on the first frame with a play badge.
+    final frames = asset?.frames;
 
     return Semantics(
       image: true,
@@ -258,7 +262,14 @@ class _AssetPage extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          if (data != null)
+          if (frames != null && frames.length > 1)
+            AnimatedPixelPreview(
+              // Re-keyed on the asset, so swapping assets restarts at frame 0
+              // instead of resuming mid-sequence.
+              key: ValueKey('animated_$assetId'),
+              frames: frames,
+            )
+          else if (data != null)
             PixelPreview(data: data)
           else
             _MissingAssetPreview(assetId: assetId, isAnimation: isAnimation),

@@ -422,6 +422,9 @@ bool updateSleepState() {
         } else {
             Serial.println(F("[Sleep] Leaving sleep window"));
             matrix.setBrightness(nvs.getBrightness());
+            // Nothing advanced while the panel was blank, so the frame timer is
+            // stale. Restart at frame 0 instead of jumping on the first pass.
+            renderAsset.resetAnimation();
         }
     }
 
@@ -573,6 +576,17 @@ void handleCapabilityDetect() {
     fsm.transition(DeviceState::CONFIG_LOADING);
 }
 
+// Collects an asset id once. Screens routinely share assets - a pool entry is
+// often another screen's default - and refetching the same document per screen
+// would multiply the slowest part of a config reload.
+static void addReferencedAsset(std::vector<String>& ids, const String& assetId) {
+    if (assetId.length() == 0) return;
+    for (const String& existing : ids) {
+        if (existing == assetId) return;
+    }
+    ids.push_back(assetId);
+}
+
 void handleConfigLoading() {
     // Runs once per entry into CONFIG_LOADING. The 60s config poll re-enters
     // this state whenever configVersion changes, so the guard must be tied to
@@ -609,6 +623,9 @@ void handleConfigLoading() {
                     Serial.print(F("[Config] Firestore returned "));
                     Serial.print(screens.size());
                     Serial.println(F(" screens"));
+                    // Every asset any screen points at, gathered first so each
+                    // one is fetched exactly once even when screens share it.
+                    std::vector<String> referencedAssetIds;
                     for (size_t i = 0; i < screens.size(); i++) {
                         ScreenConfig& sc = screens[i];
                         Serial.print(F("[Config] Screen["));
@@ -663,41 +680,46 @@ void handleConfigLoading() {
                         scTypeUpper.toUpperCase();
                         // A pool with no default must still be cached, so this
                         // cannot gate on assetId alone.
-                        if ((scTypeUpper == "IMAGE" || scTypeUpper == "ANIMATION") &&
-                            (sc.assetId.length() > 0 || !sc.availableAssetIds.empty())) {
-                            Serial.print(F("[Config] Loading asset for screen["));
-                            Serial.print(i);
-                            Serial.print(F("]: "));
-                            Serial.println(sc.assetId);
-                            AssetData assetData;
-                            if (firestoreRepo->getAsset(sc.assetId, assetData) && assetData.pixelsJson.length() > 0) {
-                                Serial.print(F("[Config] Asset loaded, parsing... pixelsJsonLen="));
-                                Serial.println(assetData.pixelsJson.length());
-                                CachedAsset cached;
-                                if (assetCache.parseAsset(sc.assetId, assetData.pixelsJson, cached)) {
-                                    assetCache.addAsset(cached);
-                                    Serial.println(F("[Config] Asset cached successfully"));
-                                } else {
-                                    Serial.println(F("[Config] Asset parse failed"));
-                                }
-                            } else {
-                                Serial.print(F("[Config] Asset load failed or empty: pixelsJsonLen="));
-                                Serial.println(assetData.pixelsJson.length());
+                        if (scTypeUpper == "IMAGE" || scTypeUpper == "ANIMATION") {
+                            if (sc.assetId.length() > 0) {
+                                addReferencedAsset(referencedAssetIds, sc.assetId);
                             }
                             for (size_t a = 0; a < sc.availableAssetIds.size(); a++) {
-                                const String& aid = sc.availableAssetIds[a];
-                                if (aid.length() > 0 && assetCache.getAsset(aid) == nullptr) {
-                                    AssetData ad;
-                                    if (firestoreRepo->getAsset(aid, ad) && ad.pixelsJson.length() > 0) {
-                                        CachedAsset c;
-                                        if (assetCache.parseAsset(aid, ad.pixelsJson, c)) {
-                                            assetCache.addAsset(c);
-                                        }
-                                    }
-                                }
+                                addReferencedAsset(referencedAssetIds, sc.availableAssetIds[a]);
                             }
                         }
                     }
+
+                    // Refetch every referenced asset, cached or not. Skipping
+                    // the ones already held meant an asset edited in the app
+                    // kept rendering its old pixels until the device rebooted.
+                    for (const String& aid : referencedAssetIds) {
+                        Serial.print(F("[Config] Loading asset: "));
+                        Serial.println(aid);
+                        AssetData assetData;
+                        if (firestoreRepo->getAsset(aid, assetData) && assetData.pixelsJson.length() > 0) {
+                            CachedAsset cached;
+                            if (assetCache.parseAsset(aid, assetData.pixelsJson, cached)) {
+                                // Swap in only once parsing succeeded, so a
+                                // half-read document cannot replace a good copy.
+                                assetCache.addAsset(cached);
+                                Serial.println(F("[Config] Asset cached successfully"));
+                            } else {
+                                // Keep whatever is already cached: a transient
+                                // bad read should not blank a working screen.
+                                Serial.println(F("[Config] Asset parse failed, keeping cached copy"));
+                            }
+                        } else {
+                            Serial.print(F("[Config] Asset load failed or empty: pixelsJsonLen="));
+                            Serial.println(assetData.pixelsJson.length());
+                        }
+                    }
+                    // Assets no longer referenced by any screen just occupy RAM.
+                    assetCache.retainOnly(referencedAssetIds);
+                    // The playlist is about to change under the renderer, so an
+                    // animation must not carry its frame index across.
+                    renderAsset.resetAnimation();
+
                     playlist.setScreens(screens);
                     // Only mark this version as consumed once it actually loaded.
                     // Leaving it unchanged on failure lets the next poll retry
@@ -780,6 +802,13 @@ void handleRunning() {
     static int lastLoggedIndex = -999;
     static unsigned long lastRenderLogMs = 0;
     int curIndex = playlist.getCurrentIndex();
+    // Entering a screen restarts its animation rather than resuming whatever
+    // frame it was on when the playlist last moved away.
+    static int lastRenderedIndex = -1;
+    if (curIndex != lastRenderedIndex) {
+        lastRenderedIndex = curIndex;
+        renderAsset.resetAnimation();
+    }
     bool logRender = (millis() - lastRenderLogMs >= 5000) || (screen != nullptr && lastLoggedIndex != curIndex);
     if (screen == nullptr) {
         if (lastLoggedIndex != -2) {
@@ -1118,6 +1147,9 @@ void processCloudResults() {
                     CachedAsset cached;
                     if (assetCache.parseAsset(assetId, result.assetData->pixelsJson, cached)) {
                         assetCache.addAsset(cached);
+                        // addAsset can reallocate the cache's vector, so any
+                        // CachedAsset* the renderer still holds is stale.
+                        renderAsset.resetAnimation();
                         lastFailedRuntimeAssetId = "";
                         Serial.print(F("[Render] Background asset cached: "));
                         Serial.println(assetId);

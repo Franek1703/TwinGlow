@@ -95,8 +95,8 @@ class AssetSelector extends StatelessWidget {
                   child: Stack(
                     children: [
                       Positioned.fill(
-                        child: asset.pixelData != null
-                            ? PixelPreview(data: asset.pixelData!)
+                        child: asset.previewPixelData != null
+                            ? PixelPreview(data: asset.previewPixelData!)
                             : Container(
                                 decoration: BoxDecoration(
                                   gradient: LinearGradient(

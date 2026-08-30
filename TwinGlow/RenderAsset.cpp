@@ -13,7 +13,9 @@ static inline void setOriented(MatrixDriver* matrix, uint8_t x, uint8_t y, uint3
 }
 
 RenderAsset::RenderAsset(MatrixDriver* mat)
-    : matrix(mat), lastFrameMs(0), currentFrameIndex(0), currentAnimation(nullptr) {
+    : matrix(mat), frameShownAtMs(0), currentFrameIndex(0),
+      currentAnimation(nullptr), needsRestart(true) {
+    memset(frameBuffer, 0, sizeof(frameBuffer));
 }
 
 void RenderAsset::renderImage(CachedAsset* asset, uint32_t bgColor) {
@@ -41,84 +43,89 @@ bool RenderAsset::renderAnimation(CachedAsset* asset, uint32_t bgColor) {
         matrix->show();
         return false;
     }
-    
-    if (asset->encoding != "DELTA_SPARSE_I16_RGB888") {
+
+    // An asset typed ANIMATION that holds a still image still renders.
+    if (!asset->isAnimation()) {
         renderImage(asset, bgColor);
         return false;
     }
-    
-    // Check if animation changed
-    if (asset != currentAnimation) {
+
+    // Switching asset restarts at frame 0 rather than resuming at whatever
+    // index the previous animation happened to be on.
+    if (asset != currentAnimation || needsRestart) {
         currentAnimation = asset;
+        needsRestart = false;
         currentFrameIndex = 0;
-        lastFrameMs = millis();
-    }
-    
-    // Check if it's time for next frame
-    if (asset->frames.empty()) {
-        renderPixels(asset->basePixels, bgColor);
-        matrix->show();
+        memset(frameBuffer, 0, sizeof(frameBuffer));
+        applyFrame(0);
+        // Frame 0 is on screen immediately; its duration is how long it stays.
+        frameShownAtMs = millis();
+        paintFrameBuffer(bgColor);
         return false;
     }
-    
+
     unsigned long now = millis();
-    AnimationFrame& frame = asset->frames[currentFrameIndex];
-    
-    if (now - lastFrameMs >= frame.delayMs) {
-        // Render current frame
-        applyDeltaFrame(asset->basePixels, frame.pixels, bgColor);
-        matrix->show();
-        
-        // Advance to next frame
+    bool advanced = false;
+
+    // A duration describes how long its own frame is visible, so the move
+    // happens once that frame has had its time.
+    if (now - frameShownAtMs >= currentAnimation->frames[currentFrameIndex].durationMs) {
         currentFrameIndex++;
-        if (currentFrameIndex >= asset->frames.size()) {
-            if (asset->loop) {
-                currentFrameIndex = 0;
-            } else {
-                currentFrameIndex = asset->frames.size() - 1; // Stay on last frame
-            }
+        if (currentFrameIndex >= currentAnimation->frames.size()) {
+            // Always loops. The last frame returns to frame 0, which means
+            // rebuilding from a cleared buffer because deltas only move
+            // forward.
+            currentFrameIndex = 0;
+            memset(frameBuffer, 0, sizeof(frameBuffer));
         }
-        
-        lastFrameMs = now;
-        return true;
-    } else {
-        // Render current frame without advancing
-        applyDeltaFrame(asset->basePixels, frame.pixels, bgColor);
-        matrix->show();
-        return false;
+        applyFrame(currentFrameIndex);
+        frameShownAtMs = now;
+        advanced = true;
     }
+
+    paintFrameBuffer(bgColor);
+    return advanced;
 }
 
 void RenderAsset::resetAnimation() {
     currentFrameIndex = 0;
-    lastFrameMs = millis();
+    frameShownAtMs = millis();
+    // Cleared because a config reload can reallocate the cache's vector and
+    // leave this pointing at freed memory. It is only ever compared, never
+    // dereferenced, but there is no reason to keep a stale value around.
+    currentAnimation = nullptr;
+    // Forces the next renderAnimation() to rebuild the buffer from frame 0,
+    // even when the asset pointer has not changed.
+    needsRestart = true;
+}
+
+void RenderAsset::applyFrame(size_t index) {
+    if (currentAnimation == nullptr || index >= currentAnimation->frames.size()) return;
+    for (const auto& pixel : currentAnimation->frames[index].delta) {
+        // A delta entry with colour 0 clears that pixel.
+        frameBuffer[pixel.index] = pixel.color;
+    }
+}
+
+void RenderAsset::paintFrameBuffer(uint32_t bgColor) {
+    matrix->fill(bgColor);
+    for (int i = 0; i < 256; i++) {
+        if (frameBuffer[i] == 0) continue; // off: leave the background showing
+        uint8_t x = i % MATRIX_WIDTH;
+        uint8_t y = i / MATRIX_WIDTH;
+        setOriented(matrix, x, y, matrix->color(frameBuffer[i]));
+    }
+    matrix->show();
 }
 
 void RenderAsset::renderPixels(const std::vector<Pixel>& pixels, uint32_t bgColor) {
     // Clear to background
     matrix->fill(bgColor);
-    
+
     // Render pixels
     for (const auto& pixel : pixels) {
         uint8_t x = pixel.index % MATRIX_WIDTH;
         uint8_t y = pixel.index / MATRIX_WIDTH;
         setOriented(matrix, x, y, matrix->color(pixel.color));
     }
-}
-
-void RenderAsset::applyDeltaFrame(const std::vector<Pixel>& basePixels, const std::vector<Pixel>& deltaPixels, uint32_t bgColor) {
-    // Start with base pixels
-    renderPixels(basePixels, bgColor);
-    
-    // Apply delta pixels (can include black to turn off)
-    for (const auto& pixel : deltaPixels) {
-        uint8_t x = pixel.index % MATRIX_WIDTH;
-        uint8_t y = pixel.index / MATRIX_WIDTH;
-        if (pixel.color == 0) {
-            setOriented(matrix, x, y, bgColor);
-        } else {
-            setOriented(matrix, x, y, matrix->color(pixel.color));
-        }
-    }
-    matrix->show();
 }

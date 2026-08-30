@@ -515,20 +515,46 @@ bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset) {
     asset.framesJson = "";
 
     Firestore::Parent parent(projectId, "");
-    // Ask only for the fields the renderer needs. An unmasked get also pulls
-    // name, ownerUid, tags, width, height and createdAt, which is dead weight
-    // on a transfer that is already at the edge of what the client can buffer.
-    DocumentMask mask("type,encoding,pixelsPacked,pixels,basePixels,frames,loop");
-    GetDocumentOptions options(mask);
+    // No DocumentMask, deliberately.
+    //
+    // FirebaseClient formats the whole request line into a buffer sized from a
+    // hardcoded 300 (RequestHandler.h: printTo(val[header], 300, "%s%s%s
+    // HTTP/1.1\r\n", ...)), so anything past ~331 characters is silently
+    // truncated by vsnprintf - taking the " HTTP/1.1\r\n" terminator with it.
+    // Google's frontend answers that malformed request line with an HTML 400,
+    // and the half-spoken connection then wedges the next synchronous get.
+    //
+    // The document path alone is ~81 characters, so a mask listing every field
+    // both encodings need came to ~388 and broke every asset fetch. Masking
+    // only saves the handful of metadata fields (name, ownerUid, tags, width,
+    // height, createdAt) - a few hundred bytes against a payload we size the
+    // JSON documents from anyway. Not worth reintroducing a length cliff that
+    // depends on how long an asset id happens to be.
+    //
+    // If you add a mask back, keep path + query + 11 under 331 characters.
+    GetDocumentOptions options;
     String path = getAssetPath(assetId);
+    Serial.print(F("[Firestore] getAsset: freeHeap="));
+    Serial.print(ESP.getFreeHeap());
+    Serial.print(F(" largestBlock="));
+    Serial.println(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     Serial.print(F("[Firestore] getAsset: querying path="));
     Serial.print(path);
     Serial.print(F(" projectId="));
     Serial.println(projectId);
-    
     // Call get() - exact same pattern as getDeviceDoc which works
     // Note: FirebaseClient get() is synchronous and blocks until response or timeout
     String response = documents->get(*aClient, parent, path, options);
+
+    // A rejected request leaves the socket half-spoken: the next synchronous
+    // get on it blocks past its own read timeout and takes the whole device
+    // with it. Drop the connection so the following fetch starts clean.
+    if (aClient->lastError().code() != 0 && wrap != nullptr) {
+        Serial.print(F("[Firestore] getAsset: request failed (code="));
+        Serial.print(aClient->lastError().code());
+        Serial.println(F("), resetting transport"));
+        wrap->resetTransport();
+    }
     
     // Log response details immediately for debugging
     Serial.print(F("[Firestore] getAsset response length: "));
@@ -603,7 +629,14 @@ bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset) {
         return false;
     }
     
-    DynamicJsonDocument doc(16384); // Increased from 8192 for larger assets
+    // Sized from the payload rather than a fixed 16KB. A fixed buffer here plus
+    // a fixed one for `flat` below reserved 32KB on every asset fetch, on top of
+    // the ~40KB mbedTLS already holds for the TLS session - enough, on a plain
+    // ESP32, to push a later allocation into failure. A failed String
+    // allocation shows up as a truncated request header, which Google's
+    // frontend rejects with an HTML 400 rather than a Firestore JSON error.
+    const size_t responseLen = response.length();
+    DynamicJsonDocument doc(responseLen + 2048);
     DeserializationError error = deserializeJson(doc, response);
     if (error != DeserializationError::Ok) {
         Serial.print(F("[Firestore] getAsset parse error: id="));
@@ -656,6 +689,11 @@ bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset) {
     
     // Get fields object
     JsonObject fields = doc["fields"].as<JsonObject>();
+
+    // `doc` copied everything it needs, so the raw response is dead weight from
+    // here on and `flat` is about to be allocated. Freeing it first keeps the
+    // peak to one document plus one, not two plus the response.
+    response = String();
     
     // Log what fields we found
     Serial.print(F("[Firestore] getAsset found fields: "));
@@ -667,7 +705,9 @@ bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset) {
     if (fields.containsKey("type")) firestoreFieldToString(fields["type"].as<JsonObject>(), asset.type);
     if (fields.containsKey("encoding")) firestoreFieldToString(fields["encoding"].as<JsonObject>(), asset.encoding);
 
-    DynamicJsonDocument flat(16384); // Increased for larger assets
+    // The flattened form is strictly smaller than the Firestore-wrapped
+    // response it is built from, so the response size is a safe upper bound.
+    DynamicJsonDocument flat(responseLen + 2048);
     flat["type"] = asset.type;
     flat["encoding"] = asset.encoding;
     if (fields.containsKey("pixelsPacked")) {
@@ -719,6 +759,55 @@ bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset) {
     if (fields.containsKey("loop")) {
         bool l; firestoreFieldToBool(fields["loop"].as<JsonObject>(), l);
         flat["loop"] = l;
+    }
+    // DELTA_SPARSE_PACKED_V1: the first frame in full plus one packed
+    // transition per later frame, all as plain strings, so an animation costs
+    // the same shape of transfer as an image rather than a map per pixel.
+    if (fields.containsKey("basePixelsPacked")) {
+        String packed;
+        if (firestoreFieldToString(fields["basePixelsPacked"].as<JsonObject>(), packed)) {
+            flat["basePixelsPacked"] = packed;
+            Serial.print(F("[Firestore] Found 'basePixelsPacked', chars="));
+            Serial.println(packed.length());
+        } else {
+            Serial.println(F("[Firestore] 'basePixelsPacked' present but not a string"));
+        }
+    }
+    if (fields.containsKey("frameDeltasPacked")) {
+        JsonArray deltas = flat.createNestedArray("frameDeltasPacked");
+        JsonVariant src = fields["frameDeltasPacked"];
+        if (src.containsKey("arrayValue") && src["arrayValue"].containsKey("values")) {
+            size_t totalChars = 0;
+            for (JsonVariant v : src["arrayValue"]["values"].as<JsonArray>()) {
+                String delta;
+                // An absent stringValue means an empty transition, which is a
+                // legitimate frame that changes nothing.
+                if (!firestoreFieldToString(v.as<JsonObject>(), delta)) delta = "";
+                totalChars += delta.length();
+                deltas.add(delta);
+            }
+            Serial.print(F("[Firestore] Found 'frameDeltasPacked', deltas="));
+            Serial.print(deltas.size());
+            Serial.print(F(" chars="));
+            Serial.println(totalChars);
+        }
+    }
+    if (fields.containsKey("frameDurationsMs")) {
+        JsonArray durations = flat.createNestedArray("frameDurationsMs");
+        JsonVariant src = fields["frameDurationsMs"];
+        if (src.containsKey("arrayValue") && src["arrayValue"].containsKey("values")) {
+            for (JsonVariant v : src["arrayValue"]["values"].as<JsonArray>()) {
+                int ms = 0;
+                firestoreFieldToInt(v.as<JsonObject>(), ms);
+                durations.add(ms);
+            }
+        }
+    }
+    if (fields.containsKey("frameCount")) {
+        int count = 0;
+        if (firestoreFieldToInt(fields["frameCount"].as<JsonObject>(), count)) {
+            flat["frameCount"] = count;
+        }
     }
     serializeJson(flat, asset.pixelsJson);
     Serial.print(F("[Firestore] getAsset: id="));

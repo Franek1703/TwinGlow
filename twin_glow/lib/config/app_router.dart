@@ -22,6 +22,18 @@ import '../../views/screen_creation/screen_creation_view.dart';
 import '../core/models/screen_model.dart';
 import '../services/local/onboarding_status_store.dart';
 
+/// Picks the editor for an asset being opened from `/asset/edit/:id`.
+///
+/// Editing used to open the image editor for every asset, so an animation lost
+/// every frame but the first the moment it was saved. Callers pass the type
+/// they already hold on the link; anything else keeps the previous image
+/// behaviour, so an old link still opens something usable.
+Widget assetEditorFor({required String assetId, required String? type}) {
+  return type == 'animation'
+      ? AssetEditorAnimationView(assetId: assetId)
+      : AssetEditorImageView(assetId: assetId);
+}
+
 GoRouter createAppRouter(OnboardingStatusStore onboardingStatusStore) =>
     GoRouter(
       initialLocation: onboardingStatusStore.hasCompletedOnboarding
@@ -154,10 +166,10 @@ GoRouter createAppRouter(OnboardingStatusStore onboardingStatusStore) =>
         ),
         GoRoute(
           path: '/asset/edit/:id',
-          builder: (context, state) {
-            final id = state.pathParameters['id']!;
-            return AssetEditorImageView(assetId: id);
-          },
+          builder: (context, state) => assetEditorFor(
+            assetId: state.pathParameters['id']!,
+            type: state.uri.queryParameters['type'],
+          ),
         ),
         // Pairing
         GoRoute(

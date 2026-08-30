@@ -622,7 +622,7 @@ Black pixels are implicit and are not stored.
 **Why a packed string:** the previous per-pixel format (`pixels: [{index, color}, ...]`) produced
 Firestore documents around **23 KB**, which the device's Firebase client silently failed to
 buffer — the screen rendered blank. The packed form is roughly **1 KB** for the same image.
-See `_convertToPackedFormat` in `firebase_repository_impl.dart` and `AssetCache::parseAsset` on
+See `packImageGrid` in `services/firebase/asset_document.dart` and `AssetCache::parseAsset` on
 the device.
 
 > The older `SPARSE_I16_RGB888` encoding with a `pixels` array is **no longer written**. Assets in
@@ -630,50 +630,41 @@ the device.
 
 ---
 
-### 4.5 Animation asset: delta sparse frames
+### 4.5 Animation asset: `DELTA_SPARSE_PACKED_V1`
 
-> **Unverified.** The live database currently contains no `ANIMATION` assets, so this section
-> could not be checked against real data. Given static images moved to `SPARSE_PACKED_V1` for
-> document-size reasons (§4.4), treat the format below as the original design rather than
-> confirmed behavior, and re-check it against `AssetCache::parseAsset` before relying on it.
+Animations are stored in the **same** `/assets/{assetId}` document as images — no subcollection,
+no Storage object. The first frame is packed in full and every later frame is packed as the
+change from the frame before it, reusing the `IIRRGGBB` grouping of §4.4 so the device parses
+both formats with one primitive.
 
-Store an initial frame and only changes per frame:
-
-- `basePixels` = initial sparse frame (array of objects)
-- `frames[]` = list of deltas (each frame contains array of objects)
-- delta pixels can include black to turn pixels off (`color = 0x000000`)
-
-**Format:** Array of objects for both `basePixels` and frame `pixels`
+| Field | Type | Notes |
+|---|---|---|
+| `type` | string | `ANIMATION` |
+| `encoding` | string | `DELTA_SPARSE_PACKED_V1` |
+| `basePixelsPacked` | string | Frame 0 in full, `IIRRGGBB` groups |
+| `frameDeltasPacked` | array\<string\> | One packed transition per frame after the first |
+| `frameDurationsMs` | array\<int\> | How long **each** frame stays visible |
+| `frameCount` | int | Length of `frameDurationsMs`; the device rejects a mismatch |
+| `loop` | boolean | Always `true` (see "Looping" below) |
 
 ```json
 {
   "ownerUid": "uid_1",
+  "name": "Blink",
   "type": "ANIMATION",
   "width": 16,
   "height": 16,
-  "encoding": "DELTA_SPARSE_I16_RGB888",
+  "encoding": "DELTA_SPARSE_PACKED_V1",
 
-  "basePixels": [
-    {"index": 120, "color": 16776960},
-    {"index": 121, "color": 16776960}
+  "basePixelsPacked": "78ffff0079ffff00",
+
+  "frameDeltasPacked": [
+    "78000000",
+    "78ffff0079000000"
   ],
 
-  "frames": [
-    { 
-      "delayMs": 80, 
-      "pixels": [
-        {"index": 120, "color": 0},
-        {"index": 121, "color": 16776960}
-      ]
-    },
-    { 
-      "delayMs": 80, 
-      "pixels": [
-        {"index": 120, "color": 16776960},
-        {"index": 121, "color": 0}
-      ]
-    }
-  ],
+  "frameDurationsMs": [80, 80, 160],
+  "frameCount": 3,
 
   "loop": true,
   "createdAt": "serverTimestamp",
@@ -681,11 +672,67 @@ Store an initial frame and only changes per frame:
 }
 ```
 
-**Field descriptions:**
-- `basePixels`: Array of `{"index": i, "color": c}` objects for the initial frame
-- `frames`: Array of frame objects, each containing:
-  - `delayMs`: Delay before next frame (milliseconds)
-  - `pixels`: Array of `{"index": i, "color": c}` objects (delta changes)
+**Semantics**
+
+- Frame 0 is `basePixelsPacked`. Frame *n* is frame *n-1* with `frameDeltasPacked[n-1]` applied,
+  so deltas are **cumulative**, not relative to the base.
+- A delta group whose colour is `000000` **clears** that pixel. In `basePixelsPacked` an off pixel
+  is simply absent.
+- `frameDurationsMs[i]` is how long frame *i* stays on screen — it is not a lead-in delay. Frame 0
+  is visible immediately.
+- An empty string in `frameDeltasPacked` is a legitimate frame that changes nothing.
+
+**Limits.** Enforced in the app before the write (`AnimationCodec.encode`) *and* again on the
+device (`AssetCache::parseAsset`), which rejects rather than truncates:
+
+| Limit | Value |
+|---|---|
+| Frames | 2–16 |
+| Duration per frame | 50–5000 ms (authored in 50 ms steps) |
+| Packed characters, base + all deltas | 8192 |
+| Visible pixels | at least one across the whole animation |
+
+The 8192-character budget is tied to the device's JSON buffer: `AssetCache.cpp` parses the
+flattened asset into a 16 KB `DynamicJsonDocument`. Raising the budget without raising that
+buffer makes large animations fail to parse.
+
+**Looping.** Every animation loops; the last frame returns to frame 0. There is no loop control in
+the editor, and a legacy `loop: false` does not change playback.
+
+#### Legacy: `DELTA_SPARSE_I16_RGB888`
+
+The original format stored `basePixels` and a `frames[]` array of `{delayMs, pixels}`, where each
+frame's pixels were a delta against the **base**, not against the preceding frame. Both the app
+and the firmware still **read** it; the firmware converts it to the cumulative model on the way in
+so playback has one code path.
+
+Editing such an asset in the app rewrites it as `DELTA_SPARSE_PACKED_V1` and deletes
+`basePixels` and `frames` in the same `update()`. There is **no bulk migration** — an untouched
+legacy animation keeps working as-is.
+
+```json
+{
+  "encoding": "DELTA_SPARSE_I16_RGB888",
+  "basePixels": [{"index": 120, "color": 16776960}],
+  "frames": [
+    {"delayMs": 80, "pixels": [{"index": 120, "color": 0}]},
+    {"delayMs": 80, "pixels": [{"index": 121, "color": 16776960}]}
+  ],
+  "loop": true
+}
+```
+
+#### Propagation
+
+Saving an asset bumps `configVersion` on every device with a screen referencing it
+(`_bumpDevicesUsingAsset`), and assigning an asset to a screen already bumps that device. The
+firmware's RTDB doorbell is compiled out (`ENABLE_RTDB_DOORBELL 0` in `Config.h`), so an edit
+reaches the device on its next **60-second Firestore poll**. The app still writes the doorbell
+node; the device ignores it.
+
+On reload the device refetches **every** referenced asset, cached or not, replaces a cache entry
+only after the new copy parses, keeps the previous copy on a transient failure, and drops assets
+no screen references any more.
 
 ---
 

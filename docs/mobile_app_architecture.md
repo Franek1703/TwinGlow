@@ -356,14 +356,15 @@ Asset editor supports:
 
 * Pixel grid editing (16×16)
 * Color selection
-* Frame-based animation editing
-* Preview
+* Frame-based animation editing, in a dedicated editor reached by asset type
+* Preview — static for images, looping for animations
 
 Managed by:
 
 ```
 AssetsCubit
-AssetEditorCubit
+AssetEditorCubit        // images
+AnimationEditorCubit    // animations
 ```
 
 ---

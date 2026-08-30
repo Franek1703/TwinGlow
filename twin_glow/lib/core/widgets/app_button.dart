@@ -72,9 +72,18 @@ class AppButton extends StatelessWidget {
                         icon!,
                         SizedBox(width: 8.w),
                       ],
-                      Text(
-                        text,
-                        style: _getTextStyle(context),
+                      // Flexible so a long label ellipsizes instead of
+                      // overflowing the button. A full-width lg button is
+                      // narrower than its own text once the label passes about
+                      // a dozen characters.
+                      Flexible(
+                        child: Text(
+                          text,
+                          style: _getTextStyle(context),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                        ),
                       ),
                     ],
                   ),

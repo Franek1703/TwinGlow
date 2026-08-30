@@ -185,7 +185,8 @@ class _AssetsViewState extends State<AssetsView> {
                               return AppCard(
                           onTap: () => _openAndRefresh(
                             context,
-                            '/asset/edit/${asset.id}',
+                            '/asset/edit/${asset.id}'
+                            '?type=${asset.type.name}',
                           ),
                           hoverable: true,
                           child: Column(
@@ -212,8 +213,10 @@ class _AssetsViewState extends State<AssetsView> {
                                   child: Stack(
                                     fit: StackFit.expand,
                                     children: [
-                                      if (asset.pixelData != null)
-                                        PixelPreview(data: asset.pixelData!)
+                                      if (asset.previewPixelData != null)
+                                        PixelPreview(
+                                          data: asset.previewPixelData!,
+                                        )
                                       else
                                         Icon(
                                           _getAssetIcon(asset.type),

@@ -1,27 +1,32 @@
 #include "AssetCache.h"
 #include <ArduinoJson.h>
 
-// Parse SPARSE_PACKED_V1: fixed-width 8-char groups, "IIRRGGBB" per pixel.
+// Parse a packed pixel run: fixed-width 8-char groups, "IIRRGGBB" per pixel.
 // II = pixel index 0-255, RRGGBB = colour. No separators, so a whole image is
 // one Firestore string field instead of one map per pixel. The old per-pixel
 // encoding pushed the asset document to ~23KB, which the Firebase client
 // cannot buffer without PSRAM - the fetch then returned an empty body with no
 // error code and the screen rendered black.
-static bool parsePackedPixels(const char* packed, std::vector<Pixel>& out) {
+//
+// `allowEmpty` is true for animation deltas: a frame that changes nothing is
+// legitimate, while an image with no pixels is a failure.
+static bool parsePackedPixels(const char* packed, std::vector<Pixel>& out,
+                              bool allowEmpty = false) {
     if (packed == nullptr) return false;
 
     size_t len = strlen(packed);
     if (len == 0) {
-        Serial.println(F("[AssetCache] pixelsPacked is empty"));
+        if (allowEmpty) return true;
+        Serial.println(F("[AssetCache] packed pixel string is empty"));
         return false;
     }
     if (len % 8 != 0) {
-        Serial.print(F("[AssetCache] pixelsPacked length not a multiple of 8: "));
+        Serial.print(F("[AssetCache] packed length not a multiple of 8: "));
         Serial.println(len);
         return false;
     }
 
-    out.reserve(len / 8);
+    out.reserve(out.size() + len / 8);
     for (size_t i = 0; i < len; i += 8) {
         char idxHex[3] = {packed[i], packed[i + 1], 0};
         char colHex[7] = {packed[i + 2], packed[i + 3], packed[i + 4],
@@ -30,14 +35,19 @@ static bool parsePackedPixels(const char* packed, std::vector<Pixel>& out) {
         char* end = nullptr;
         unsigned long idx = strtoul(idxHex, &end, 16);
         if (end == idxHex || *end != '\0') {
-            Serial.print(F("[AssetCache] bad index in pixelsPacked at offset "));
+            Serial.print(F("[AssetCache] bad index in packed data at offset "));
             Serial.println(i);
+            return false;
+        }
+        if (idx > 255) {
+            Serial.print(F("[AssetCache] pixel index out of range: "));
+            Serial.println(idx);
             return false;
         }
 
         unsigned long col = strtoul(colHex, &end, 16);
         if (end == colHex || *end != '\0') {
-            Serial.print(F("[AssetCache] bad colour in pixelsPacked at offset "));
+            Serial.print(F("[AssetCache] bad colour in packed data at offset "));
             Serial.println(i);
             return false;
         }
@@ -47,6 +57,148 @@ static bool parsePackedPixels(const char* packed, std::vector<Pixel>& out) {
         pixel.color = (uint32_t)col;
         out.push_back(pixel);
     }
+    return true;
+}
+
+// Reads DELTA_SPARSE_PACKED_V1. Frames land in the cache already cumulative:
+// frames[0].delta is the whole first frame, frames[i].delta is the change from
+// frame i-1.
+static bool parsePackedAnimation(JsonObject doc, CachedAsset& asset) {
+    if (!doc.containsKey("basePixelsPacked") ||
+        !doc.containsKey("frameDurationsMs")) {
+        Serial.println(F("[AssetCache] packed animation missing base or durations"));
+        return false;
+    }
+
+    JsonArray durations = doc["frameDurationsMs"];
+    JsonArray deltas = doc["frameDeltasPacked"];
+
+    size_t frameCount = durations.size();
+    if (frameCount < ANIM_MIN_FRAMES || frameCount > ANIM_MAX_FRAMES) {
+        Serial.print(F("[AssetCache] frame count out of range: "));
+        Serial.println(frameCount);
+        return false;
+    }
+    // One transition per frame after the first. A mismatch means the document
+    // was written by something that does not agree with this format.
+    if (deltas.size() != frameCount - 1) {
+        Serial.print(F("[AssetCache] delta count "));
+        Serial.print(deltas.size());
+        Serial.print(F(" does not match frame count "));
+        Serial.println(frameCount);
+        return false;
+    }
+    if (doc.containsKey("frameCount") &&
+        (size_t)doc["frameCount"].as<int>() != frameCount) {
+        Serial.println(F("[AssetCache] frameCount disagrees with frameDurationsMs"));
+        return false;
+    }
+
+    const char* base = doc["basePixelsPacked"].as<const char*>();
+    size_t packedChars = base == nullptr ? 0 : strlen(base);
+    for (JsonVariant d : deltas) {
+        const char* s = d.as<const char*>();
+        packedChars += (s == nullptr ? 0 : strlen(s));
+    }
+    if (packedChars > ANIM_MAX_PACKED_CHARS) {
+        Serial.print(F("[AssetCache] packed animation too large: "));
+        Serial.println(packedChars);
+        return false;
+    }
+
+    for (size_t i = 0; i < frameCount; i++) {
+        int duration = durations[i].as<int>();
+        if (duration < (int)ANIM_MIN_DURATION_MS ||
+            duration > (int)ANIM_MAX_DURATION_MS) {
+            Serial.print(F("[AssetCache] frame duration out of range: "));
+            Serial.println(duration);
+            return false;
+        }
+
+        AnimationFrame frame;
+        frame.durationMs = (uint16_t)duration;
+        const char* packed = (i == 0) ? base : deltas[i - 1].as<const char*>();
+        // The base may legitimately be empty when frame 0 is blank and later
+        // deltas light the panel up.
+        if (!parsePackedPixels(packed, frame.delta, true)) return false;
+        asset.frames.push_back(frame);
+    }
+
+    return true;
+}
+
+// Reads the older DELTA_SPARSE_I16_RGB888 form, where every frame is a delta
+// against the *base* rather than against the frame before it. Converting here
+// means playback has one code path; editing such an asset in the app rewrites
+// it in the packed format.
+static bool parseLegacyAnimation(JsonObject doc, CachedAsset& asset) {
+    uint32_t base[256];
+    memset(base, 0, sizeof(base));
+
+    if (doc.containsKey("basePixels")) {
+        JsonArray baseArray = doc["basePixels"];
+        for (JsonArray pixelArray : baseArray) {
+            if (pixelArray.size() >= 2) {
+                int index = pixelArray[0].as<int>();
+                if (index < 0 || index > 255) continue;
+                base[index] = pixelArray[1].as<uint32_t>();
+            }
+        }
+    }
+
+    if (!doc.containsKey("frames")) {
+        Serial.println(F("[AssetCache] legacy animation has no frames"));
+        return false;
+    }
+
+    JsonArray framesArray = doc["frames"];
+    if (framesArray.size() < ANIM_MIN_FRAMES ||
+        framesArray.size() > ANIM_MAX_FRAMES) {
+        Serial.print(F("[AssetCache] legacy frame count out of range: "));
+        Serial.println(framesArray.size());
+        return false;
+    }
+
+    uint32_t previous[256];
+    memset(previous, 0, sizeof(previous));
+    bool first = true;
+
+    for (JsonObject frameObj : framesArray) {
+        uint32_t current[256];
+        memcpy(current, base, sizeof(base));
+
+        if (frameObj.containsKey("pixels")) {
+            for (JsonArray pixelArray : frameObj["pixels"].as<JsonArray>()) {
+                if (pixelArray.size() >= 2) {
+                    int index = pixelArray[0].as<int>();
+                    if (index < 0 || index > 255) continue;
+                    current[index] = pixelArray[1].as<uint32_t>();
+                }
+            }
+        }
+
+        AnimationFrame frame;
+        int delay = frameObj.containsKey("delayMs") ? frameObj["delayMs"].as<int>() : 0;
+        if (delay < (int)ANIM_MIN_DURATION_MS) delay = ANIM_MIN_DURATION_MS;
+        if (delay > (int)ANIM_MAX_DURATION_MS) delay = ANIM_MAX_DURATION_MS;
+        frame.durationMs = (uint16_t)delay;
+
+        for (int i = 0; i < 256; i++) {
+            // Frame 0 carries every lit pixel; later frames carry only what
+            // actually changed since the previous absolute frame.
+            if (first ? current[i] != 0 : current[i] != previous[i]) {
+                Pixel pixel;
+                pixel.index = (uint8_t)i;
+                pixel.color = current[i];
+                frame.delta.push_back(pixel);
+            }
+        }
+
+        asset.frames.push_back(frame);
+        memcpy(previous, current, sizeof(current));
+        first = false;
+    }
+
     return true;
 }
 
@@ -60,10 +212,10 @@ AssetCache::~AssetCache() {
 bool AssetCache::addAsset(const CachedAsset& asset) {
     // Remove existing if present
     removeAsset(asset.id);
-    
+
     // Add new asset
     assets.push_back(asset);
-    
+
     Serial.print(F("[AssetCache] Added asset: "));
     Serial.println(asset.id);
     return true;
@@ -86,6 +238,25 @@ void AssetCache::clear() {
     Serial.println(F("[AssetCache] Cleared"));
 }
 
+size_t AssetCache::retainOnly(const std::vector<String>& keepIds) {
+    size_t removed = 0;
+    for (auto it = assets.begin(); it != assets.end();) {
+        bool keep = false;
+        for (const String& id : keepIds) {
+            if (it->id == id) { keep = true; break; }
+        }
+        if (keep) {
+            ++it;
+        } else {
+            Serial.print(F("[AssetCache] Dropping unreferenced asset: "));
+            Serial.println(it->id);
+            it = assets.erase(it);
+            removed++;
+        }
+    }
+    return removed;
+}
+
 CachedAsset* AssetCache::getAsset(const String& assetId) {
     for (auto& asset : assets) {
         if (asset.id == assetId) {
@@ -98,40 +269,45 @@ CachedAsset* AssetCache::getAsset(const String& assetId) {
 bool AssetCache::parseAsset(const String& assetId, const String& jsonStr, CachedAsset& asset) {
     asset.id = assetId;
     asset.pixels.clear();
-    asset.basePixels.clear();
     asset.frames.clear();
-    
-    DynamicJsonDocument doc(8192); // Adjust size as needed
+
+    // Sized from the payload. The fixed 8192 this used to allocate could not
+    // hold an animation carrying ANIM_MAX_PACKED_CHARS of pixel data - the
+    // parse failed with NoMemory and the screen rendered as a load error - but
+    // a fixed 16384 wastes most of that on an ordinary image.
+    DynamicJsonDocument doc(jsonStr.length() + 2048);
     DeserializationError error = deserializeJson(doc, jsonStr);
-    
+
     if (error) {
         Serial.print(F("[AssetCache] JSON parse error: "));
         Serial.println(error.c_str());
         return false;
     }
-    
+
+    JsonObject root = doc.as<JsonObject>();
+
     // Parse type
-    if (doc.containsKey("type")) {
-        asset.type = doc["type"].as<String>();
+    if (root.containsKey("type")) {
+        asset.type = root["type"].as<String>();
     }
-    
+
     // Parse encoding
-    if (doc.containsKey("encoding")) {
-        asset.encoding = doc["encoding"].as<String>();
+    if (root.containsKey("encoding")) {
+        asset.encoding = root["encoding"].as<String>();
     }
-    
+
     // Parse based on encoding
     if (asset.encoding == "SPARSE_PACKED_V1") {
-        if (!doc.containsKey("pixelsPacked")) {
+        if (!root.containsKey("pixelsPacked")) {
             Serial.println(F("[AssetCache] SPARSE_PACKED_V1 asset has no pixelsPacked field"));
             return false;
         }
-        if (!parsePackedPixels(doc["pixelsPacked"].as<const char*>(), asset.pixels)) {
+        if (!parsePackedPixels(root["pixelsPacked"].as<const char*>(), asset.pixels)) {
             return false;
         }
     } else if (asset.encoding == "SPARSE_I16_RGB888") {
-        if (doc.containsKey("pixels")) {
-            JsonArray pixelsArray = doc["pixels"];
+        if (root.containsKey("pixels")) {
+            JsonArray pixelsArray = root["pixels"];
             for (JsonArray pixelArray : pixelsArray) {
                 if (pixelArray.size() >= 2) {
                     Pixel pixel;
@@ -141,47 +317,10 @@ bool AssetCache::parseAsset(const String& assetId, const String& jsonStr, Cached
                 }
             }
         }
+    } else if (asset.encoding == "DELTA_SPARSE_PACKED_V1") {
+        if (!parsePackedAnimation(root, asset)) return false;
     } else if (asset.encoding == "DELTA_SPARSE_I16_RGB888") {
-        // Parse basePixels
-        if (doc.containsKey("basePixels")) {
-            JsonArray baseArray = doc["basePixels"];
-            for (JsonArray pixelArray : baseArray) {
-                if (pixelArray.size() >= 2) {
-                    Pixel pixel;
-                    pixel.index = pixelArray[0].as<uint8_t>();
-                    pixel.color = pixelArray[1].as<uint32_t>();
-                    asset.basePixels.push_back(pixel);
-                }
-            }
-        }
-        
-        // Parse frames
-        if (doc.containsKey("frames")) {
-            JsonArray framesArray = doc["frames"];
-            for (JsonObject frameObj : framesArray) {
-                AnimationFrame frame;
-                frame.delayMs = frameObj["delayMs"].as<uint16_t>();
-                
-                if (frameObj.containsKey("pixels")) {
-                    JsonArray pixelsArray = frameObj["pixels"];
-                    for (JsonArray pixelArray : pixelsArray) {
-                        if (pixelArray.size() >= 2) {
-                            Pixel pixel;
-                            pixel.index = pixelArray[0].as<uint8_t>();
-                            pixel.color = pixelArray[1].as<uint32_t>();
-                            frame.pixels.push_back(pixel);
-                        }
-                    }
-                }
-                
-                asset.frames.push_back(frame);
-            }
-        }
-        
-        // Parse loop
-        if (doc.containsKey("loop")) {
-            asset.loop = doc["loop"].as<bool>();
-        }
+        if (!parseLegacyAnimation(root, asset)) return false;
     } else {
         // Previously this fell through and returned true, so an unreadable
         // asset was cached as "valid" and rendered as a black screen.
@@ -193,9 +332,16 @@ bool AssetCache::parseAsset(const String& assetId, const String& jsonStr, Cached
 
     // An asset that parsed to nothing renders identically to a failure, so
     // treat it as one rather than caching an empty image.
-    if (asset.encoding == "DELTA_SPARSE_I16_RGB888") {
-        if (asset.basePixels.empty() && asset.frames.empty()) {
-            Serial.print(F("[AssetCache] Animation has no base pixels or frames: "));
+    if (asset.isAnimation()) {
+        bool anyVisible = false;
+        for (const auto& frame : asset.frames) {
+            for (const auto& pixel : frame.delta) {
+                if (pixel.color != 0) { anyVisible = true; break; }
+            }
+            if (anyVisible) break;
+        }
+        if (!anyVisible) {
+            Serial.print(F("[AssetCache] Animation has no visible pixel: "));
             Serial.println(assetId);
             return false;
         }
@@ -205,15 +351,5 @@ bool AssetCache::parseAsset(const String& assetId, const String& jsonStr, Cached
         return false;
     }
 
-    return true;
-}
-
-bool AssetCache::parseSparsePixels(const String& jsonStr, std::vector<Pixel>& pixels) {
-    // This is handled in parseAsset
-    return true;
-}
-
-bool AssetCache::parseDeltaFrames(const String& jsonStr, std::vector<Pixel>& basePixels, std::vector<AnimationFrame>& frames) {
-    // This is handled in parseAsset
     return true;
 }
