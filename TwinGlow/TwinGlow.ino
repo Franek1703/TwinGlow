@@ -9,6 +9,7 @@
 #define ENABLE_PSRAM
 
 #include "Config.h"
+#include "SleepSchedule.h"
 #include "NvsStore.h"
 #include "StateMachine.h"
 #include "Scheduler.h"
@@ -70,6 +71,14 @@ int currentConfigVersion = -1;
 int lastSeenRevision = -1;
 bool bme680Present = false;
 bool bme680Detected = false;
+// Last brightness applied *from the device doc*. -1 means the doc has not been
+// read yet. Kept separate from the live matrix value so a +/- button press is
+// not reverted by the next poll re-asserting an unchanged cloud value.
+int lastCloudBrightness = -1;
+// Sleep window, loaded from NVS at boot and refreshed from the device doc.
+SleepSettings sleepSettings;
+bool sleepActive = false;
+unsigned long lastSleepCheckMs = 0;
 float sensorTemp = 0, sensorHumidity = 0, sensorPressure = 0, sensorGas = 0;
 int sensorMetricIndex = 0;
 unsigned long lastSensorReadMs = 0;
@@ -120,6 +129,10 @@ void setup() {
     // Load brightness
     uint8_t brightness = nvs.getBrightness();
     matrix.setBrightness(brightness);
+
+    // Load the cached sleep window for the same reason as the timezone below:
+    // a boot that never reaches Firestore must still dim on schedule.
+    nvs.getSleepSettings(sleepSettings);
 
     // Load the cached timezone. TIME_SYNC runs long before Firestore is
     // readable, so without this the clock would show UTC for the first minute
@@ -319,6 +332,87 @@ void applyTimeZone(const String& tzPosix) {
     timeSync.setTimeZone(tzPosix);
 }
 
+// Applies the brightness and sleep window carried by the device doc.
+//
+// Brightness is deliberately applied only when the *document* value moves, not
+// on every poll: the +/- buttons write straight to NVS, and re-asserting the
+// cloud value every 60s would undo a button press within the minute. So the
+// owner's slider wins when they move it, and the buttons own it in between.
+void applyDeviceSettings(const DeviceDoc& doc) {
+    if (doc.brightness >= 0) {
+        uint8_t brightness = (uint8_t)constrain(doc.brightness, 0, 255);
+        if ((int)brightness != lastCloudBrightness) {
+            lastCloudBrightness = brightness;
+            nvs.setBrightness(brightness);
+            // While asleep the schedule owns the panel; the new value is stored
+            // and takes effect at the end of the window.
+            if (!sleepActive) {
+                matrix.setBrightness(brightness);
+            }
+        }
+    }
+
+    if (doc.hasSleep) {
+        if (doc.sleep.enabled != sleepSettings.enabled ||
+            doc.sleep.startMinute != sleepSettings.startMinute ||
+            doc.sleep.endMinute != sleepSettings.endMinute ||
+            doc.sleep.brightness != sleepSettings.brightness) {
+            sleepSettings = doc.sleep;
+            nvs.setSleepSettings(sleepSettings);
+            // Re-evaluate on the next pass rather than waiting out the interval,
+            // so a schedule edit is visible straight away.
+            lastSleepCheckMs = 0;
+        }
+    }
+}
+
+// Drops the panel to the sleep brightness inside the window and restores the
+// owner's brightness outside it. A sleep brightness of 0 blanks the display,
+// which setBrightness() cannot express - it clamps 0 up to 1.
+//
+// Returns true when the caller should skip rendering entirely.
+bool updateSleepState() {
+    unsigned long now = millis();
+    if (lastSleepCheckMs != 0 && (now - lastSleepCheckMs) < SLEEP_CHECK_INTERVAL_MS) {
+        return sleepActive && sleepSettings.brightness == 0;
+    }
+    lastSleepCheckMs = now;
+
+    // An unsynced clock must never blank the panel: time(nullptr) returns a
+    // pre-2001 epoch before the first NTP sync, and reading a window out of that
+    // would dim the device for reasons the owner cannot see.
+    bool shouldSleep = false;
+    if (sleepSettings.enabled && TimeSync::isTimeValid()) {
+        time_t nowEpoch = time(nullptr);
+        struct tm tmNow;
+        localtime_r(&nowEpoch, &tmNow);
+        int nowMinute = tmNow.tm_hour * 60 + tmNow.tm_min;
+        shouldSleep = isWithinSleepWindow(
+            sleepSettings.startMinute, sleepSettings.endMinute, nowMinute);
+    }
+
+    if (shouldSleep != sleepActive) {
+        sleepActive = shouldSleep;
+        if (sleepActive) {
+            Serial.print(F("[Sleep] Entering sleep window, brightness "));
+            Serial.println(sleepSettings.brightness);
+            if (sleepSettings.brightness > 0) {
+                matrix.setBrightness(sleepSettings.brightness);
+            } else {
+                // Blanked once, here, rather than every pass: nothing redraws
+                // the panel while asleep, so one clear holds until wake.
+                matrix.clear();
+                matrix.show();
+            }
+        } else {
+            Serial.println(F("[Sleep] Leaving sleep window"));
+            matrix.setBrightness(nvs.getBrightness());
+        }
+    }
+
+    return sleepActive && sleepSettings.brightness == 0;
+}
+
 void handleTimeSync() {
     static unsigned long stateStartMs = 0;
     static unsigned long lastAttemptMs = 0;
@@ -436,10 +530,11 @@ void handleCapabilityDetect() {
 
     if (firestoreRepo != nullptr) {
         // Read current state from Firestore
-        int dummy;
-        String tzPosix;
-        firestoreRepo->getDeviceDoc(dummy, bme680Present, tzPosix);
-        applyTimeZone(tzPosix);
+        DeviceDoc deviceDoc;
+        firestoreRepo->getDeviceDoc(deviceDoc);
+        bme680Present = deviceDoc.bme680Present;
+        applyTimeZone(deviceDoc.tzPosix);
+        applyDeviceSettings(deviceDoc);
 
         // Update if changed
         if (bme680Detected != bme680Present) {
@@ -472,13 +567,15 @@ void handleConfigLoading() {
 
     {
         // Read config version
-        int configVersion;
-        String tzPosix;
-        if (firestoreRepo->checkConfigVersion(configVersion, tzPosix)) {
+        DeviceDoc deviceDoc;
+        if (firestoreRepo->checkConfigVersion(deviceDoc)) {
+            int configVersion = deviceDoc.configVersion;
             // Outside the version guard: a timezone change is applied even when
             // configVersion happens to be unchanged, and costs nothing since the
-            // doc was fetched either way.
-            applyTimeZone(tzPosix);
+            // doc was fetched either way. Brightness and the sleep window ride
+            // along for the same reason.
+            applyTimeZone(deviceDoc.tzPosix);
+            applyDeviceSettings(deviceDoc);
             if (configVersion != currentConfigVersion) {
                 Serial.print(F("[Config] Loading config version: "));
                 Serial.println(configVersion);
@@ -620,6 +717,12 @@ void handleConfigLoading() {
 }
 
 void handleRunning() {
+    // Dim or blank for the sleep window before anything is drawn. When the
+    // window asks for a blank panel we return before the render body, not just
+    // before show(): letting RenderAsset keep advancing frames behind a dark
+    // panel would make an animation jump on wake.
+    if (updateSleepState()) return;
+
     // Update sensor readings
     if (bme680Present && millis() - lastSensorReadMs > 2000) {
         bme680.read(sensorTemp, sensorHumidity, sensorPressure, sensorGas);
@@ -889,9 +992,14 @@ void checkConfigVersion() {
     if (state != DeviceState::RUNNING && state != DeviceState::OFFLINE_RUNNING) return;
 
     if (firestoreRepo != nullptr && WiFi.isConnected()) {
-        int version;
-        String tzPosix;
-        if (firestoreRepo->checkConfigVersion(version, tzPosix)) {
+        DeviceDoc deviceDoc;
+        if (firestoreRepo->checkConfigVersion(deviceDoc)) {
+            int version = deviceDoc.configVersion;
+            const String& tzPosix = deviceDoc.tzPosix;
+            // Brightness and the sleep window are settings on the same document,
+            // so they land here for the same reason the timezone does - no
+            // screen edit is needed for them to take effect.
+            applyDeviceSettings(deviceDoc);
             // This is what actually picks up a timezone the owner changed in
             // the app. Applied before the version guard:
             // the doc has already been fetched, and a zone change should land

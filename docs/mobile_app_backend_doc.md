@@ -103,8 +103,8 @@ users/
 Device-level configuration:
 
 * name
-* brightness
-* sleepMode
+* brightness (0-255, app-set; see §8.4)
+* sleepMode (map: enabled, startMinute, endMinute, brightness)
 * hardware capabilities
 * configVersion
 * screens/
@@ -339,17 +339,24 @@ Not yet covered: an asset referenced only through a shared screen
 
 ---
 
-## 8.4 Live Brightness Change
+## 8.4 Brightness and Sleep Mode
 
-If instant:
+Implemented as the persistent path only:
 
-1. App writes to RTDB command
-2. Device applies immediately
+1. App writes `brightness` / `sleepMode` to `devices/{deviceId}`, in the same
+   `update()` that increments `configVersion`, so the bump is atomic with the data
+2. App rings the RTDB doorbell
+3. Device picks the change up on its 60 s device-doc poll and applies it outside the
+   `configVersion` guard
 
-If persistent:
+The "instant" variant (app writes an RTDB command, device applies immediately) is **not
+implemented**. It would need the device to read RTDB, and that read is currently disabled —
+`ENABLE_RTDB_DOORBELL 0`, because Firestore and RTDB share one blocking TLS client and the
+repeated read wedged the device. So 60 s is the real worst-case latency.
 
-1. App updates Firestore brightness
-2. Device reloads on configVersion
+Brightness has a second writer, the device's physical +/- buttons. The device applies the
+cloud value only when the document value *changes*, so a button press is not reverted by the
+next poll. See `docs/firebase_documentation.md` §3.4 for the field shapes.
 
 ---
 

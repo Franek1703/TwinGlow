@@ -132,6 +132,8 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
         'configVersion': 1,
         'timezone': device.timezone,
         'tzPosix': device.tzPosix,
+        'brightness': device.brightness ?? kDefaultBrightness,
+        'sleepMode': _sleepModeToMap(device.sleepMode ?? const SleepSchedule()),
         'createdAt': Timestamp.fromDate(DateTime.now()),
       });
       return device;
@@ -157,6 +159,11 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
         // device is already running on.
         if (device.timezone != null) 'timezone': device.timezone,
         if (device.tzPosix != null) 'tzPosix': device.tzPosix,
+        // Same rule as the timezone above: a model built without these must not
+        // wipe the values the device is already running on.
+        if (device.brightness != null) 'brightness': device.brightness,
+        if (device.sleepMode != null)
+          'sleepMode': _sleepModeToMap(device.sleepMode!),
       });
 
       await _ringConfigDoorbell(deviceId);
@@ -781,6 +788,33 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
       userId: data['userId'],
       timezone: data['timezone'],
       tzPosix: data['tzPosix'],
+      brightness: (data['brightness'] as num?)?.toInt(),
+      sleepMode: _sleepModeFromFirestore(data['sleepMode']),
+    );
+  }
+
+  Map<String, dynamic> _sleepModeToMap(SleepSchedule sleep) {
+    return {
+      'enabled': sleep.enabled,
+      'startMinute': sleep.startMinute,
+      'endMinute': sleep.endMinute,
+      'brightness': sleep.brightness,
+    };
+  }
+
+  /// Missing or malformed maps come back null, which the rest of the stack
+  /// reads as "no schedule set yet" rather than a disabled one.
+  SleepSchedule? _sleepModeFromFirestore(dynamic raw) {
+    if (raw is! Map) return null;
+    return SleepSchedule(
+      enabled: raw['enabled'] == true,
+      startMinute:
+          (raw['startMinute'] as num?)?.toInt() ??
+          SleepSchedule.defaultStartMinute,
+      endMinute:
+          (raw['endMinute'] as num?)?.toInt() ?? SleepSchedule.defaultEndMinute,
+      brightness:
+          (raw['brightness'] as num?)?.toInt() ?? SleepSchedule.defaultBrightness,
     );
   }
 

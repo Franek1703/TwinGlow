@@ -209,6 +209,26 @@ On reload, the device fetches:
 
 All data is cached locally in RAM (optional flash caching later).
 
+### 10.2.1 Device settings on the same poll
+
+The poll above fetches the whole `/devices/{deviceId}` document, so the device-level
+settings ride along at no extra network cost and are applied **outside** the
+`configVersion` guard — a settings change lands even when no screen was touched:
+
+- `tzPosix` → applied to the C library TZ, cached in NVS
+- `brightness` → LED brightness while awake, cached in NVS. Applied only when the
+  document value *changes*, so the physical +/- buttons are not overridden by a poll
+  that read the same value again.
+- `sleepMode` → the nightly dim window (`enabled`, `startMinute`, `endMinute`,
+  `brightness`), cached in NVS
+
+The sleep window itself is evaluated locally every ~15 s against `localtime()`, not on the
+Firestore poll — no network is involved. Entering the window drops the panel to
+`sleepMode.brightness`; a value of `0` blanks it instead, since `MatrixDriver::setBrightness`
+clamps `0` up to `1`. Rendering is skipped entirely while blanked so animation frame timing
+does not free-run behind a dark panel. The window is only evaluated once the clock is valid:
+an unsynced device never dims.
+
 ---
 
 ## 10.3 Time Synchronization (NTP) for CLOCK Screen
@@ -269,7 +289,9 @@ TwinGlow supports both:
 - Firebase provides **presentation config only**, e.g.:
     - `format` (12H/24H)
     - `layout` (e.g., `HHMM_PLUS_SECONDS_BAR`)
-    - `fgColor`, `accentColor`, `bgColor`, `brightness`
+    - `fgColor`, `accentColor`, `bgColor`
+    - (`brightness` appears in older drafts of the screen config but is not read by
+      the firmware — brightness is device-level, see §10.2.1)
 - No pixels are stored in Firebase for CLOCK
 
 ### 11.2.2 SENSOR / BME680 (procedural, local)
@@ -279,7 +301,9 @@ TwinGlow supports both:
     - `mode` (single / auto-cycle)
     - `show` metrics (temp/humidity/pressure)
     - `units`
-    - `fgColor`, `accentColor`, `bgColor`, `brightness`
+    - `fgColor`, `accentColor`, `bgColor`
+    - (`brightness` appears in older drafts of the screen config but is not read by
+      the firmware — brightness is device-level, see §10.2.1)
 - Optionally mirrors current readings to RTDB telemetry for the mobile app (see §12)
 
 ### 11.3 Offline Behavior

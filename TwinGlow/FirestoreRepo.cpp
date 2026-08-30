@@ -13,14 +13,14 @@ String FirestoreRepo::getScreensPath() const { return ""; }
 String FirestoreRepo::getAssetPath(const String&) const { return ""; }
 String FirestoreRepo::getSharedScreenPath(const String&, const String&) const { return ""; }
 String FirestoreRepo::getUserDevicePath(const String&) const { return ""; }
-bool FirestoreRepo::getDeviceDoc(int& v, bool& b, String& tz) { v = 0; b = false; tz = ""; return false; }
+bool FirestoreRepo::getDeviceDoc(DeviceDoc& out) { out = DeviceDoc(); return false; }
 bool FirestoreRepo::createDeviceDoc(const String&) { return false; }
 bool FirestoreRepo::updateDeviceCapability(bool) { return false; }
 bool FirestoreRepo::claimDevice(const String&) { return false; }
 bool FirestoreRepo::getScreens(std::vector<ScreenConfig>&) { return false; }
 bool FirestoreRepo::getSharedScreen(const String&, const String&, SharedScreenConfig&) { return false; }
 bool FirestoreRepo::getAsset(const String&, AssetData&) { return false; }
-bool FirestoreRepo::checkConfigVersion(int& version, String& tzPosix) { bool d; return getDeviceDoc(version, d, tzPosix); }
+bool FirestoreRepo::checkConfigVersion(DeviceDoc& out) { return getDeviceDoc(out); }
 #else
 
 FirestoreRepo::FirestoreRepo(FirebaseClientWrap* wrap, const String& projId, const String& devId)
@@ -79,10 +79,11 @@ static bool firestoreFieldToBool(const JsonObject& field, bool& out) {
     return false;
 }
 
-bool FirestoreRepo::getDeviceDoc(int& configVersion, bool& bme680Present, String& tzPosix) {
-    // Cleared up front so every failure path below leaves it empty, which the
-    // caller reads as "no timezone in the doc" and leaves the cached one alone.
-    tzPosix = "";
+bool FirestoreRepo::getDeviceDoc(DeviceDoc& out) {
+    // Reset up front so every failure path below leaves the sentinels in place,
+    // which the caller reads as "the doc said nothing" and keeps its cached
+    // values rather than resetting them.
+    out = DeviceDoc();
     if (wrap == nullptr) return false;
     FirebaseFirestoreType* documents = static_cast<FirebaseFirestoreType*>(wrap->getFirestore());
     AsyncClientClass* aClient = wrap->getAsyncClient();
@@ -98,41 +99,60 @@ bool FirestoreRepo::getDeviceDoc(int& configVersion, bool& bme680Present, String
         Serial.print(aClient->lastError().code());
         Serial.print(F(" msg="));
         Serial.println(aClient->lastError().message());
-        configVersion = 0;
-        bme680Present = false;
         return false;
     }
 
     DynamicJsonDocument doc(2048);
     if (deserializeJson(doc, response) != DeserializationError::Ok) {
         Serial.println(F("[Claiming] getDeviceDoc parse failed"));
-        configVersion = 0;
-        bme680Present = false;
         return false;
     }
     if (!doc.containsKey("fields")) {
         Serial.println(F("[Claiming] getDeviceDoc response missing 'fields'"));
-        configVersion = 0;
-        bme680Present = false;
         return false;
     }
 
     JsonObject fields = doc["fields"].as<JsonObject>();
-    configVersion = 0;
     if (fields.containsKey("configVersion")) {
-        firestoreFieldToInt(fields["configVersion"].as<JsonObject>(), configVersion);
+        firestoreFieldToInt(fields["configVersion"].as<JsonObject>(), out.configVersion);
     }
     if (fields.containsKey("tzPosix")) {
-        firestoreFieldToString(fields["tzPosix"].as<JsonObject>(), tzPosix);
+        firestoreFieldToString(fields["tzPosix"].as<JsonObject>(), out.tzPosix);
     }
-    bme680Present = false;
+    if (fields.containsKey("brightness")) {
+        firestoreFieldToInt(fields["brightness"].as<JsonObject>(), out.brightness);
+    }
     if (fields.containsKey("hw")) {
         JsonObject hw = fields["hw"].as<JsonObject>();
         if (hw.containsKey("mapValue") && hw["mapValue"].containsKey("fields")) {
             JsonObject hwFields = hw["mapValue"]["fields"].as<JsonObject>();
             if (hwFields.containsKey("bme680")) {
-                firestoreFieldToBool(hwFields["bme680"].as<JsonObject>(), bme680Present);
+                firestoreFieldToBool(hwFields["bme680"].as<JsonObject>(), out.bme680Present);
             }
+        }
+    }
+    // Same nested-map shape as hw above. Partial maps keep their defaults
+    // rather than being rejected, so an older app that writes fewer keys still
+    // gives a usable schedule.
+    if (fields.containsKey("sleepMode")) {
+        JsonObject sleepField = fields["sleepMode"].as<JsonObject>();
+        if (sleepField.containsKey("mapValue") && sleepField["mapValue"].containsKey("fields")) {
+            JsonObject sleepFields = sleepField["mapValue"]["fields"].as<JsonObject>();
+            out.hasSleep = true;
+            if (sleepFields.containsKey("enabled")) {
+                firestoreFieldToBool(sleepFields["enabled"].as<JsonObject>(), out.sleep.enabled);
+            }
+            if (sleepFields.containsKey("startMinute")) {
+                firestoreFieldToInt(sleepFields["startMinute"].as<JsonObject>(), out.sleep.startMinute);
+            }
+            if (sleepFields.containsKey("endMinute")) {
+                firestoreFieldToInt(sleepFields["endMinute"].as<JsonObject>(), out.sleep.endMinute);
+            }
+            int sleepBrightness = DEFAULT_SLEEP_BRIGHTNESS;
+            if (sleepFields.containsKey("brightness")) {
+                firestoreFieldToInt(sleepFields["brightness"].as<JsonObject>(), sleepBrightness);
+            }
+            out.sleep.brightness = (uint8_t)constrain(sleepBrightness, 0, 255);
         }
     }
     return true;
@@ -192,10 +212,8 @@ bool FirestoreRepo::claimDevice(const String& uid) {
         return false;
     }
     Serial.print(F("[Claiming] Ensuring device doc exists..."));
-    int cv;
-    bool bme;
-    String tz;
-    if (!getDeviceDoc(cv, bme, tz)) {
+    DeviceDoc existing;
+    if (!getDeviceDoc(existing)) {
         Serial.println(F(" getDeviceDoc failed, creating device doc"));
         if (!createDeviceDoc(FW_VERSION)) {
             Serial.println(F("[Claiming] createDeviceDoc failed"));
@@ -204,7 +222,7 @@ bool FirestoreRepo::claimDevice(const String& uid) {
         Serial.println(F("[Claiming] createDeviceDoc ok"));
     } else {
         Serial.print(F(" ok (configVersion="));
-        Serial.print(cv);
+        Serial.print(existing.configVersion);
         Serial.println(F(")"));
     }
 
@@ -687,9 +705,8 @@ bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset) {
     return true;
 }
 
-bool FirestoreRepo::checkConfigVersion(int& version, String& tzPosix) {
-    bool dummy;
-    return getDeviceDoc(version, dummy, tzPosix);
+bool FirestoreRepo::checkConfigVersion(DeviceDoc& out) {
+    return getDeviceDoc(out);
 }
 
 #endif // ENABLE_FIRESTORE

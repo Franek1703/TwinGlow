@@ -9,8 +9,12 @@ import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_card.dart';
 import '../../core/widgets/app_input.dart';
 import '../../core/widgets/device_header.dart';
+import '../../core/widgets/setting_row.dart';
+import 'sleep_mode_sheet.dart';
 import '../../core/models/device_model.dart';
+import '../../core/utils/brightness_scale.dart';
 import '../../core/utils/posix_timezones.dart';
+import '../../core/utils/sleep_window.dart';
 import '../../features/auth/cubit/auth_cubit.dart';
 import '../../features/device/cubit/devices_cubit.dart';
 import '../../services/firebase/firebase_repository_impl.dart';
@@ -27,6 +31,11 @@ class DeviceConfigView extends StatefulWidget {
 class _DeviceConfigViewState extends State<DeviceConfigView> {
   final _nameController = TextEditingController();
   bool _isEditing = false;
+
+  /// Live slider position while dragging. The write only happens on release
+  /// (see [_commitBrightness]), so this holds the value the label shows in
+  /// between - the device document is not updated on every frame.
+  double? _brightnessPercent;
 
   @override
   void dispose() {
@@ -232,6 +241,30 @@ class _DeviceConfigViewState extends State<DeviceConfigView> {
                       ),
                     ),
                     SizedBox(height: AppSpacing.xl),
+                    // Display
+                    AppCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Display', style: AppTypography.h4(context)),
+                          SizedBox(height: AppSpacing.md),
+                          _BrightnessControl(
+                            percent: _brightnessPercentFor(device),
+                            onChanged: (v) =>
+                                setState(() => _brightnessPercent = v),
+                            onChangeEnd: (v) =>
+                                _commitBrightness(context, device, v),
+                          ),
+                          SizedBox(height: AppSpacing.md),
+                          SettingRow(
+                            label: 'Sleep mode',
+                            value: _sleepSummary(device.sleepMode),
+                            onTap: () => _pickSleepMode(context, device),
+                          ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(height: AppSpacing.xl),
                     // Remove Device Button
                     AppButton(
                       text: 'Remove Device',
@@ -272,6 +305,47 @@ class _DeviceConfigViewState extends State<DeviceConfigView> {
     ));
   }
 
+  /// The dragged value while the finger is down, otherwise whatever the device
+  /// document holds.
+  double _brightnessPercentFor(DeviceModel device) {
+    return _brightnessPercent ??
+        rawToPercent(device.brightness ?? kDefaultBrightness);
+  }
+
+  void _commitBrightness(
+    BuildContext context,
+    DeviceModel device,
+    double percent,
+  ) {
+    setState(() => _brightnessPercent = percent);
+    context
+        .read<DevicesCubit>()
+        .updateDevice(device.copyWith(brightness: percentToRaw(percent)));
+  }
+
+  String _sleepSummary(SleepSchedule? sleep) {
+    if (sleep == null || !sleep.enabled) return 'Disabled';
+    return '${formatMinuteOfDay(sleep.startMinute)}'
+        ' - ${formatMinuteOfDay(sleep.endMinute)}';
+  }
+
+  Future<void> _pickSleepMode(BuildContext context, DeviceModel device) async {
+    final cubit = context.read<DevicesCubit>();
+    final updated = await showModalBottomSheet<SleepSchedule>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.bgSecondary,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16.r)),
+      ),
+      builder: (_) => SleepModeSheet(
+        current: device.sleepMode ?? const SleepSchedule(),
+      ),
+    );
+    if (updated == null) return;
+
+    cubit.updateDevice(device.copyWith(sleepMode: updated));
+  }
 }
 
 /// Like [_InfoRow] but tappable, for the one row that opens a picker.
@@ -444,6 +518,62 @@ class _InfoRow extends StatelessWidget {
             color: valueColor ?? AppColors.textPrimary,
             fontWeight: FontWeight.w500,
           ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Brightness label plus slider. The write is deferred to [onChangeEnd] so a
+/// drag does not bump configVersion once per frame.
+class _BrightnessControl extends StatelessWidget {
+  final double percent;
+  final ValueChanged<double> onChanged;
+  final ValueChanged<double> onChangeEnd;
+
+  const _BrightnessControl({
+    required this.percent,
+    required this.onChanged,
+    required this.onChangeEnd,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              Icons.brightness_6,
+              size: 20.sp,
+              color: AppColors.accentCyan,
+            ),
+            SizedBox(width: AppSpacing.md),
+            Expanded(
+              child: Text(
+                'Brightness',
+                style: AppTypography.body(context).copyWith(
+                  color: AppColors.textMuted,
+                ),
+              ),
+            ),
+            Text(
+              '${percent.round()}%',
+              style: AppTypography.body(context).copyWith(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+        Slider(
+          value: percent.clamp(kMinBrightnessPercent, 100),
+          min: kMinBrightnessPercent,
+          max: 100,
+          activeColor: AppColors.accentCyan,
+          onChanged: onChanged,
+          onChangeEnd: onChangeEnd,
         ),
       ],
     );

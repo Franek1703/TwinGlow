@@ -29,7 +29,8 @@ A clean Arduino/PlatformIO structure (logical modules) can look like this:
     Scheduler.h/.cpp            // periodic jobs (presence, config poll, telemetry, ntp)
 
   storage/
-    NvsStore.h/.cpp             // Preferences wrapper (ssid/pass/deviceId/uid/brightness)
+    NvsStore.h/.cpp             // Preferences wrapper (ssid/pass/deviceId/uid/brightness/tz/sleep)
+    SleepSchedule.h/.cpp        // Sleep-window struct + the crossing-midnight predicate
 
   net/
     WifiManager.h/.cpp          // connect/reconnect, captive failures, retry/backoff
@@ -102,6 +103,9 @@ Store:
 - `provisioned` flag
 - `claimedUid` (from BLE provisioning)
 - `brightness` (persists between reboots)
+- `sleep_en` / `sleep_start` / `sleep_end` / `sleep_bri` — the nightly dim window,
+  cached from the device doc so a boot that never reaches Firestore still dims on
+  schedule (same reason as `tz_posix`)
 
 ### 4.2 RAM cache (volatile)
 
@@ -352,6 +356,13 @@ Buttons are final and consistent across screens.
 - ◀ / ▶: previous/next screen (wrap-around)
 - − / +: brightness down/up (down to 0), persist to NVS
 
+The app can also set brightness, via `devices/{deviceId}.brightness`. The two writers are
+reconciled by applying the cloud value **only when the document value changes** — the device
+remembers the last brightness it took from the doc, so re-reading an unchanged value on the
+60 s poll does nothing and a button press survives. Moving the slider in the app changes the
+document, and that does win. Inside the sleep window the schedule owns the panel: a button
+press there is re-overridden on the next sleep check (~15 s).
+
 ### 6.2 Context actions (● Action)
 
 - CLOCK: no action
@@ -444,7 +455,7 @@ Even if sharing fails (offline):
 
 ## 10. Final “One-Page” Execution Summary
 
-1. Boot → load NVS (deviceId, Wi-Fi, uid, brightness)
+1. Boot → load NVS (deviceId, Wi-Fi, uid, brightness, timezone, sleep window)
 2. If no Wi-Fi → BLE provisioning
 3. Connect Wi-Fi (retry/backoff)
 4. NTP sync now + schedule every 6h

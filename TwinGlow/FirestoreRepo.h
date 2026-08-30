@@ -4,6 +4,7 @@
 #include "Config.h"
 #include <FirebaseClient.h>
 #include "FirebaseTypes.h"
+#include "SleepSchedule.h"
 #include <Arduino.h>
 #include <vector>
 #include <ArduinoJson.h>
@@ -44,6 +45,21 @@ struct SharedScreenConfig {
     bool loop; // For animations
 };
 
+// Everything the device reads out of devices/{deviceId}.
+//
+// Each field carries a sentinel meaning "absent from the document", because a
+// field that is missing must never clobber a good cached value - a doc the app
+// has not written yet would otherwise reset the timezone to UTC and the
+// brightness to zero on the first poll.
+struct DeviceDoc {
+    int configVersion = 0;
+    bool bme680Present = false;
+    String tzPosix;              // "" = absent
+    int brightness = -1;         // -1 = absent
+    bool hasSleep = false;       // false = no sleepMode map in the doc
+    SleepSettings sleep;
+};
+
 struct AssetData {
     String id;
     String type; // IMAGE, ANIMATION
@@ -62,9 +78,9 @@ public:
     FirestoreRepo(FirebaseClientWrap* wrap, const String& projectId, const String& deviceId);
     
     // Device operations
-    // tzPosix receives the device's POSIX TZ rule, or "" when the doc has no
-    // timezone yet (firmware-created docs, or a device the app has never seen).
-    bool getDeviceDoc(int& configVersion, bool& bme680Present, String& tzPosix);
+    // Fields the document does not carry are left at the sentinels documented
+    // on DeviceDoc, which every caller reads as "keep what you have".
+    bool getDeviceDoc(DeviceDoc& out);
     bool createDeviceDoc(const String& fwVersion);
     bool updateDeviceCapability(bool bme680Present);
     
@@ -79,8 +95,9 @@ public:
     bool getAsset(const String& assetId, AssetData& asset);
     
     // Config version polling. The device doc is fetched whole anyway, so the
-    // timezone rides along on the existing 60s poll at no extra network cost.
-    bool checkConfigVersion(int& version, String& tzPosix);
+    // timezone, brightness and sleep window ride along on the existing 60s
+    // poll at no extra network cost.
+    bool checkConfigVersion(DeviceDoc& out);
     
 private:
     FirebaseClientWrap* wrap;

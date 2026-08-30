@@ -135,6 +135,34 @@ void NvsStore::setTzPosix(const String& tz) {
     Serial.println(tz);
 }
 
+// Defaults match a device that has never been given a schedule: disabled, so
+// nothing dims until the owner asks for it.
+void NvsStore::getSleepSettings(SleepSettings& sleep) {
+    if (!initialized) {
+        sleep = SleepSettings();
+        return;
+    }
+    sleep.enabled = prefs.getBool(NVS_KEY_SLEEP_ENABLED, false);
+    sleep.startMinute = prefs.getUShort(NVS_KEY_SLEEP_START, 0);
+    sleep.endMinute = prefs.getUShort(NVS_KEY_SLEEP_END, 0);
+    sleep.brightness = prefs.getUChar(NVS_KEY_SLEEP_BRIGHT, DEFAULT_SLEEP_BRIGHTNESS);
+}
+
+void NvsStore::setSleepSettings(const SleepSettings& sleep) {
+    if (!initialized) return;
+    prefs.putBool(NVS_KEY_SLEEP_ENABLED, sleep.enabled);
+    prefs.putUShort(NVS_KEY_SLEEP_START, (uint16_t)sleep.startMinute);
+    prefs.putUShort(NVS_KEY_SLEEP_END, (uint16_t)sleep.endMinute);
+    prefs.putUChar(NVS_KEY_SLEEP_BRIGHT, sleep.brightness);
+    Serial.print(F("[NVS] Saved sleep window: "));
+    Serial.print(sleep.enabled ? "on " : "off ");
+    Serial.print(sleep.startMinute);
+    Serial.print(F("-"));
+    Serial.print(sleep.endMinute);
+    Serial.print(F(" @"));
+    Serial.println(sleep.brightness);
+}
+
 void NvsStore::factoryReset() {
     if (!initialized) return;
     

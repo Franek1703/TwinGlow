@@ -119,6 +119,15 @@
 #define NEOPIXEL_TYPE NEO_GRB + NEO_KHZ800
 #define DEFAULT_BRIGHTNESS 128
 
+// Sleep mode: the app sets a nightly window during which the panel drops to a
+// dim level. 10/255 reads as a night light rather than a lamp; 0 blanks the
+// panel entirely, which is the only way to turn it off (setBrightness clamps
+// 0 up to 1).
+#define DEFAULT_SLEEP_BRIGHTNESS 10
+// How often the window is re-evaluated. Purely local - localtime() and an
+// integer compare, no network - so this is unrelated to the Firestore poll.
+#define SLEEP_CHECK_INTERVAL_MS 15000
+
 // The app sends gamma-encoded sRGB (what the phone screen shows), but NeoPixel
 // drives the byte out as a raw PWM duty cycle. Without correction every
 // secondary channel emits several times too much light: the app's red preset
@@ -143,6 +152,10 @@
 #define NVS_KEY_PROVISIONED "provisioned"
 #define NVS_KEY_BRIGHTNESS "brightness"
 #define NVS_KEY_TZ_POSIX "tz_posix"
+#define NVS_KEY_SLEEP_ENABLED "sleep_en"
+#define NVS_KEY_SLEEP_START "sleep_start"
+#define NVS_KEY_SLEEP_END "sleep_end"
+#define NVS_KEY_SLEEP_BRIGHT "sleep_bri"
 
 // Firmware version
 #define FW_VERSION "1.0.0"

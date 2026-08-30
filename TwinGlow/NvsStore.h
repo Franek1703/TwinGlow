@@ -3,6 +3,7 @@
 
 #include <Preferences.h>
 #include <Arduino.h>
+#include "SleepSchedule.h"
 
 /**
  * NVS Storage wrapper for persistent data
@@ -43,6 +44,11 @@ public:
     // doc so the clock is right at boot, before Firestore is reachable.
     bool getTzPosix(String& tz);
     void setTzPosix(const String& tz);
+
+    // Sleep window, cached from the device doc for the same reason as the
+    // timezone: a boot that never reaches Firestore must still dim on schedule.
+    void getSleepSettings(SleepSettings& sleep);
+    void setSleepSettings(const SleepSettings& sleep);
     
     // Factory reset
     void factoryReset(); // Clear all except deviceId
