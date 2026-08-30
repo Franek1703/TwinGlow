@@ -1,9 +1,11 @@
 #include "ButtonActions.h"
+#include "CloudWorker.h"
 
 ButtonActions::ButtonActions(Buttons* btn, ScreenPlaylist* pl, 
-                             MatrixDriver* mat, NvsStore* store, RtdbRepo* db)
+                             MatrixDriver* mat, NvsStore* store, RtdbRepo* db,
+                             CloudWorker* worker)
     : buttons(btn), playlist(pl), matrix(mat), nvs(store), rtdb(db),
-      onFactoryReset(nullptr) {
+      cloudWorker(worker), onFactoryReset(nullptr) {
 }
 
 void ButtonActions::update() {
@@ -97,8 +99,12 @@ void ButtonActions::handleSendToPair() {
     
     String assetId = playlist->getCurrentAssetId();
     if (rtdb != nullptr && assetId.length() > 0) {
-        rtdb->sendToPair(screen->pairId, screen->id, assetId);
-        Serial.println(F("[ButtonActions] Sent to pair"));
+        if (cloudWorker != nullptr &&
+            cloudWorker->requestPairEvent(screen->pairId, screen->id, assetId)) {
+            Serial.println(F("[ButtonActions] Pair event queued"));
+        } else {
+            Serial.println(F("[ButtonActions] Pair event deferred while cloud is unavailable"));
+        }
     }
 }
 

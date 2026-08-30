@@ -22,6 +22,7 @@ bool WifiManager::begin(const String& ssid, const String& password) {
     Serial.println(ssid);
     
     WiFi.mode(WIFI_STA);
+    WiFi.setAutoReconnect(true);
     WiFi.begin(ssid.c_str(), password.length() > 0 ? password.c_str() : NULL);
     
     connecting = true;

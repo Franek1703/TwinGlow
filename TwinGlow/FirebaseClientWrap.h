@@ -22,6 +22,15 @@ public:
     bool begin();
     bool isInitialized() const { return initialized; }
 
+    // Close any stale socket/queued operation while keeping the Firebase app
+    // and service objects allocated. The next repository request establishes
+    // a fresh TCP/TLS session.
+    void resetTransport();
+
+    // Prints information hidden by FirebaseClient's generic error code -1.
+    void logTransportDiagnostics(const char* context);
+    int getLastErrorCode() const;
+
     FirebaseApp* getApp() { return &app; }
     FirebaseApp& getAppRef() { return app; }
 
@@ -57,6 +66,7 @@ private:
     bool initializeAuth();
     bool initializeFirestore();
     bool initializeRTDB();
+    void configureTransport();
 };
 
 #endif // FIREBASE_CLIENT_WRAP_H

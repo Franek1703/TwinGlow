@@ -69,10 +69,10 @@ bool RtdbRepo::updatePresence(bool online) {
     time_t now = time(nullptr);
     unsigned long long lastSeenMs = (now > 0) ? (unsigned long long)now * 1000 : millis();
     
-    // Set fields individually to avoid JSON parsing issues
+    // Write one object instead of opening two sequential HTTPS operations.
+    // object_t tells FirebaseClient that this is JSON (not a quoted string),
+    // and the single PUT also keeps online/lastSeenMs consistent.
     String path = getPresencePath();
-    String onlinePath = path + "/online";
-    String timestampPath = path + "/lastSeenMs";
     
     Serial.print(F("[RtdbRepo] Updating presence: "));
     Serial.print(path);
@@ -82,25 +82,17 @@ bool RtdbRepo::updatePresence(bool online) {
     Serial.print(lastSeenMs);
     Serial.println(F(")"));
     
-    // Set online field
-    bool ok1 = rtdb->set(*aClient, onlinePath, online);
-    int errorCode1 = aClient->lastError().code();
-    
-    // Set timestamp field
-    bool ok2 = rtdb->set(*aClient, timestampPath, (long long)lastSeenMs);
-    int errorCode2 = aClient->lastError().code();
-    
-    if (!ok1 || errorCode1 != 0) {
-        Serial.print(F("[RtdbRepo] updatePresence FAILED (online), code="));
-        Serial.print(errorCode1);
-        Serial.print(F(" msg="));
-        Serial.println(aClient->lastError().message());
-        return false;
-    }
-    
-    if (!ok2 || errorCode2 != 0) {
-        Serial.print(F("[RtdbRepo] updatePresence FAILED (timestamp), code="));
-        Serial.print(errorCode2);
+    DynamicJsonDocument doc(128);
+    doc["online"] = online;
+    doc["lastSeenMs"] = lastSeenMs;
+    String payload;
+    serializeJson(doc, payload);
+
+    bool ok = rtdb->set<object_t>(*aClient, path, object_t(payload));
+    int errorCode = aClient->lastError().code();
+    if (!ok || errorCode != 0) {
+        Serial.print(F("[RtdbRepo] updatePresence FAILED, code="));
+        Serial.print(errorCode);
         Serial.print(F(" msg="));
         Serial.println(aClient->lastError().message());
         return false;
@@ -126,55 +118,26 @@ bool RtdbRepo::pushTelemetry(float temperature, float humidity, float pressure, 
     time_t now = time(nullptr);
     unsigned long long updatedMs = (now > 0) ? (unsigned long long)now * 1000 : millis();
     
-    // Set fields individually to avoid JSON parsing issues
+    // Send one object to minimize HTTPS handshakes and keep the sample atomic.
     String path = getTelemetryPath();
     
     Serial.print(F("[RtdbRepo] Pushing telemetry: "));
     Serial.print(path);
     
-    // Set each field individually
-    bool ok1 = rtdb->set(*aClient, path + "/temperatureC", round(temperature * 100) / 100.0);
-    int errorCode1 = aClient->lastError().code();
-    bool ok2 = rtdb->set(*aClient, path + "/humidityPct", round(humidity * 100) / 100.0);
-    int errorCode2 = aClient->lastError().code();
-    bool ok3 = rtdb->set(*aClient, path + "/pressureHPa", round(pressure * 100) / 100.0);
-    int errorCode3 = aClient->lastError().code();
-    bool ok4 = rtdb->set(*aClient, path + "/gasOhms", round(gas * 100) / 100.0);
-    int errorCode4 = aClient->lastError().code();
-    bool ok5 = rtdb->set(*aClient, path + "/updatedMs", (long long)updatedMs);
-    int errorCode5 = aClient->lastError().code();
-    
-    if (!ok1 || errorCode1 != 0) {
-        Serial.print(F("[RtdbRepo] pushTelemetry FAILED (temperature), code="));
-        Serial.print(errorCode1);
-        Serial.print(F(" msg="));
-        Serial.println(aClient->lastError().message());
-        return false;
-    }
-    if (!ok2 || errorCode2 != 0) {
-        Serial.print(F("[RtdbRepo] pushTelemetry FAILED (humidity), code="));
-        Serial.print(errorCode2);
-        Serial.print(F(" msg="));
-        Serial.println(aClient->lastError().message());
-        return false;
-    }
-    if (!ok3 || errorCode3 != 0) {
-        Serial.print(F("[RtdbRepo] pushTelemetry FAILED (pressure), code="));
-        Serial.print(errorCode3);
-        Serial.print(F(" msg="));
-        Serial.println(aClient->lastError().message());
-        return false;
-    }
-    if (!ok4 || errorCode4 != 0) {
-        Serial.print(F("[RtdbRepo] pushTelemetry FAILED (gas), code="));
-        Serial.print(errorCode4);
-        Serial.print(F(" msg="));
-        Serial.println(aClient->lastError().message());
-        return false;
-    }
-    if (!ok5 || errorCode5 != 0) {
-        Serial.print(F("[RtdbRepo] pushTelemetry FAILED (timestamp), code="));
-        Serial.print(errorCode5);
+    DynamicJsonDocument doc(256);
+    doc["temperatureC"] = round(temperature * 100) / 100.0;
+    doc["humidityPct"] = round(humidity * 100) / 100.0;
+    doc["pressureHPa"] = round(pressure * 100) / 100.0;
+    doc["gasOhms"] = round(gas * 100) / 100.0;
+    doc["updatedMs"] = updatedMs;
+    String payload;
+    serializeJson(doc, payload);
+
+    bool ok = rtdb->set<object_t>(*aClient, path, object_t(payload));
+    int errorCode = aClient->lastError().code();
+    if (!ok || errorCode != 0) {
+        Serial.print(F("[RtdbRepo] pushTelemetry FAILED, code="));
+        Serial.print(errorCode);
         Serial.print(F(" msg="));
         Serial.println(aClient->lastError().message());
         return false;

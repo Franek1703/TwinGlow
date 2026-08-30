@@ -1,4 +1,5 @@
 #include "FirebaseClientWrap.h"
+#include <WiFi.h>
 
 FirebaseClientWrap::FirebaseClientWrap()
     : firestore(nullptr), rtdb(nullptr), auth(nullptr), initialized(false) {
@@ -31,8 +32,7 @@ bool FirebaseClientWrap::begin() {
     }
 
 #if defined(ENABLE_DATABASE) || defined(ENABLE_FIRESTORE)
-    sslClient.setInsecure();
-    aClient.setClient(sslClient);
+    configureTransport();
 #endif
 
     if (!initializeAuth()) {
@@ -72,6 +72,60 @@ bool FirebaseClientWrap::begin() {
     initialized = true;
     Serial.println(F("[Firebase] Initialized successfully"));
     return true;
+}
+
+void FirebaseClientWrap::configureTransport() {
+#if defined(ENABLE_DATABASE) || defined(ENABLE_FIRESTORE)
+    sslClient.setInsecure();
+    sslClient.setConnectionTimeout(FIREBASE_TCP_CONNECT_TIMEOUT_MS);
+    sslClient.setHandshakeTimeout(FIREBASE_TLS_HANDSHAKE_TIMEOUT_SEC);
+    aClient.setClient(sslClient);
+    aClient.setSyncSendTimeout(FIREBASE_SYNC_IO_TIMEOUT_SEC);
+    aClient.setSyncReadTimeout(FIREBASE_SYNC_IO_TIMEOUT_SEC);
+#endif
+}
+
+void FirebaseClientWrap::resetTransport() {
+#if defined(ENABLE_DATABASE) || defined(ENABLE_FIRESTORE)
+    aClient.stopAsync(true);
+    sslClient.stop();
+    configureTransport();
+    Serial.println(F("[Firebase] TCP/TLS transport reset"));
+#endif
+}
+
+int FirebaseClientWrap::getLastErrorCode() const {
+#if defined(ENABLE_DATABASE) || defined(ENABLE_FIRESTORE)
+    return aClient.lastError().code();
+#else
+    return 0;
+#endif
+}
+
+void FirebaseClientWrap::logTransportDiagnostics(const char* context) {
+#if defined(ENABLE_DATABASE) || defined(ENABLE_FIRESTORE)
+    char tlsMessage[128] = {0};
+    int tlsCode = sslClient.lastError(tlsMessage, sizeof(tlsMessage));
+
+    Serial.print(F("[Firebase] Transport diagnostics ("));
+    Serial.print(context != nullptr ? context : "unknown");
+    Serial.print(F("): wifiStatus="));
+    Serial.print((int)WiFi.status());
+    Serial.print(F(" rssi="));
+    Serial.print(WiFi.RSSI());
+    Serial.print(F(" ip="));
+    Serial.print(WiFi.localIP());
+    Serial.print(F(" gateway="));
+    Serial.print(WiFi.gatewayIP());
+    Serial.print(F(" dns="));
+    Serial.print(WiFi.dnsIP());
+    Serial.print(F(" tlsCode="));
+    Serial.print(tlsCode);
+    Serial.print(F(" tlsMsg="));
+    Serial.println(tlsMessage[0] != '\0' ? tlsMessage : "(none)");
+#else
+    (void)context;
+#endif
 }
 
 bool FirebaseClientWrap::initializeAuth() {

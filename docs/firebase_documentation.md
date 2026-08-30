@@ -726,9 +726,11 @@ RTDB is for live state only.
 - Timestamp uses `time(nullptr) * 1000` if NTP sync succeeded, otherwise falls back to `millis()`
 
 **Implementation Note:**
-Fields are set individually (not as a JSON object) to avoid JSON parsing issues with Firebase RTDB:
-- `/presence/{deviceId}/online` = boolean
-- `/presence/{deviceId}/lastSeenMs` = number (long long)
+The complete object is written with one atomic RTDB `PUT`. The firmware uses
+FirebaseClient's `object_t` JSON wrapper, so the payload is sent as an object
+rather than a quoted JSON string. This halves the HTTPS operations previously
+needed for each presence update and prevents `online` and `lastSeenMs` from
+temporarily disagreeing.
 
 ---
 
@@ -744,6 +746,9 @@ Fields are set individually (not as a JSON object) to avoid JSON parsing issues 
 }
 
 ```
+
+The five telemetry fields are also written as one atomic RTDB object instead
+of five separate HTTPS requests.
 
 ---
 

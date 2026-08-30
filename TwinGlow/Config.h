@@ -60,12 +60,29 @@
 #define DEFAULT_TZ_POSIX "UTC0"
 #define PRESENCE_UPDATE_INTERVAL_MS 20000  // 20 seconds
 #define CONFIG_POLL_INTERVAL_MS 60000      // 60 seconds (Firestore fallback poll)
+
+// The ESP32 secure client defaults to a 120 second TLS handshake timeout.
+// FirebaseClient's "async" API still calls that synchronous handshake, so a
+// dead route can otherwise stop the Arduino loop (including button scanning)
+// for up to two minutes. Periodic cloud work runs on a worker task as well,
+// but bounded timeouts also protect boot/config-reload operations.
+#define FIREBASE_TCP_CONNECT_TIMEOUT_MS 5000
+#define FIREBASE_TLS_HANDSHAKE_TIMEOUT_SEC 8
+#define FIREBASE_SYNC_IO_TIMEOUT_SEC 10
+
+// Runtime transport recovery. Two consecutive failures are treated as a dead
+// path even when WiFi.status() still says WL_CONNECTED. The worker closes the
+// stale TLS socket, cycles the station connection, and backs off before trying
+// again so local playback and buttons continue normally.
+#define FIREBASE_FAILURES_BEFORE_RECOVERY 2
+#define FIREBASE_RECOVERY_BACKOFF_INITIAL_MS 30000
+#define FIREBASE_RECOVERY_BACKOFF_MAX_MS 300000
 // RTDB "doorbell" check. The app ticks /config/{deviceId}/configVersion on every
 // config change; seeing it move makes the device run the Firestore check straight
 // away instead of waiting out CONFIG_POLL_INTERVAL_MS.
 //
-// DISABLED pending a fix. Measured on hardware 2026-08-29: with the poll active
-// the device ran clean for about a minute after boot, then hit
+// Disabled by default. Measured on hardware 2026-08-29: with the old synchronous
+// poll active, the device ran clean for about a minute after boot, then hit
 // "TCP connection failed" on presence AND Firestore and never recovered - the
 // render loop stalled for 74 s at a stretch, repeatedly. The same build with the
 // poll off is stable indefinitely (presence every 20 s, render every 5 s, no
@@ -77,9 +94,10 @@
 // any transient error occurs, re-issuing a blocking read every 5 s never leaves
 // the client room to re-establish, so a momentary failure becomes permanent.
 //
-// A working version needs backoff on failure and to stand down while the shared
-// client is in an error state, or a second TLS client - not just a longer
-// interval. Set to 1 only together with such a fix.
+// CloudWorker now serializes this read with every other Firebase operation,
+// runs it away from loop(), and applies transport reset/backoff on failure.
+// Keep it off until that recovery path has completed an on-device soak test;
+// the 60-second Firestore fallback remains active either way.
 #define ENABLE_RTDB_DOORBELL 0
 #define REVISION_POLL_INTERVAL_MS 5000     // 5 seconds (only used when enabled)
 #define TELEMETRY_UPDATE_INTERVAL_MS 10000 // 10 seconds (if BME680 present)

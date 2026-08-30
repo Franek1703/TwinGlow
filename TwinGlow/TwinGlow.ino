@@ -16,6 +16,7 @@
 #include "BleProvisioning.h"
 #include "WifiManager.h"
 #include "FirebaseClientWrap.h"
+#include "CloudWorker.h"
 #include <ArduinoJson.h>
 #include "FirestoreRepo.h"
 #include "RtdbRepo.h"
@@ -48,6 +49,7 @@ Scheduler scheduler;
 BleProvisioning bleProvisioning;
 WifiManager wifiManager;
 FirebaseClientWrap firebaseClient;
+CloudWorker cloudWorker;
 FirestoreRepo* firestoreRepo = nullptr;
 RtdbRepo* rtdbRepo = nullptr;
 TimeSync timeSync;
@@ -82,6 +84,10 @@ unsigned long lastSleepCheckMs = 0;
 float sensorTemp = 0, sensorHumidity = 0, sensorPressure = 0, sensorGas = 0;
 int sensorMetricIndex = 0;
 unsigned long lastSensorReadMs = 0;
+bool configReloadPending = false;
+String pendingRuntimeAssetId;
+String lastFailedRuntimeAssetId;
+unsigned long lastRuntimeAssetAttemptMs = 0;
 
 void setup() {
     Serial.begin(115200);
@@ -180,6 +186,12 @@ void loop() {
     if (buttonActions != nullptr) {
         buttonActions->update();
     }
+
+    // Consume background Firebase results without ever waiting for the worker.
+    // A changed config is reloaded only after the worker has left its current
+    // repository call, so the shared FirebaseClient is never used concurrently.
+    processCloudResults();
+    servicePendingConfigReload();
     
     // State machine
     switch (fsm.getState()) {
@@ -469,6 +481,13 @@ void handleFirebaseConnecting() {
     // OFFLINE_RUNNING re-enters this state to retry, so the guard is per-entry.
     if (!fsm.justEntered()) return;
 
+    // begin() is intentionally idempotent and does not touch the network on a
+    // second call. Reset the real socket here or the old reconnect state merely
+    // changes FSM labels while retaining the failed TLS session.
+    if (firebaseClient.isInitialized()) {
+        firebaseClient.resetTransport();
+    }
+
     if (firebaseClient.begin()) {
         // begin() is idempotent - only allocate the repos on the first success.
         if (firestoreRepo == nullptr) {
@@ -561,6 +580,8 @@ void handleConfigLoading() {
     if (firestoreRepo == nullptr) {
         Serial.println(F("[Config] firestoreRepo is null, skipping"));
         // Still transition to RUNNING even without config
+        configReloadPending = false;
+        cloudWorker.resume();
         fsm.transition(DeviceState::RUNNING);
         return;
     }
@@ -692,7 +713,8 @@ void handleConfigLoading() {
         
         // Initialize button actions
         if (buttonActions == nullptr) {
-            buttonActions = new ButtonActions(&buttons, &playlist, &matrix, &nvs, rtdbRepo);
+            buttonActions = new ButtonActions(
+                &buttons, &playlist, &matrix, &nvs, rtdbRepo, &cloudWorker);
         }
         
         // Schedule periodic tasks. Once per boot - re-registering on every
@@ -700,6 +722,9 @@ void handleConfigLoading() {
         static bool tasksScheduled = false;
         if (!tasksScheduled) {
             tasksScheduled = true;
+            if (!cloudWorker.begin(&firebaseClient, firestoreRepo, rtdbRepo)) {
+                Serial.println(F("[CloudWorker] Disabled; periodic cloud I/O will be skipped"));
+            }
             scheduler.schedulePresenceUpdate(updatePresence);
             if (bme680Present) {
                 scheduler.scheduleTelemetryUpdate(updateTelemetry);
@@ -711,6 +736,8 @@ void handleConfigLoading() {
             scheduler.scheduleNtpSync(syncTime);
         }
 
+        configReloadPending = false;
+        cloudWorker.resume();
         Serial.println(F("[Config] Transitioning to RUNNING"));
         fsm.transition(DeviceState::RUNNING);
     }
@@ -874,25 +901,16 @@ void handleRunning() {
         } else if (typeUpper == "IMAGE" || typeUpper == "ANIMATION") {
             String assetId = playlist.getCurrentAssetId();
             CachedAsset* asset = assetId.length() > 0 ? assetCache.getAsset(assetId) : nullptr;
-            // Only try to load asset if not cached and not recently failed
-            static String lastFailedAssetId = "";
-            static unsigned long lastAssetLoadAttemptMs = 0;
+            // A cache miss must not turn rendering into a network call. Queue
+            // it for CloudWorker so a failed TLS handshake cannot freeze input.
             if (asset == nullptr && assetId.length() > 0 && firestoreRepo != nullptr) {
                 // Don't retry too frequently (wait at least 10 seconds between attempts)
-                if (assetId != lastFailedAssetId || (millis() - lastAssetLoadAttemptMs > 10000)) {
-                    lastAssetLoadAttemptMs = millis();
-                    AssetData assetData;
-                    if (firestoreRepo->getAsset(assetId, assetData) && assetData.pixelsJson.length() > 0) {
-                        CachedAsset cached;
-                        if (assetCache.parseAsset(assetId, assetData.pixelsJson, cached)) {
-                            assetCache.addAsset(cached);
-                            asset = assetCache.getAsset(assetId);
-                            lastFailedAssetId = ""; // Clear failure flag on success
-                        } else {
-                            lastFailedAssetId = assetId; // Remember failed asset
-                        }
-                    } else {
-                        lastFailedAssetId = assetId; // Remember failed asset
+                if (pendingRuntimeAssetId.length() == 0 &&
+                    (assetId != lastFailedRuntimeAssetId ||
+                     (millis() - lastRuntimeAssetAttemptMs > 10000))) {
+                    lastRuntimeAssetAttemptMs = millis();
+                    if (cloudWorker.requestAsset(assetId)) {
+                        pendingRuntimeAssetId = assetId;
                     }
                 }
             }
@@ -958,10 +976,9 @@ void updatePresence() {
         return;
     }
     
-    bool success = rtdbRepo->updatePresence(true);
-    if (!success) {
-        Serial.println(F("[Presence] Update failed"));
-    }
+    // The worker owns the blocking WiFiClientSecure call. enqueue() is
+    // non-blocking and coalesces another presence tick while one is in flight.
+    cloudWorker.requestPresence(true);
 }
 
 void updateTelemetry() {
@@ -978,10 +995,7 @@ void updateTelemetry() {
         return;
     }
     
-    bool success = rtdbRepo->pushTelemetry(sensorTemp, sensorHumidity, sensorPressure, sensorGas);
-    if (!success) {
-        Serial.println(F("[Telemetry] Push failed"));
-    }
+    cloudWorker.requestTelemetry(sensorTemp, sensorHumidity, sensorPressure, sensorGas);
 }
 
 void checkConfigVersion() {
@@ -992,24 +1006,7 @@ void checkConfigVersion() {
     if (state != DeviceState::RUNNING && state != DeviceState::OFFLINE_RUNNING) return;
 
     if (firestoreRepo != nullptr && WiFi.isConnected()) {
-        DeviceDoc deviceDoc;
-        if (firestoreRepo->checkConfigVersion(deviceDoc)) {
-            int version = deviceDoc.configVersion;
-            const String& tzPosix = deviceDoc.tzPosix;
-            // Brightness and the sleep window are settings on the same document,
-            // so they land here for the same reason the timezone does - no
-            // screen edit is needed for them to take effect.
-            applyDeviceSettings(deviceDoc);
-            // This is what actually picks up a timezone the owner changed in
-            // the app. Applied before the version guard:
-            // the doc has already been fetched, and a zone change should land
-            // even if the screen config itself is untouched.
-            applyTimeZone(tzPosix);
-            if (version != currentConfigVersion) {
-                Serial.println(F("[Config] Version changed, reloading"));
-                fsm.transition(DeviceState::CONFIG_LOADING);
-            }
-        }
+        cloudWorker.requestConfigCheck();
     }
 }
 
@@ -1023,24 +1020,112 @@ void checkConfigRevision() {
 
     if (rtdbRepo == nullptr || !WiFi.isConnected()) return;
 
-    int revision;
-    // Leave lastSeenRevision untouched on a failed read: a transient error must
-    // not look like a change on the next poll, nor swallow one that happened.
-    if (!rtdbRepo->getConfigRevision(revision)) return;
-
-    if (lastSeenRevision == -1) {
-        lastSeenRevision = revision;
-        return;
-    }
-    if (revision == lastSeenRevision) return;
-
-    lastSeenRevision = revision;
-    Serial.print(F("[Config] RTDB revision changed to "));
-    Serial.print(revision);
-    Serial.println(F(", checking Firestore"));
-    checkConfigVersion();
+    cloudWorker.requestRevisionCheck();
 }
 #endif // ENABLE_RTDB_DOORBELL
+
+void processCloudResults() {
+    CloudResult result{};
+    while (cloudWorker.popResult(result)) {
+        if (!result.attempted) {
+            if (result.deviceDoc != nullptr) delete result.deviceDoc;
+            if (result.assetData != nullptr) delete result.assetData;
+            if (result.operation == CloudOperation::ASSET_FETCH) pendingRuntimeAssetId = "";
+            continue;
+        }
+
+        switch (result.operation) {
+            case CloudOperation::PRESENCE:
+                if (!result.success) Serial.println(F("[Presence] Background update failed"));
+                break;
+
+            case CloudOperation::TELEMETRY:
+                if (!result.success) Serial.println(F("[Telemetry] Background push failed"));
+                break;
+
+            case CloudOperation::CONFIG_CHECK:
+                if (result.success && result.deviceDoc != nullptr) {
+                    DeviceDoc& doc = *result.deviceDoc;
+                    applyDeviceSettings(doc);
+                    applyTimeZone(doc.tzPosix);
+                    if (doc.configVersion != currentConfigVersion) {
+                        Serial.println(F("[Config] Version changed, scheduling reload"));
+                        // Stop new background operations, then let the loop wait
+                        // non-blockingly for any already-running one to finish.
+                        cloudWorker.pause();
+                        configReloadPending = true;
+                    }
+                } else {
+                    Serial.println(F("[Config] Background version check failed"));
+                }
+                break;
+
+            case CloudOperation::REVISION_CHECK:
+#if ENABLE_RTDB_DOORBELL
+                if (result.success) {
+                    if (lastSeenRevision == -1) {
+                        lastSeenRevision = result.revision;
+                    } else if (result.revision != lastSeenRevision) {
+                        lastSeenRevision = result.revision;
+                        Serial.print(F("[Config] RTDB revision changed to "));
+                        Serial.print(result.revision);
+                        Serial.println(F(", queueing Firestore check"));
+                        cloudWorker.requestConfigCheck();
+                    }
+                }
+#endif
+                break;
+
+            case CloudOperation::PAIR_EVENT:
+                if (!result.success) Serial.println(F("[ButtonActions] Background pair event failed"));
+                break;
+
+            case CloudOperation::ASSET_FETCH: {
+                String assetId = result.resourceId;
+                if (result.success && result.assetData != nullptr &&
+                    result.assetData->pixelsJson.length() > 0) {
+                    CachedAsset cached;
+                    if (assetCache.parseAsset(assetId, result.assetData->pixelsJson, cached)) {
+                        assetCache.addAsset(cached);
+                        lastFailedRuntimeAssetId = "";
+                        Serial.print(F("[Render] Background asset cached: "));
+                        Serial.println(assetId);
+                    } else {
+                        lastFailedRuntimeAssetId = assetId;
+                    }
+                } else {
+                    lastFailedRuntimeAssetId = assetId;
+                    Serial.print(F("[Render] Background asset load failed: "));
+                    Serial.println(assetId);
+                }
+                pendingRuntimeAssetId = "";
+                break;
+            }
+
+            default:
+                break;
+        }
+
+        if (result.deviceDoc != nullptr) {
+            delete result.deviceDoc;
+            result.deviceDoc = nullptr;
+        }
+        if (result.assetData != nullptr) {
+            delete result.assetData;
+            result.assetData = nullptr;
+        }
+    }
+}
+
+void servicePendingConfigReload() {
+    if (!configReloadPending || cloudWorker.isBusy()) return;
+
+    DeviceState state = fsm.getState();
+    if (state == DeviceState::RUNNING || state == DeviceState::OFFLINE_RUNNING) {
+        Serial.println(F("[Config] Worker idle, starting reload"));
+        fsm.transition(DeviceState::CONFIG_LOADING);
+    }
+}
 
 void syncTime() {
     if (WiFi.isConnected() && timeSync.shouldSync()) {

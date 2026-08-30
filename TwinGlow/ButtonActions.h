@@ -7,6 +7,8 @@
 #include "NvsStore.h"
 #include "RtdbRepo.h"
 
+class CloudWorker;
+
 /**
  * Button action handler
  * Maps button events to device actions
@@ -14,7 +16,8 @@
 class ButtonActions {
 public:
     ButtonActions(Buttons* buttons, ScreenPlaylist* playlist, 
-                  MatrixDriver* matrix, NvsStore* nvs, RtdbRepo* rtdb);
+                  MatrixDriver* matrix, NvsStore* nvs, RtdbRepo* rtdb,
+                  CloudWorker* cloudWorker);
     
     void update(); // Call in loop() to handle button events
     
@@ -27,6 +30,7 @@ private:
     MatrixDriver* matrix;
     NvsStore* nvs;
     RtdbRepo* rtdb;
+    CloudWorker* cloudWorker;
     
     String currentPairId;
     String currentScreenId;
