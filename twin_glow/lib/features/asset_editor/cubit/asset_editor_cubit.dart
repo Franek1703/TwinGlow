@@ -38,6 +38,7 @@ class AssetEditorState {
     List<String>? tags,
     bool? isLoading,
     String? error,
+    bool clearError = false,
   }) {
     return AssetEditorState(
       asset: asset ?? this.asset,
@@ -47,7 +48,7 @@ class AssetEditorState {
       name: name ?? this.name,
       tags: tags ?? this.tags,
       isLoading: isLoading ?? this.isLoading,
-      error: error ?? this.error,
+      error: clearError ? null : (error ?? this.error),
     );
   }
 }
@@ -95,7 +96,7 @@ class AssetEditorCubit extends Cubit<AssetEditorState> {
   }
 
   void updateName(String name) {
-    emit(state.copyWith(name: name));
+    emit(state.copyWith(name: name, clearError: true));
   }
 
   void addTag(String tag) {
@@ -124,12 +125,12 @@ class AssetEditorCubit extends Cubit<AssetEditorState> {
   }
 
   Future<void> save() async {
-    if (state.name.isEmpty) {
+    if (state.name.trim().isEmpty) {
       emit(state.copyWith(error: 'Name is required'));
       return;
     }
 
-    emit(state.copyWith(isLoading: true, error: null));
+    emit(state.copyWith(isLoading: true, clearError: true));
     try {
       final assetId =
           state.asset?.id ?? 'asset_${DateTime.now().millisecondsSinceEpoch}';
@@ -148,7 +149,7 @@ class AssetEditorCubit extends Cubit<AssetEditorState> {
         await firebaseRepository.updateAsset(assetId, asset);
       }
 
-      emit(state.copyWith(isLoading: false, asset: asset));
+      emit(state.copyWith(isLoading: false, asset: asset, clearError: true));
     } catch (e) {
       emit(state.copyWith(isLoading: false, error: e.toString()));
     }

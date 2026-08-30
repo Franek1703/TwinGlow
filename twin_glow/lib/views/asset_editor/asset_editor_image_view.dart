@@ -14,14 +14,21 @@ import '../../core/widgets/tool_palette.dart';
 import '../../core/widgets/pixel_preview.dart';
 import '../../features/asset_editor/cubit/asset_editor_cubit.dart';
 import '../../features/auth/cubit/auth_cubit.dart';
+import '../../services/firebase/firebase_repository.dart';
 import '../../services/firebase/firebase_repository_impl.dart';
 import '../../core/models/asset_model.dart';
 
 class AssetEditorImageView extends StatefulWidget {
   final String? assetId;
   final List<List<int>>? initialPixelData;
+  final FirebaseRepository? repository;
 
-  const AssetEditorImageView({super.key, this.assetId, this.initialPixelData});
+  const AssetEditorImageView({
+    super.key,
+    this.assetId,
+    this.initialPixelData,
+    this.repository,
+  });
 
   @override
   State<AssetEditorImageView> createState() => _AssetEditorImageViewState();
@@ -42,7 +49,6 @@ class _AssetEditorImageViewState extends State<AssetEditorImageView> {
   Widget build(BuildContext context) {
     final authState = context.watch<AuthCubit>().state;
     final userId = authState.user?.id ?? '';
-    print("assetId: ${widget.assetId}");
 
     if (userId.isEmpty) {
       return Scaffold(
@@ -58,7 +64,7 @@ class _AssetEditorImageViewState extends State<AssetEditorImageView> {
       );
     }
 
-    final firebaseRepo = FirebaseRepositoryImpl();
+    final firebaseRepo = widget.repository ?? FirebaseRepositoryImpl();
 
     // Try to load existing asset, or create new one
     return FutureBuilder<AssetModel?>(
@@ -83,7 +89,6 @@ class _AssetEditorImageViewState extends State<AssetEditorImageView> {
         }
 
         final asset = snapshot.data;
-        print("asset: $asset");
 
         return BlocProvider(
           create: (_) => AssetEditorCubit(
@@ -118,17 +123,7 @@ class _AssetEditorImageViewState extends State<AssetEditorImageView> {
                           : const Icon(Icons.check),
                       onPressed: state.isLoading
                           ? null
-                          : () async {
-                              await context.read<AssetEditorCubit>().save();
-                              if (context.mounted) {
-                                final currentState = context
-                                    .read<AssetEditorCubit>()
-                                    .state;
-                                if (currentState.error == null) {
-                                  context.pop();
-                                }
-                              }
-                            },
+                          : () => _saveAndClose(context),
                     );
                   },
                 ),
@@ -275,8 +270,8 @@ class _AssetEditorImageViewState extends State<AssetEditorImageView> {
                         // Error Display
                         if (state.error != null)
                           AppCard(
-                            backgroundColor: AppColors.statusError.withOpacity(
-                              0.1,
+                            backgroundColor: AppColors.statusError.withValues(
+                              alpha: 0.1,
                             ),
                             child: Row(
                               children: [
@@ -304,13 +299,10 @@ class _AssetEditorImageViewState extends State<AssetEditorImageView> {
                           text: widget.assetId == null
                               ? 'Create Asset'
                               : 'Save Asset',
-                          onPressed: () {
-                            context.read<AssetEditorCubit>().save().then((_) {
-                              if (context.mounted && state.error == null) {
-                                context.pop();
-                              }
-                            });
-                          },
+                          onPressed: state.isLoading
+                              ? null
+                              : () => _saveAndClose(context),
+                          isLoading: state.isLoading,
                           fullWidth: true,
                           size: AppButtonSize.lg,
                         ),
@@ -327,18 +319,16 @@ class _AssetEditorImageViewState extends State<AssetEditorImageView> {
   }
 
   Future<AssetModel?> _loadAsset(
-    FirebaseRepositoryImpl repo,
+    FirebaseRepository repo,
     String assetId,
   ) async {
     try {
       final currentUser = await repo.getCurrentUser();
-      print("currentUser: $currentUser");
       if (currentUser == null) return null;
 
       // Try to find in user assets first
       final userAssets = await repo.getUserAssets(currentUser.id);
       try {
-        print("userAssets: $userAssets");
         return userAssets.firstWhere((a) => a.id == assetId);
       } catch (e) {
         // Try default assets
@@ -351,6 +341,14 @@ class _AssetEditorImageViewState extends State<AssetEditorImageView> {
       }
     } catch (e) {
       return null;
+    }
+  }
+
+  Future<void> _saveAndClose(BuildContext context) async {
+    final cubit = context.read<AssetEditorCubit>();
+    await cubit.save();
+    if (context.mounted && cubit.state.error == null) {
+      context.pop();
     }
   }
 }
