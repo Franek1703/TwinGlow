@@ -6,8 +6,10 @@ import '../../config/app_colors.dart';
 import '../../config/app_spacing.dart';
 import '../../config/app_typography.dart';
 import '../../core/widgets/app_button.dart';
+import '../../core/models/device_model.dart';
 import '../../core/widgets/app_card.dart';
 import '../../features/auth/cubit/auth_cubit.dart';
+import '../../features/device/cubit/devices_cubit.dart';
 import '../../features/pairing/cubit/pairing_cubit.dart';
 import '../../services/firebase/firebase_repository_impl.dart';
 
@@ -54,9 +56,16 @@ class _SettingsViewState extends State<SettingsView> {
           );
         }
 
-        return BlocProvider(
+        return MultiBlocProvider(
           key: ValueKey(userId),
-          create: (_) => PairingCubit(FirebaseRepositoryImpl(), userId),
+          providers: [
+            BlocProvider(
+              create: (_) => PairingCubit(FirebaseRepositoryImpl(), userId),
+            ),
+            BlocProvider(
+              create: (_) => DevicesCubit(FirebaseRepositoryImpl(), userId),
+            ),
+          ],
       child: Scaffold(
         backgroundColor: AppColors.bgPrimary,
         body: SafeArea(
@@ -229,73 +238,34 @@ class _SettingsViewState extends State<SettingsView> {
                 // Devices Section
                 _SectionTitle('Devices'),
                 SizedBox(height: AppSpacing.md),
-                AppCard(
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            width: 40.w,
-                            height: 40.w,
-                            decoration: BoxDecoration(
-                              gradient: AppColors.primaryGradient,
-                              borderRadius:
-                                  BorderRadius.circular(AppSpacing.radiusLg),
-                            ),
-                            child: Icon(
-                              Icons.phone_android,
-                              size: 20.sp,
-                              color: Colors.white,
-                            ),
+                // One card per owned device, each opening that device's own
+                // configuration. This used to be a hardcoded placeholder card.
+                BlocBuilder<DevicesCubit, DevicesState>(
+                  builder: (context, deviceState) {
+                    if (deviceState.isInitialLoading) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (deviceState.devices.isEmpty) {
+                      return AppCard(
+                        child: Text(
+                          deviceState.error != null
+                              ? 'Couldn\'t load devices'
+                              : 'No devices yet',
+                          style: AppTypography.body(context).copyWith(
+                            color: AppColors.textMuted,
                           ),
-                          SizedBox(width: AppSpacing.md),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'My TwinGlow',
-                                  style: AppTypography.h4(context),
-                                ),
-                                SizedBox(height: 4.h),
-                                Row(
-                                  children: [
-                                    Icon(
-                                      Icons.wifi,
-                                      size: 12.sp,
-                                      color: AppColors.statusOnline,
-                                    ),
-                                    SizedBox(width: 4.w),
-                                    Text(
-                                      'Online',
-                                      style: TextStyle(
-                                        fontSize: 12.sp,
-                                        color: AppColors.statusOnline,
-                                      ),
-                                    ),
-                                    SizedBox(width: 12.w),
-                                    Icon(
-                                      Icons.device_thermostat,
-                                      size: 12.sp,
-                                      color: AppColors.textMuted,
-                                    ),
-                                    SizedBox(width: 4.w),
-                                    Text(
-                                      'BME680',
-                                      style: TextStyle(
-                                        fontSize: 12.sp,
-                                        color: AppColors.textMuted,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
+                        ),
+                      );
+                    }
+                    return Column(
+                      children: [
+                        for (final device in deviceState.devices) ...[
+                          _DeviceCard(device: device),
+                          SizedBox(height: AppSpacing.md),
                         ],
-                      ),
-                    ],
-                  ),
+                      ],
+                    );
+                  },
                 ),
                 SizedBox(height: AppSpacing.md),
                 AppButton(
@@ -351,6 +321,84 @@ class _SectionTitle extends StatelessWidget {
         color: AppColors.textMuted,
         letterSpacing: 1.2,
         fontWeight: FontWeight.w600,
+      ),
+    );
+  }
+}
+
+/// A device in the Settings list. Tapping it opens that device's configuration
+/// (brightness, sleep mode, time zone).
+class _DeviceCard extends StatelessWidget {
+  final DeviceModel device;
+
+  const _DeviceCard({required this.device});
+
+  @override
+  Widget build(BuildContext context) {
+    final statusColor = device.isOnline
+        ? AppColors.statusOnline
+        : AppColors.statusOffline;
+
+    return AppCard(
+      onTap: () => context.push('/device/${device.id}/config'),
+      hoverable: true,
+      child: Row(
+        children: [
+          Container(
+            width: 40.w,
+            height: 40.w,
+            decoration: BoxDecoration(
+              gradient: AppColors.primaryGradient,
+              borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+            ),
+            child: Icon(
+              Icons.phone_android,
+              size: 20.sp,
+              color: Colors.white,
+            ),
+          ),
+          SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(device.name, style: AppTypography.h4(context)),
+                SizedBox(height: 4.h),
+                Row(
+                  children: [
+                    Icon(
+                      device.isOnline ? Icons.wifi : Icons.wifi_off,
+                      size: 12.sp,
+                      color: statusColor,
+                    ),
+                    SizedBox(width: 4.w),
+                    Text(
+                      device.isOnline ? 'Online' : 'Offline',
+                      style: TextStyle(fontSize: 12.sp, color: statusColor),
+                    ),
+                    if (device.hasSensor) ...[
+                      SizedBox(width: 12.w),
+                      Icon(
+                        Icons.device_thermostat,
+                        size: 12.sp,
+                        color: AppColors.textMuted,
+                      ),
+                      SizedBox(width: 4.w),
+                      Text(
+                        'BME680',
+                        style: TextStyle(
+                          fontSize: 12.sp,
+                          color: AppColors.textMuted,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Icon(Icons.chevron_right, color: AppColors.textMuted, size: 20.sp),
+        ],
       ),
     );
   }
