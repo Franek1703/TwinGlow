@@ -398,10 +398,18 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
         batch.update(screensRef.doc(screenIds[i]), {'order': i});
       }
 
+      // In the batch, not after it: a commit that lands the new order but then
+      // fails to bump the version leaves the device polling a version it has
+      // already seen, so the reorder sits in Firestore unnoticed until some
+      // unrelated edit happens to bump it.
+      batch.update(_firestore.collection('devices').doc(deviceId), {
+        'configVersion': FieldValue.increment(1),
+      });
+
       await batch.commit();
 
-      // Increment device configVersion
-      await _incrementDeviceConfigVersion(deviceId);
+      // Best-effort accelerator, same contract as _incrementDeviceConfigVersion.
+      await _ringConfigDoorbell(deviceId);
     } catch (e) {
       throw Exception('Failed to reorder screens: $e');
     }

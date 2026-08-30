@@ -111,13 +111,33 @@ class ScreensPlaylistCubit extends Cubit<ScreensPlaylistState> {
     }
   }
 
+  /// Moves a screen using the raw indices a [SliverReorderableList] reports.
+  ///
+  /// The list reports [newIndex] against the list *before* the item is lifted
+  /// out, so a downward move overshoots by one and has to be corrected.
+  Future<void> moveScreen(int oldIndex, int newIndex) async {
+    final screens = List<ScreenModel>.from(state.screens);
+    if (oldIndex < 0 || oldIndex >= screens.length) return;
+    if (newIndex > oldIndex) newIndex -= 1;
+    if (newIndex < 0 || newIndex >= screens.length || newIndex == oldIndex) {
+      return;
+    }
+
+    screens.insert(newIndex, screens.removeAt(oldIndex));
+    await reorderScreens(screens);
+  }
+
   Future<void> reorderScreens(List<ScreenModel> reorderedScreens) async {
+    // Emit first: the card has already animated into its new slot, so waiting
+    // for Firestore would snap it back for the length of the round trip.
+    final previousScreens = state.screens;
+    emit(state.copyWith(screens: reorderedScreens, clearError: true));
+
     try {
       final screenIds = reorderedScreens.map((s) => s.id).toList();
       await firebaseRepository.reorderScreens(deviceId, screenIds);
-      emit(state.copyWith(screens: reorderedScreens));
     } catch (e) {
-      emit(state.copyWith(error: e.toString()));
+      emit(state.copyWith(screens: previousScreens, error: e.toString()));
     }
   }
 }

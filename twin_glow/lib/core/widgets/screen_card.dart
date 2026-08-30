@@ -14,12 +14,18 @@ class ScreenCard extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onToggle;
 
+  /// Grip shown between the screen name and the toggle. Supplied by the
+  /// playlist, which wraps it in a drag listener; null everywhere the card is
+  /// not reorderable.
+  final Widget? dragHandle;
+
   const ScreenCard({
     super.key,
     required this.screen,
     this.assets = const [],
     this.onTap,
     this.onToggle,
+    this.dragHandle,
   });
 
   @override
@@ -58,6 +64,10 @@ class ScreenCard extends StatelessWidget {
                       ],
                     ),
                   ),
+                  if (dragHandle != null) ...[
+                    dragHandle!,
+                    SizedBox(width: AppSpacing.sm),
+                  ],
                   // Toggle switch
                   GestureDetector(
                     onTap: onToggle != null
