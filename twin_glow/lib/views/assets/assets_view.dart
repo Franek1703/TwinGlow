@@ -11,10 +11,13 @@ import '../../core/widgets/app_card.dart';
 import '../../core/widgets/pixel_preview.dart';
 import '../../features/auth/cubit/auth_cubit.dart';
 import '../../features/assets_library/cubit/assets_cubit.dart';
+import '../../services/firebase/firebase_repository.dart';
 import '../../services/firebase/firebase_repository_impl.dart';
 
 class AssetsView extends StatefulWidget {
-  const AssetsView({super.key});
+  final FirebaseRepository? repository;
+
+  const AssetsView({super.key, this.repository});
 
   @override
   State<AssetsView> createState() => _AssetsViewState();
@@ -60,8 +63,12 @@ class _AssetsViewState extends State<AssetsView> {
 
         return BlocProvider(
           key: ValueKey(userId),
-          create: (_) => AssetsCubit(FirebaseRepositoryImpl(), userId),
-      child: Scaffold(
+          create: (_) => AssetsCubit(
+            widget.repository ?? FirebaseRepositoryImpl(),
+            userId,
+          ),
+          child: Builder(
+            builder: (context) => Scaffold(
         backgroundColor: AppColors.bgPrimary,
         body: SafeArea(
           child: SingleChildScrollView(
@@ -344,15 +351,17 @@ class _AssetsViewState extends State<AssetsView> {
           ),
         ),
       ),
+          ),
         );
       },
     );
   }
 
   Future<void> _openAndRefresh(BuildContext context, String location) async {
+    final assetsCubit = context.read<AssetsCubit>();
     await context.push(location);
-    if (context.mounted) {
-      context.read<AssetsCubit>().loadAssets();
+    if (!assetsCubit.isClosed) {
+      await assetsCubit.loadAssets();
     }
   }
 
@@ -392,7 +401,7 @@ class _TabButton extends StatelessWidget {
           boxShadow: isActive
               ? [
                   BoxShadow(
-                    color: AppColors.accentCyan.withOpacity(0.3),
+                    color: AppColors.accentCyan.withValues(alpha: 0.3),
                     blurRadius: 4,
                   ),
                 ]
