@@ -151,9 +151,17 @@ cost no extra requests. A field the document does not carry leaves the device on
 value rather than resetting it — the app writes `brightness`/`sleepMode` only when its model
 actually has one, exactly as it does for the timezone.
 
-Brightness has a second writer: the device's physical +/- buttons, which write straight to
-NVS. The device therefore applies the document value **only when that value changes**, so a
-button press is not undone by the next poll. See `docs/device_code_architecture.md`.
+Brightness has a second writer: the device's physical +/- buttons. The two are reconciled
+in both directions.
+
+- **Down:** the device applies the document value **only when that value changes**, so a
+  button press is not undone by the next poll.
+- **Up:** a button press is written back to `brightness` so the app's slider shows what the
+  panel is actually running at. The device patches that single field with an `updateMask`
+  and deliberately does **not** touch `configVersion` — bumping it would make the device's
+  own write look like an owner edit and trigger a full screen and asset reload on the next
+  poll. The write is queued on the CloudWorker, which coalesces a held button into one
+  request. See `docs/device_code_architecture.md`.
 
 `name`, `createdAt` and `hw.matrix` appear in earlier drafts of this document but are never
 written by the device or the app. The app falls back to a placeholder when showing a device name.

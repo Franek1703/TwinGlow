@@ -1080,6 +1080,29 @@ void processCloudResults() {
                 if (!result.success) Serial.println(F("[ButtonActions] Background pair event failed"));
                 break;
 
+            case CloudOperation::BRIGHTNESS_WRITE:
+                if (result.success) {
+                    // The document now holds what we just sent, so treat it as
+                    // already applied: without this the next config check sees
+                    // its own echo as a change and re-applies it.
+                    lastCloudBrightness = result.brightness;
+                    // The panel can have moved again while the write was in
+                    // flight - a press landing after the worker read the value
+                    // coalesces into the job already running. Re-queue so the
+                    // document ends up on the value the owner stopped at.
+                    uint8_t current = nvs.getBrightness();
+                    if ((int)current != result.brightness) {
+                        cloudWorker.requestBrightnessWrite(current);
+                    }
+                } else {
+                    // Not retried here: NVS already holds the value, so the
+                    // panel is right and only the app's slider is stale until
+                    // the next local change. Retrying on the shared transport
+                    // is what the worker's own backoff is for.
+                    Serial.println(F("[ButtonActions] Brightness write-back failed"));
+                }
+                break;
+
             case CloudOperation::ASSET_FETCH: {
                 String assetId = result.resourceId;
                 if (result.success && result.assetData != nullptr &&
