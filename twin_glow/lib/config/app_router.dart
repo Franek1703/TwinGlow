@@ -14,6 +14,7 @@ import '../../views/screen_editor/screen_editor_image_view.dart';
 import '../../views/screen_editor/screen_editor_sensor_view.dart';
 import '../../views/asset_editor/asset_editor_image_view.dart';
 import '../../views/asset_editor/asset_editor_animation_view.dart';
+import '../../views/image_import/import_image_view.dart';
 import '../../views/pairing/pairing_management_view.dart';
 import '../../views/profile/profile_view.dart';
 import '../../views/device_config/device_config_view.dart';
@@ -137,7 +138,15 @@ GoRouter createAppRouter(OnboardingStatusStore onboardingStatusStore) =>
         // Asset editors
         GoRoute(
           path: '/asset/create/image',
-          builder: (context, state) => const AssetEditorImageView(),
+          builder: (context, state) => AssetEditorImageView(
+            initialPixelData: state.extra is List<List<int>>
+                ? state.extra! as List<List<int>>
+                : null,
+          ),
+        ),
+        GoRoute(
+          path: '/asset/import/image',
+          builder: (context, state) => const ImportImageView(),
         ),
         GoRoute(
           path: '/asset/create/animation',

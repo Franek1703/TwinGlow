@@ -47,5 +47,7 @@
 	<true/>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>This app needs Bluetooth to connect and provision TwinGlow devices.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>TwinGlow uses your photo library only to import images into the pixel editor.</string>
 </dict>
 </plist>

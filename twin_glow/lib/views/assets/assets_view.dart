@@ -308,6 +308,21 @@ class _AssetsViewState extends State<AssetsView> {
                       ),
                       SizedBox(height: AppSpacing.md),
                       AppButton(
+                        text: 'Import Image',
+                        onPressed: () => _openAndRefresh(
+                          context,
+                          '/asset/import/image',
+                        ),
+                        variant: AppButtonVariant.secondary,
+                        fullWidth: true,
+                        icon: Icon(
+                          Icons.file_upload_outlined,
+                          size: 20.sp,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      SizedBox(height: AppSpacing.md),
+                      AppButton(
                         text: 'Create New Animation',
                         onPressed: () => _openAndRefresh(
                           context,

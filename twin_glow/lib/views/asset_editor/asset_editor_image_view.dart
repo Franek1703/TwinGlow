@@ -19,8 +19,9 @@ import '../../core/models/asset_model.dart';
 
 class AssetEditorImageView extends StatefulWidget {
   final String? assetId;
+  final List<List<int>>? initialPixelData;
 
-  const AssetEditorImageView({super.key, this.assetId});
+  const AssetEditorImageView({super.key, this.assetId, this.initialPixelData});
 
   @override
   State<AssetEditorImageView> createState() => _AssetEditorImageViewState();
@@ -90,6 +91,7 @@ class _AssetEditorImageViewState extends State<AssetEditorImageView> {
             userId,
             AssetType.image,
             asset: asset,
+            initialPixelData: widget.initialPixelData,
           ),
           child: Scaffold(
             backgroundColor: AppColors.bgPrimary,

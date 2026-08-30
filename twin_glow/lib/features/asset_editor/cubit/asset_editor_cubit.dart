@@ -63,13 +63,24 @@ class AssetEditorCubit extends Cubit<AssetEditorState> {
     this.userId,
     this.assetType, {
     AssetModel? asset,
-  })  : isNewAsset = asset == null,
-        super(AssetEditorState(
-          asset: asset,
-          pixelData: asset?.pixelData ?? AssetEditorState._createEmptyGrid(),
-          name: asset?.name ?? '',
-          tags: asset?.tags ?? [],
-        ));
+    List<List<int>>? initialPixelData,
+  }) : isNewAsset = asset == null,
+       super(
+         AssetEditorState(
+           asset: asset,
+           pixelData: _copyGrid(
+             asset?.pixelData ??
+                 initialPixelData ??
+                 AssetEditorState._createEmptyGrid(),
+           ),
+           name: asset?.name ?? '',
+           tags: asset?.tags ?? [],
+         ),
+       );
+
+  static List<List<int>> _copyGrid(List<List<int>> data) {
+    return data.map((row) => List<int>.from(row)).toList();
+  }
 
   void updatePixelData(List<List<int>> data) {
     emit(state.copyWith(pixelData: data));
@@ -101,7 +112,9 @@ class AssetEditorCubit extends Cubit<AssetEditorState> {
   }
 
   void mirrorX() {
-    final newData = state.pixelData.map((row) => row.reversed.toList()).toList();
+    final newData = state.pixelData
+        .map((row) => row.reversed.toList())
+        .toList();
     emit(state.copyWith(pixelData: newData));
   }
 
@@ -118,8 +131,9 @@ class AssetEditorCubit extends Cubit<AssetEditorState> {
 
     emit(state.copyWith(isLoading: true, error: null));
     try {
-      final assetId = state.asset?.id ?? 'asset_${DateTime.now().millisecondsSinceEpoch}';
-      
+      final assetId =
+          state.asset?.id ?? 'asset_${DateTime.now().millisecondsSinceEpoch}';
+
       final asset = AssetModel(
         id: assetId,
         name: state.name,
