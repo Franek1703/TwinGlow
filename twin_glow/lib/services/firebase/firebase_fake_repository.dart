@@ -36,6 +36,8 @@ class FirebaseFakeRepository implements FirebaseRepository {
       userId: 'user1',
       timezone: 'Europe/Warsaw',
       tzPosix: 'CET-1CEST,M3.5.0,M10.5.0/3',
+      brightness: kDefaultBrightness,
+      sleepMode: const SleepSchedule(),
     );
     _devices.add(device);
 

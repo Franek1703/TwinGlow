@@ -384,12 +384,19 @@ Storage:
 
 ### Device Settings
 
-- Global brightness
+These are **per device** and live on the Device Configuration screen (reached from a device,
+next to Time zone) — not in the global Settings tab, since a user with two devices sets each
+one independently.
+
+- Brightness (slider, floored at 5% so the panel cannot be lost — only sleep mode may blank it)
 - Sleep mode:
     - Enabled
     - Start time
     - End time
-    - Weekdays selection
+    - Brightness while asleep (0 = display off)
+
+Weekday selection is **not implemented**: the window applies every night. Adding it means a
+day bitmask in the `sleepMode` map plus one more check on the device.
 
 ---
 

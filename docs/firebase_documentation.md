@@ -116,7 +116,7 @@ Recommended roles:
 **Purpose:** device metadata and firmware/config management.
 
 What is actually written today — `fwVersion`, `hw` and `configVersion` by the device,
-`timezone` and `tzPosix` by the app:
+`timezone`, `tzPosix`, `brightness` and `sleepMode` by the app:
 
 ```json
 {
@@ -126,10 +126,34 @@ What is actually written today — `fwVersion`, `hw` and `configVersion` by the 
   },
   "configVersion": 42,
   "timezone": "Europe/Warsaw",
-  "tzPosix": "CET-1CEST,M3.5.0,M10.5.0/3"
+  "tzPosix": "CET-1CEST,M3.5.0,M10.5.0/3",
+  "brightness": 128,
+  "sleepMode": {
+    "enabled": false,
+    "startMinute": 1380,
+    "endMinute": 420,
+    "brightness": 10
+  }
 }
 
 ```
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `brightness` | number | LED brightness while awake, 0-255 (the NeoPixel scale). The app's slider works in percent and converts. |
+| `sleepMode.enabled` | bool | Whether the nightly dim window applies at all. |
+| `sleepMode.startMinute` | number | Window start, minutes since local midnight (1380 = 23:00). |
+| `sleepMode.endMinute` | number | Window end. Below the start means the window crosses midnight, which is the usual case. |
+| `sleepMode.brightness` | number | Brightness held during the window, 0-255. **0 blanks the panel** — the firmware clamps `setBrightness(0)` up to 1, so a true off needs the separate blank path. |
+
+Both are read on the same 60 s device-doc poll that already carries the timezone, so they
+cost no extra requests. A field the document does not carry leaves the device on its cached
+value rather than resetting it — the app writes `brightness`/`sleepMode` only when its model
+actually has one, exactly as it does for the timezone.
+
+Brightness has a second writer: the device's physical +/- buttons, which write straight to
+NVS. The device therefore applies the document value **only when that value changes**, so a
+button press is not undone by the next poll. See `docs/device_code_architecture.md`.
 
 `name`, `createdAt` and `hw.matrix` appear in earlier drafts of this document but are never
 written by the device or the app. The app falls back to a placeholder when showing a device name.

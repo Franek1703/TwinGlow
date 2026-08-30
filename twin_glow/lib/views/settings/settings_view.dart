@@ -19,9 +19,6 @@ class SettingsView extends StatefulWidget {
 }
 
 class _SettingsViewState extends State<SettingsView> {
-  double _brightness = 80;
-  bool _sleepModeEnabled = true;
-
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<AuthCubit, AuthState>(
@@ -308,93 +305,6 @@ class _SettingsViewState extends State<SettingsView> {
                   fullWidth: true,
                 ),
                 SizedBox(height: AppSpacing.xl),
-                // Device Settings
-                _SectionTitle('Device Settings'),
-                SizedBox(height: AppSpacing.md),
-                AppCard(
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.brightness_6,
-                            size: 20.sp,
-                            color: AppColors.accentCyan,
-                          ),
-                          SizedBox(width: AppSpacing.md),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Brightness',
-                                  style: AppTypography.h4(context),
-                                ),
-                                SizedBox(height: 2.h),
-                                Text(
-                                  '${_brightness.toInt()}%',
-                                  style: AppTypography.small(context),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: AppSpacing.md),
-                      Slider(
-                        value: _brightness,
-                        min: 0,
-                        max: 100,
-                        activeColor: AppColors.accentCyan,
-                        onChanged: (value) {
-                          setState(() {
-                            _brightness = value;
-                          });
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(height: AppSpacing.md),
-                AppCard(
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.bedtime,
-                        size: 20.sp,
-                        color: AppColors.accentPurple,
-                      ),
-                      SizedBox(width: AppSpacing.md),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Sleep Mode',
-                              style: AppTypography.h4(context),
-                            ),
-                            SizedBox(height: 2.h),
-                            Text(
-                              _sleepModeEnabled
-                                  ? '11:00 PM - 7:00 AM'
-                                  : 'Disabled',
-                              style: AppTypography.small(context),
-                            ),
-                          ],
-                        ),
-                      ),
-                      _ToggleSwitch(
-                        enabled: _sleepModeEnabled,
-                        onChanged: (value) {
-                          setState(() {
-                            _sleepModeEnabled = value;
-                          });
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(height: AppSpacing.xl),
                 // Sign Out
                 BlocListener<AuthCubit, AuthState>(
                   listener: (context, state) {
@@ -441,60 +351,6 @@ class _SectionTitle extends StatelessWidget {
         color: AppColors.textMuted,
         letterSpacing: 1.2,
         fontWeight: FontWeight.w600,
-      ),
-    );
-  }
-}
-
-class _ToggleSwitch extends StatelessWidget {
-  final bool enabled;
-  final ValueChanged<bool> onChanged;
-
-  const _ToggleSwitch({
-    required this.enabled,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => onChanged(!enabled),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 300),
-        width: 48.w,
-        height: 28.h,
-        decoration: BoxDecoration(
-          gradient: enabled ? AppColors.primaryGradient : null,
-          color: enabled ? null : AppColors.bgElevated,
-          borderRadius: BorderRadius.circular(9999),
-          border: enabled
-              ? null
-              : Border.all(color: AppColors.borderColor, width: 1),
-        ),
-        child: Stack(
-          children: [
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 300),
-              left: enabled ? 20.w : 4.w,
-              top: 4.h,
-              child: Container(
-                width: 20.w,
-                height: 20.w,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.2),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
