@@ -150,7 +150,11 @@ class _HomeContent extends StatelessWidget {
                               deviceName: device.name,
                               isOnline: device.isOnline,
                               hasSensor: device.hasSensor,
-                              onTap: () => context.go('/settings'),
+                              // Opens this device's own settings. It used to
+                              // land on the global Settings tab, which no
+                              // longer holds anything device-specific.
+                              onTap: () =>
+                                  context.push('/device/${device.id}/config'),
                             ),
                             SizedBox(height: AppSpacing.xl),
                             // Header
