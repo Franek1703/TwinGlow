@@ -5,6 +5,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'firebase_repository.dart';
 import '../../core/models/device_model.dart';
 import '../../core/models/screen_model.dart';
+import '../../core/models/screen_asset_references.dart';
 import '../../core/models/asset_model.dart';
 import '../../core/models/user_model.dart';
 import '../../core/models/pairing_model.dart';
@@ -547,10 +548,58 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
   @override
   Future<void> deleteAsset(String assetId) async {
     try {
-      await _firestore.collection('assets').doc(assetId).delete();
-      // The screen docs still carry the id, so the lookup works after the
-      // delete and the device gets told to drop the cached pixels.
-      await _bumpDevicesUsingAsset(assetId);
+      final assetRef = _firestore.collection('assets').doc(assetId);
+      final assetSnapshot = await assetRef.get();
+      final assetData = assetSnapshot.data();
+
+      if (!assetSnapshot.exists || assetData == null) {
+        return;
+      }
+      if (assetData['isDefault'] == true) {
+        throw Exception('Default assets cannot be deleted');
+      }
+
+      final currentUserId = _auth.currentUser?.uid;
+      final ownerId =
+          assetData['ownerUid'] as String? ?? assetData['userId'] as String?;
+      if (currentUserId == null || ownerId != currentUserId) {
+        throw Exception('You can only delete your own assets');
+      }
+
+      final screensUsingAsset = await _getScreensUsingAsset(
+        currentUserId,
+        assetId,
+      );
+      final affectedDeviceIds = screensUsingAsset
+          .map((screen) => screen.reference.parent.parent?.id)
+          .whereType<String>()
+          .toSet();
+
+      // Delete the asset, clean every screen reference, and bump each affected
+      // device in one commit. A failed commit therefore cannot leave screens
+      // pointing at an asset that was already removed.
+      final batch = _firestore.batch();
+      for (final screen in screensUsingAsset) {
+        final data = screen.data();
+        final references = _assetReferencesFromScreenData(data).without(assetId);
+        batch.update(screen.reference, {
+          'assetId': references.assetId ?? FieldValue.delete(),
+          'defaultAssetId': references.defaultAssetId ?? FieldValue.delete(),
+          'availableAssetIds': references.availableAssetIds,
+          'updatedAt': Timestamp.fromDate(DateTime.now()),
+        });
+      }
+      for (final deviceId in affectedDeviceIds) {
+        batch.update(_firestore.collection('devices').doc(deviceId), {
+          'configVersion': FieldValue.increment(1),
+        });
+      }
+      batch.delete(assetRef);
+      await batch.commit();
+
+      // The Firestore version is authoritative. This best-effort doorbell just
+      // asks online devices to read it sooner than their periodic poll.
+      await Future.wait(affectedDeviceIds.map(_ringConfigDoorbell));
     } catch (e) {
       throw Exception('Failed to delete asset: $e');
     }
@@ -927,44 +976,73 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
     }
   }
 
-  /// Assets carry no device context, so find the screens pointing at one and
-  /// bump every device that shows it. Without this an asset edit never bumped
-  /// anything at all and the panel kept rendering the old pixels indefinitely.
-  ///
-  /// A screen can reference an asset three ways since the asset pool moved onto
-  /// the screen document: the legacy `assetId`, the pool's `defaultAssetId`, or
-  /// any entry of `availableAssetIds`. Firestore cannot OR across different
-  /// fields in one query, so this runs all three and unions the results -
-  /// checking only `assetId` would silently miss every pooled image.
-  ///
-  /// Each query needs its own collection-group index on `screens`.
-  ///
-  /// Not covered: an asset reached solely through a shared-screen pointer
-  /// (pairs/{pairId}/sharedScreens), which needs a pair to device traversal
-  /// that does not exist yet.
+  /// Assets carry no device context, so find the current user's mapped devices
+  /// and bump each one with a screen that references the asset. Reading the
+  /// short playlist below each mapped device matches the Firestore ownership
+  /// model and avoids a cross-user collection-group query that security rules
+  /// cannot safely authorize.
   Future<void> _bumpDevicesUsingAsset(String assetId) async {
     try {
-      final screens = _firestore.collectionGroup('screens');
-      final results = await Future.wait([
-        screens.where('assetId', isEqualTo: assetId).get(),
-        screens.where('defaultAssetId', isEqualTo: assetId).get(),
-        screens.where('availableAssetIds', arrayContains: assetId).get(),
-      ]);
-      final deviceIds = results
-          .expand((r) => r.docs)
-          .map((d) => d.reference.parent.parent?.id)
+      final currentUserId = _auth.currentUser?.uid;
+      if (currentUserId == null) return;
+
+      final matchingScreens = await _getScreensUsingAsset(
+        currentUserId,
+        assetId,
+      );
+      final deviceIds = matchingScreens
+          .map((screen) => screen.reference.parent.parent?.id)
           .whereType<String>()
           .toSet();
       for (final id in deviceIds) {
         await _incrementDeviceConfigVersion(id);
       }
     } catch (e) {
-      // Never fail the asset save over the notification - but do say so. A
-      // missing collection-group index on screens.assetId lands here, and
-      // silently swallowing it would look exactly like the bug this fixes.
+      // Never fail the asset save over the notification, but do say so:
+      // swallowing this would look exactly like the stale-device bug this
+      // helper prevents.
       debugPrint('Could not notify devices using asset $assetId; they will '
           'show stale pixels until another edit bumps them: $e');
     }
+  }
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+      _getScreensUsingAsset(String userId, String assetId) async {
+    final deviceMappings = await _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('devices')
+        .get();
+    final screenSnapshots = await Future.wait(
+      deviceMappings.docs.map(
+        (device) => _firestore
+            .collection('devices')
+            .doc(device.id)
+            .collection('screens')
+            .get(),
+      ),
+    );
+
+    return screenSnapshots
+        .expand((snapshot) => snapshot.docs)
+        .where(
+          (screen) =>
+              _assetReferencesFromScreenData(screen.data()).contains(assetId),
+        )
+        .toList(growable: false);
+  }
+
+  ScreenAssetReferences _assetReferencesFromScreenData(
+    Map<String, dynamic> data,
+  ) {
+    final rawAvailableAssetIds = data['availableAssetIds'];
+    return ScreenAssetReferences(
+      assetId: data['assetId'] as String?,
+      defaultAssetId: data['defaultAssetId'] as String?,
+      availableAssetIds: rawAvailableAssetIds is List
+          ? rawAvailableAssetIds.whereType<String>().toList(growable: false)
+          : const [],
+    );
   }
 
   Future<UserModel?> _getUserById(String userId) async {

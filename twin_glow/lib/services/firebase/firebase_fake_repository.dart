@@ -1,6 +1,7 @@
 import 'firebase_repository.dart';
 import '../../core/models/device_model.dart';
 import '../../core/models/screen_model.dart';
+import '../../core/models/screen_asset_references.dart';
 import '../../core/models/asset_model.dart';
 import '../../core/models/user_model.dart';
 import '../../core/models/pairing_model.dart';
@@ -368,6 +369,33 @@ class FirebaseFakeRepository implements FirebaseRepository {
   Future<void> deleteAsset(String assetId) async {
     await Future.delayed(const Duration(milliseconds: 300));
     _userAssets.removeWhere((a) => a.id == assetId);
+
+    for (final screens in _screens.values) {
+      for (var index = 0; index < screens.length; index++) {
+        final screen = screens[index];
+        final references = ScreenAssetReferences(
+          assetId: screen.assetId,
+          defaultAssetId: screen.defaultAssetId,
+          availableAssetIds: screen.availableAssetIds,
+        );
+        if (!references.contains(assetId)) continue;
+
+        final cleanedReferences = references.without(assetId);
+        screens[index] = ScreenModel(
+          id: screen.id,
+          type: screen.type,
+          name: screen.name,
+          enabled: screen.enabled,
+          isShared: screen.isShared,
+          previewData: screen.previewData,
+          assetId: cleanedReferences.assetId,
+          config: screen.config,
+          defaultAssetId: cleanedReferences.defaultAssetId,
+          availableAssetIds: cleanedReferences.availableAssetIds,
+          allowManualSwitch: screen.allowManualSwitch,
+        );
+      }
+    }
   }
 
   // Pairing

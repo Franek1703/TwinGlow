@@ -239,6 +239,43 @@ class _AssetsViewState extends State<AssetsView> {
                                             ),
                                           ),
                                         ),
+                                      if (_isMyAssets && !asset.isDefault)
+                                        Positioned(
+                                          top: AppSpacing.sm,
+                                          right: AppSpacing.sm,
+                                          child: Material(
+                                            color: Colors.black.withValues(
+                                              alpha: 0.72,
+                                            ),
+                                            shape: const CircleBorder(),
+                                            child: IconButton(
+                                              tooltip: 'Delete asset',
+                                              onPressed: state.deletingAssetIds
+                                                      .contains(asset.id)
+                                                  ? null
+                                                  : () => _confirmDeleteAsset(
+                                                        context,
+                                                        asset,
+                                                      ),
+                                              icon: state.deletingAssetIds
+                                                      .contains(asset.id)
+                                                  ? SizedBox(
+                                                      width: 18.sp,
+                                                      height: 18.sp,
+                                                      child:
+                                                          const CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                      ),
+                                                    )
+                                                  : Icon(
+                                                      Icons.delete_outline,
+                                                      size: 20.sp,
+                                                      color:
+                                                          AppColors.statusError,
+                                                    ),
+                                            ),
+                                          ),
+                                        ),
                                     ],
                                   ),
                                 ),
@@ -363,6 +400,48 @@ class _AssetsViewState extends State<AssetsView> {
     if (!assetsCubit.isClosed) {
       await assetsCubit.loadAssets();
     }
+  }
+
+  Future<void> _confirmDeleteAsset(
+    BuildContext context,
+    AssetModel asset,
+  ) async {
+    final assetsCubit = context.read<AssetsCubit>();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete asset?'),
+        content: Text(
+          'Delete "${asset.name}"? It will also be removed from every '
+          'screen that uses it.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.statusError,
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !context.mounted) return;
+
+    final deleted = await assetsCubit.deleteAsset(asset.id);
+    if (!context.mounted) return;
+
+    final message = deleted
+        ? 'Asset deleted'
+        : assetsCubit.state.error ?? 'Could not delete asset';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
   IconData _getAssetIcon(AssetType type) {

@@ -8,6 +8,7 @@ class AssetsState {
   final bool isLoading;
   final bool hasLoaded;
   final String? error;
+  final Set<String> deletingAssetIds;
 
   AssetsState({
     this.myAssets = const [],
@@ -15,6 +16,7 @@ class AssetsState {
     this.isLoading = true,
     this.hasLoaded = false,
     this.error,
+    this.deletingAssetIds = const {},
   });
 
   bool get isInitialLoading => isLoading && !hasLoaded;
@@ -26,6 +28,7 @@ class AssetsState {
     bool? isLoading,
     bool? hasLoaded,
     String? error,
+    Set<String>? deletingAssetIds,
     bool clearError = false,
   }) {
     return AssetsState(
@@ -34,6 +37,7 @@ class AssetsState {
       isLoading: isLoading ?? this.isLoading,
       hasLoaded: hasLoaded ?? this.hasLoaded,
       error: clearError ? null : (error ?? this.error),
+      deletingAssetIds: deletingAssetIds ?? this.deletingAssetIds,
     );
   }
 }
@@ -67,12 +71,27 @@ class AssetsCubit extends Cubit<AssetsState> {
     }
   }
 
-  Future<void> deleteAsset(String assetId) async {
+  Future<bool> deleteAsset(String assetId) async {
+    emit(state.copyWith(
+      deletingAssetIds: {...state.deletingAssetIds, assetId},
+      clearError: true,
+    ));
     try {
       await firebaseRepository.deleteAsset(assetId);
-      await loadAssets();
+      emit(state.copyWith(
+        myAssets: state.myAssets
+            .where((asset) => asset.id != assetId)
+            .toList(growable: false),
+        deletingAssetIds: {...state.deletingAssetIds}..remove(assetId),
+        clearError: true,
+      ));
+      return true;
     } catch (e) {
-      emit(state.copyWith(error: e.toString()));
+      emit(state.copyWith(
+        deletingAssetIds: {...state.deletingAssetIds}..remove(assetId),
+        error: e.toString(),
+      ));
+      return false;
     }
   }
 }

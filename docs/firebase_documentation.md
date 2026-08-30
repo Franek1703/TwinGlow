@@ -789,9 +789,10 @@ Firestore check immediately instead of waiting out the 60 s poll.
 `twin_glow/lib/services/firebase/firebase_repository_impl.dart`, called from
 `_incrementDeviceConfigVersion()` (screen add/update/delete/reorder, asset
 add/update/delete) and from `updateDevice()`. The asset path resolves which
-devices to ring with three collection-group queries over `screens` -
-`assetId`, `defaultAssetId` and `availableAssetIds` - since the asset pool
-lives on the screen document.
+devices to ring by following the signed-in user's `/users/{uid}/devices`
+mappings and reading each device's short screen playlist. It checks `assetId`,
+`defaultAssetId` and `availableAssetIds`, since the asset pool lives on the
+screen document.
 
 **Reader:** `RtdbRepo::getConfigRevision()` →
 `checkConfigRevision()` in `TwinGlow.ino`, which delegates the real comparison to

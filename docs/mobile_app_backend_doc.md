@@ -326,16 +326,18 @@ User edits asset:
 1. Update `/assets/{assetId}`
 2. Find the devices showing it and bump `configVersion` on each, ringing the
    doorbell with it. Asset writes carry no device context, so this lookup is
-   what makes the flow possible at all. Since the asset pool moved onto the
-   screen document a screen can reference an asset three ways, and Firestore
-   cannot OR across fields, so it takes three collection-group queries whose
-   results are unioned - on `assetId`, `defaultAssetId` and
-   `availableAssetIds` (array-contains). Each needs its own collection-group
-   index on `screens`.
+   what makes the flow possible at all. The app reads the signed-in user's
+   `/users/{uid}/devices` mappings, then the short `screens` playlist under
+   each mapped device. A screen matches when the asset appears in `assetId`,
+   `defaultAssetId`, or `availableAssetIds`. This follows the ownership model
+   and avoids a cross-user collection-group query.
 3. Device reloads asset data
 
-Not yet covered: an asset referenced only through a shared screen
-(`pairs/{pairId}/sharedScreens`), which needs a pair → device traversal.
+Asset deletion uses the same traversal. The app removes the ID from every
+matching screen pool, promotes the first remaining pool entry when the deleted
+asset was the default, and clears both selected fields if nothing remains. The
+screen changes, one `configVersion` increment per affected device, and the
+asset delete are committed in one Firestore batch.
 
 ---
 
