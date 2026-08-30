@@ -22,6 +22,7 @@ const char* operationName(CloudOperation operation) {
         case CloudOperation::REVISION_CHECK: return "revision";
         case CloudOperation::PAIR_EVENT: return "pair-event";
         case CloudOperation::ASSET_FETCH: return "asset";
+        case CloudOperation::BRIGHTNESS_WRITE: return "brightness";
         default: return "unknown";
     }
 }
@@ -32,7 +33,8 @@ CloudWorker::CloudWorker()
       jobQueue(nullptr), resultQueue(nullptr), taskHandle(nullptr),
       started(false), paused(false), operationActive(false),
       backoffUntilMs(0), consecutiveTransportFailures(0),
-      recoveryAttempts(0), jobPending{false, false, false, false, false, false} {
+      recoveryAttempts(0), latestBrightness(0),
+      jobPending{false, false, false, false, false, false, false} {
 }
 
 bool CloudWorker::begin(FirebaseClientWrap* firebaseClient,
@@ -159,6 +161,15 @@ bool CloudWorker::requestPairEvent(const String& pairId, const String& screenId,
     return enqueue(job);
 }
 
+bool CloudWorker::requestBrightnessWrite(uint8_t brightness) {
+    // Recorded before the enqueue, so a coalesced request still updates the
+    // value the worker will send.
+    latestBrightness = brightness;
+    CloudJob job{};
+    job.operation = CloudOperation::BRIGHTNESS_WRITE;
+    return enqueue(job);
+}
+
 bool CloudWorker::requestAsset(const String& assetId) {
     CloudJob job{};
     job.operation = CloudOperation::ASSET_FETCH;
@@ -254,6 +265,15 @@ void CloudWorker::execute(const CloudJob& job, CloudResult& result) {
             result.success = rtdb != nullptr &&
                 rtdb->sendToPair(job.pairId, job.screenId, job.assetId);
             break;
+
+        case CloudOperation::BRIGHTNESS_WRITE: {
+            // Read here rather than from the job, so a burst of button presses
+            // sends the value the panel settled on instead of the first one.
+            uint8_t value = latestBrightness;
+            result.brightness = value;
+            result.success = firestore != nullptr && firestore->updateBrightness(value);
+            break;
+        }
 
         case CloudOperation::ASSET_FETCH: {
             AssetData* asset = new (std::nothrow) AssetData();

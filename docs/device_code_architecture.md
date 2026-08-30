@@ -357,11 +357,23 @@ Buttons are final and consistent across screens.
 - − / +: brightness down/up (down to 0), persist to NVS
 
 The app can also set brightness, via `devices/{deviceId}.brightness`. The two writers are
-reconciled by applying the cloud value **only when the document value changes** — the device
-remembers the last brightness it took from the doc, so re-reading an unchanged value on the
-60 s poll does nothing and a button press survives. Moving the slider in the app changes the
-document, and that does win. Inside the sleep window the schedule owns the panel: a button
-press there is re-overridden on the next sleep check (~15 s).
+reconciled in both directions:
+
+- Reading down: the cloud value is applied **only when the document value changes** — the
+  device remembers the last brightness it took from the doc, so re-reading an unchanged value
+  on the 60 s poll does nothing and a button press survives. Moving the slider in the app
+  changes the document, and that does win.
+- Writing up: `handleBrightnessChange()` queues a `BRIGHTNESS_WRITE` on the CloudWorker,
+  which patches `brightness` alone (no `configVersion` bump, so the device does not trigger a
+  reload with its own write). The worker coalesces a held button into a single request and
+  reads the latest value at execution time, so the document ends up on the value the panel
+  settled on rather than the first step of the burst. On success the main loop records the
+  written value as already-applied, so the next config check does not treat the echo as a
+  change, and re-queues if the panel moved again while the write was in flight. A failed
+  write is not retried: NVS already holds the value, so only the app's slider is stale.
+
+Inside the sleep window the schedule owns the panel: a button press there is re-overridden on
+the next sleep check (~15 s).
 
 ### 6.2 Context actions (● Action)
 

@@ -17,7 +17,8 @@ enum class CloudOperation : uint8_t {
     REVISION_CHECK = 3,
     PAIR_EVENT = 4,
     ASSET_FETCH = 5,
-    COUNT = 6
+    BRIGHTNESS_WRITE = 6,
+    COUNT = 7
 };
 
 // Queue payloads contain only trivially copyable data. DeviceDoc owns Arduino
@@ -31,6 +32,9 @@ struct CloudResult {
     DeviceDoc* deviceDoc;
     AssetData* assetData;
     int revision;
+    // Value actually written by BRIGHTNESS_WRITE, so the main loop can tell
+    // whether the panel moved again while the write was in flight.
+    int brightness;
     char resourceId[96];
 };
 
@@ -55,6 +59,10 @@ public:
     bool requestRevisionCheck();
     bool requestPairEvent(const String& pairId, const String& screenId, const String& assetId);
     bool requestAsset(const String& assetId);
+    // Coalescing is deliberate here: a held button produces a burst of changes,
+    // and only the value the panel ends on is worth a write. The worker reads
+    // the latest value at execution time rather than the one queued first.
+    bool requestBrightnessWrite(uint8_t brightness);
 
     // Non-blocking result retrieval; call repeatedly from loop().
     bool popResult(CloudResult& result);
@@ -90,6 +98,7 @@ private:
     volatile bool operationActive;
     volatile uint32_t backoffUntilMs;
     volatile uint8_t consecutiveTransportFailures;
+    volatile uint8_t latestBrightness;
     uint8_t recoveryAttempts;
     portMUX_TYPE stateMux = portMUX_INITIALIZER_UNLOCKED;
 

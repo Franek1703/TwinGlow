@@ -85,7 +85,14 @@ void ButtonActions::handleBrightnessChange(bool increase) {
     
     nvs->setBrightness(current);
     matrix->setBrightness(current);
-    
+
+    // Push it up so the app's slider shows what the panel is running at.
+    // Queued, not sent: the worker coalesces a held button into one write and
+    // owns the retry, so this stays a cheap local call.
+    if (cloudWorker != nullptr) {
+        cloudWorker->requestBrightnessWrite(current);
+    }
+
     Serial.print(F("[ButtonActions] Brightness: "));
     Serial.println(current);
 }

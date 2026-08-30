@@ -16,6 +16,7 @@ String FirestoreRepo::getUserDevicePath(const String&) const { return ""; }
 bool FirestoreRepo::getDeviceDoc(DeviceDoc& out) { out = DeviceDoc(); return false; }
 bool FirestoreRepo::createDeviceDoc(const String&) { return false; }
 bool FirestoreRepo::updateDeviceCapability(bool) { return false; }
+bool FirestoreRepo::updateBrightness(uint8_t) { return false; }
 bool FirestoreRepo::claimDevice(const String&) { return false; }
 bool FirestoreRepo::getScreens(std::vector<ScreenConfig>&) { return false; }
 bool FirestoreRepo::getSharedScreen(const String&, const String&, SharedScreenConfig&) { return false; }
@@ -204,6 +205,32 @@ bool FirestoreRepo::updateDeviceCapability(bool bme680Present) {
     String path = getDevicePath();
     documents->patch(*aClient, parent, path, patchOptions, doc);
     return aClient->lastError().code() == 0;
+}
+
+bool FirestoreRepo::updateBrightness(uint8_t brightness) {
+    if (wrap == nullptr) return false;
+    FirebaseFirestoreType* documents = static_cast<FirebaseFirestoreType*>(wrap->getFirestore());
+    AsyncClientClass* aClient = wrap->getAsyncClient();
+    if (documents == nullptr || aClient == nullptr) return false;
+
+    Firestore::Parent parent(projectId, "");
+    // Field-scoped mask, so configVersion and everything the app owns are left
+    // untouched - see the note on the declaration.
+    DocumentMask updateMask("brightness");
+    DocumentMask mask;
+    Precondition precondition;
+    PatchDocumentOptions patchOptions(updateMask, mask, precondition);
+    Document<Values::Value> doc;
+    doc.add("brightness", Values::Value(Values::IntegerValue(brightness)));
+
+    String path = getDevicePath();
+    documents->patch(*aClient, parent, path, patchOptions, doc);
+    if (aClient->lastError().code() != 0) {
+        Serial.print(F("[Firestore] updateBrightness failed, code="));
+        Serial.println(aClient->lastError().code());
+        return false;
+    }
+    return true;
 }
 
 bool FirestoreRepo::claimDevice(const String& uid) {

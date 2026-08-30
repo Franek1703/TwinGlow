@@ -83,6 +83,14 @@ public:
     bool getDeviceDoc(DeviceDoc& out);
     bool createDeviceDoc(const String& fwVersion);
     bool updateDeviceCapability(bool bme680Present);
+
+    // Pushes a brightness set with the physical +/- buttons back up, so the
+    // app's slider shows what the panel is actually running at.
+    //
+    // Patches the single field: bumping configVersion here would make the
+    // device's own write look like an owner edit and trigger a full screen and
+    // asset reload on the next poll.
+    bool updateBrightness(uint8_t brightness);
     
     // Device claiming
     bool claimDevice(const String& uid);
