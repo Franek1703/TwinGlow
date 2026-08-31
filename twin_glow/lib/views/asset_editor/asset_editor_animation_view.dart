@@ -22,11 +22,16 @@ import '../../services/firebase/firebase_repository_impl.dart';
 
 class AssetEditorAnimationView extends StatefulWidget {
   final String? assetId;
+
+  /// Frames handed over by animation import. Only ever seeds a new asset.
+  final List<AnimationFrameModel>? initialFrames;
+
   final FirebaseRepository? repository;
 
   const AssetEditorAnimationView({
     super.key,
     this.assetId,
+    this.initialFrames,
     this.repository,
   });
 
@@ -76,6 +81,7 @@ class _AssetEditorAnimationViewState extends State<AssetEditorAnimationView> {
             firebaseRepo,
             userId,
             asset: snapshot.data,
+            initialFrames: widget.initialFrames,
           ),
           child: BlocBuilder<AnimationEditorCubit, AnimationEditorState>(
             builder: (context, state) => _buildEditor(context, state),
@@ -132,8 +138,9 @@ class _AssetEditorAnimationViewState extends State<AssetEditorAnimationView> {
                 key: ValueKey(
                   'frame-${state.selectedFrameIndex}-${state.gridRevision}',
                 ),
-                initialData:
-                    AnimationFrameModel.copyGrid(state.selectedFrame.pixels),
+                initialData: AnimationFrameModel.copyGrid(
+                  state.selectedFrame.pixels,
+                ),
                 currentColor: state.currentColor,
                 currentTool: state.currentTool,
                 onDataChanged: cubit.updatePixelData,
@@ -173,7 +180,9 @@ class _AssetEditorAnimationViewState extends State<AssetEditorAnimationView> {
                 text: widget.assetId == null
                     ? 'Create Animation'
                     : 'Save Animation',
-                onPressed: state.isLoading ? null : () => _saveAndClose(context),
+                onPressed: state.isLoading
+                    ? null
+                    : () => _saveAndClose(context),
                 isLoading: state.isLoading,
                 fullWidth: true,
                 size: AppButtonSize.lg,
@@ -277,7 +286,7 @@ class _AssetEditorAnimationViewState extends State<AssetEditorAnimationView> {
                 tooltip: state.canDeleteFrame
                     ? 'Delete frame'
                     : 'An animation needs at least '
-                        '${AnimationCodec.minFrames} frames',
+                          '${AnimationCodec.minFrames} frames',
                 icon: const Icon(Icons.delete_outline),
                 color: AppColors.statusError,
                 onPressed: state.canDeleteFrame
@@ -307,8 +316,9 @@ class _AssetEditorAnimationViewState extends State<AssetEditorAnimationView> {
                         width: 72.w,
                         padding: EdgeInsets.all(4.w),
                         decoration: BoxDecoration(
-                          borderRadius:
-                              BorderRadius.circular(AppSpacing.radiusLg),
+                          borderRadius: BorderRadius.circular(
+                            AppSpacing.radiusLg,
+                          ),
                           border: Border.all(
                             color: isSelected
                                 ? AppColors.accentPurple
@@ -368,11 +378,12 @@ class _AssetEditorAnimationViewState extends State<AssetEditorAnimationView> {
                 key: const Key('animation_duration_minus'),
                 tooltip: 'Shorter by ${AnimationCodec.durationStepMs}ms',
                 icon: const Icon(Icons.remove_circle_outline),
-                onPressed: duration - AnimationCodec.durationStepMs >=
+                onPressed:
+                    duration - AnimationCodec.durationStepMs >=
                         AnimationCodec.minDurationMs
                     ? () => cubit.setFrameDuration(
-                          duration - AnimationCodec.durationStepMs,
-                        )
+                        duration - AnimationCodec.durationStepMs,
+                      )
                     : null,
               ),
               Expanded(
@@ -391,11 +402,12 @@ class _AssetEditorAnimationViewState extends State<AssetEditorAnimationView> {
                 key: const Key('animation_duration_plus'),
                 tooltip: 'Longer by ${AnimationCodec.durationStepMs}ms',
                 icon: const Icon(Icons.add_circle_outline),
-                onPressed: duration + AnimationCodec.durationStepMs <=
+                onPressed:
+                    duration + AnimationCodec.durationStepMs <=
                         AnimationCodec.maxDurationMs
                     ? () => cubit.setFrameDuration(
-                          duration + AnimationCodec.durationStepMs,
-                        )
+                        duration + AnimationCodec.durationStepMs,
+                      )
                     : null,
               ),
             ],
@@ -404,8 +416,9 @@ class _AssetEditorAnimationViewState extends State<AssetEditorAnimationView> {
             SizedBox(height: AppSpacing.sm),
             Text(
               error,
-              style: AppTypography.small(context)
-                  .copyWith(color: AppColors.statusError),
+              style: AppTypography.small(
+                context,
+              ).copyWith(color: AppColors.statusError),
             ),
           ],
         ],
@@ -477,8 +490,9 @@ class _AssetEditorAnimationViewState extends State<AssetEditorAnimationView> {
           Expanded(
             child: Text(
               error,
-              style: AppTypography.small(context)
-                  .copyWith(color: AppColors.statusError),
+              style: AppTypography.small(
+                context,
+              ).copyWith(color: AppColors.statusError),
             ),
           ),
         ],

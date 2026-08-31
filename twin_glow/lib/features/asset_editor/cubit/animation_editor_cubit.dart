@@ -85,25 +85,40 @@ class AnimationEditorCubit extends Cubit<AnimationEditorState> {
     this.firebaseRepository,
     this.userId, {
     AssetModel? asset,
-  })  : isNewAsset = asset == null,
-        super(
-          AnimationEditorState(
-            asset: asset,
-            frames: _initialFrames(asset),
-            name: asset?.name ?? '',
-            tags: asset?.tags ?? const [],
-          ),
-        );
+    List<AnimationFrameModel>? initialFrames,
+  }) : isNewAsset = asset == null,
+       super(
+         AnimationEditorState(
+           asset: asset,
+           frames: _initialFrames(asset, initialFrames),
+           name: asset?.name ?? '',
+           tags: asset?.tags ?? const [],
+         ),
+       );
 
   /// A new animation opens on two blank frames, the documented minimum, so the
   /// timeline controls make sense before anything is drawn.
   ///
+  /// [initialFrames] seeds a *new* asset from an import and is transient: it
+  /// is deep-copied in, never stored, and an existing asset always wins, so
+  /// re-entering the editor on a saved animation can never show import
+  /// leftovers.
+  ///
   /// An existing asset typed ANIMATION but holding a single image - the shape
   /// left by the old stub editor - is padded the same way rather than refused.
-  static List<AnimationFrameModel> _initialFrames(AssetModel? asset) {
+  static List<AnimationFrameModel> _initialFrames(
+    AssetModel? asset,
+    List<AnimationFrameModel>? initialFrames,
+  ) {
     final existing = asset?.frames;
     if (existing != null && existing.length >= AnimationCodec.minFrames) {
       return existing.map((frame) => frame.deepCopy()).toList();
+    }
+
+    if (asset == null &&
+        initialFrames != null &&
+        initialFrames.length >= AnimationCodec.minFrames) {
+      return initialFrames.map((frame) => frame.deepCopy()).toList();
     }
 
     final seed = asset?.pixelData;
@@ -120,10 +135,7 @@ class AnimationEditorCubit extends Cubit<AnimationEditorState> {
       ];
     }
 
-    return [
-      AnimationFrameModel.blank(),
-      AnimationFrameModel.blank(),
-    ];
+    return [AnimationFrameModel.blank(), AnimationFrameModel.blank()];
   }
 
   List<AnimationFrameModel> _copyFrames() =>
@@ -133,8 +145,8 @@ class AnimationEditorCubit extends Cubit<AnimationEditorState> {
   /// comes *from* the pixel editor, which already holds the new grid.
   void updatePixelData(List<List<int>> data) {
     final frames = _copyFrames();
-    frames[state.selectedFrameIndex] =
-        frames[state.selectedFrameIndex].copyWith(pixels: data);
+    frames[state.selectedFrameIndex] = frames[state.selectedFrameIndex]
+        .copyWith(pixels: data);
     emit(state.copyWith(frames: frames, clearError: true));
   }
 
@@ -189,8 +201,8 @@ class AnimationEditorCubit extends Cubit<AnimationEditorState> {
     final selected = state.selectedFrameIndex >= frames.length
         ? frames.length - 1
         : (state.selectedFrameIndex > index
-            ? state.selectedFrameIndex - 1
-            : state.selectedFrameIndex);
+              ? state.selectedFrameIndex - 1
+              : state.selectedFrameIndex);
     emit(
       state.copyWith(
         frames: frames,
@@ -236,8 +248,8 @@ class AnimationEditorCubit extends Cubit<AnimationEditorState> {
 
   void setFrameDuration(int durationMs) {
     final frames = _copyFrames();
-    frames[state.selectedFrameIndex] =
-        frames[state.selectedFrameIndex].copyWith(durationMs: durationMs);
+    frames[state.selectedFrameIndex] = frames[state.selectedFrameIndex]
+        .copyWith(durationMs: durationMs);
     emit(state.copyWith(frames: frames, clearError: true));
   }
 
@@ -251,7 +263,8 @@ class AnimationEditorCubit extends Cubit<AnimationEditorState> {
     return null;
   }
 
-  void setCurrentColor(Color color) => emit(state.copyWith(currentColor: color));
+  void setCurrentColor(Color color) =>
+      emit(state.copyWith(currentColor: color));
 
   void setCurrentTool(DrawingTool tool) =>
       emit(state.copyWith(currentTool: tool));
@@ -293,8 +306,8 @@ class AnimationEditorCubit extends Cubit<AnimationEditorState> {
 
   void _replaceSelectedGrid(List<List<int>> grid) {
     final frames = _copyFrames();
-    frames[state.selectedFrameIndex] =
-        frames[state.selectedFrameIndex].copyWith(pixels: grid);
+    frames[state.selectedFrameIndex] = frames[state.selectedFrameIndex]
+        .copyWith(pixels: grid);
     emit(
       state.copyWith(
         frames: frames,

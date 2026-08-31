@@ -14,11 +14,13 @@ import '../../views/screen_editor/screen_editor_image_view.dart';
 import '../../views/screen_editor/screen_editor_sensor_view.dart';
 import '../../views/asset_editor/asset_editor_image_view.dart';
 import '../../views/asset_editor/asset_editor_animation_view.dart';
+import '../../views/animation_import/import_animation_view.dart';
 import '../../views/image_import/import_image_view.dart';
 import '../../views/pairing/pairing_management_view.dart';
 import '../../views/profile/profile_view.dart';
 import '../../views/device_config/device_config_view.dart';
 import '../../views/screen_creation/screen_creation_view.dart';
+import '../core/models/asset_model.dart';
 import '../core/models/screen_model.dart';
 import '../services/local/onboarding_status_store.dart';
 
@@ -162,7 +164,15 @@ GoRouter createAppRouter(OnboardingStatusStore onboardingStatusStore) =>
         ),
         GoRoute(
           path: '/asset/create/animation',
-          builder: (context, state) => const AssetEditorAnimationView(),
+          builder: (context, state) => AssetEditorAnimationView(
+            initialFrames: state.extra is List<AnimationFrameModel>
+                ? state.extra! as List<AnimationFrameModel>
+                : null,
+          ),
+        ),
+        GoRoute(
+          path: '/asset/import/animation',
+          builder: (context, state) => const ImportAnimationView(),
         ),
         GoRoute(
           path: '/asset/edit/:id',
