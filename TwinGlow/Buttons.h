@@ -27,6 +27,12 @@ enum class ButtonId {
 
 /**
  * Button state
+ *
+ * firedType is the strongest event already reported for the hold in progress.
+ * A held button crosses its threshold on every 10 ms pass through update(), so
+ * without this the press type was re-armed continuously and a single 3-second
+ * hold delivered hundreds of LONG events. It is reset when the button goes down
+ * and gates both the while-held checks and the type detected on release.
  */
 struct ButtonState {
     ButtonId id;
@@ -34,6 +40,7 @@ struct ButtonState {
     bool isPressed;
     unsigned long pressStartMs;
     unsigned long lastChangeMs;
+    ButtonPressType firedType;
 };
 
 /**

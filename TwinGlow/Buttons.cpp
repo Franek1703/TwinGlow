@@ -1,11 +1,11 @@
 #include "Buttons.h"
 
 Buttons::Buttons() {
-    buttons[0] = {ButtonId::PREV, ButtonPressType::NONE, false, 0, 0};
-    buttons[1] = {ButtonId::NEXT, ButtonPressType::NONE, false, 0, 0};
-    buttons[2] = {ButtonId::BRIGHT_DOWN, ButtonPressType::NONE, false, 0, 0};
-    buttons[3] = {ButtonId::BRIGHT_UP, ButtonPressType::NONE, false, 0, 0};
-    buttons[4] = {ButtonId::ACTION, ButtonPressType::NONE, false, 0, 0};
+    buttons[0] = {ButtonId::PREV, ButtonPressType::NONE, false, 0, 0, ButtonPressType::NONE};
+    buttons[1] = {ButtonId::NEXT, ButtonPressType::NONE, false, 0, 0, ButtonPressType::NONE};
+    buttons[2] = {ButtonId::BRIGHT_DOWN, ButtonPressType::NONE, false, 0, 0, ButtonPressType::NONE};
+    buttons[3] = {ButtonId::BRIGHT_UP, ButtonPressType::NONE, false, 0, 0, ButtonPressType::NONE};
+    buttons[4] = {ButtonId::ACTION, ButtonPressType::NONE, false, 0, 0, ButtonPressType::NONE};
 }
 
 void Buttons::begin() {
@@ -60,25 +60,41 @@ void Buttons::updateButton(ButtonId button) {
         state.isPressed = currentState;
         
         if (state.isPressed) {
-            // Button pressed
+            // Button pressed - nothing reported for this hold yet
             state.pressStartMs = now;
             state.pressType = ButtonPressType::NONE;
+            state.firedType = ButtonPressType::NONE;
         } else {
-            // Button released - detect press type
-            state.pressType = detectPressType(state);
+            // Button released. A hold that already reported LONG or VERY_LONG
+            // must not report again here, or every long press would deliver a
+            // second event on release.
+            if (state.firedType == ButtonPressType::NONE) {
+                state.pressType = detectPressType(state);
+            }
+            state.firedType = ButtonPressType::NONE;
         }
     } else if (state.isPressed) {
-        // Button still pressed - check for long/very long
+        // Button still pressed - report each threshold once, on the pass that
+        // first crosses it. VERY_LONG can still follow a LONG that has already
+        // been reported for the same hold; neither repeats.
         unsigned long pressDuration = now - state.pressStartMs;
         
         if (pressDuration >= BUTTON_VERY_LONG_PRESS_MS) {
-            state.pressType = ButtonPressType::VERY_LONG;
+            if (state.firedType != ButtonPressType::VERY_LONG) {
+                state.pressType = ButtonPressType::VERY_LONG;
+                state.firedType = ButtonPressType::VERY_LONG;
+            }
         } else if (pressDuration >= BUTTON_LONG_PRESS_MS) {
-            state.pressType = ButtonPressType::LONG;
+            if (state.firedType == ButtonPressType::NONE) {
+                state.pressType = ButtonPressType::LONG;
+                state.firedType = ButtonPressType::LONG;
+            }
         }
     }
 }
 
+// Press type for a completed press, from its duration. Only called on release,
+// and only for a hold that reported nothing while it was down.
 ButtonPressType Buttons::detectPressType(ButtonState& state) {
     if (!state.isPressed) {
         unsigned long pressDuration = millis() - state.pressStartMs;
