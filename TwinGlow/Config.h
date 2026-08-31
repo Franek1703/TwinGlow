@@ -111,13 +111,29 @@
 // real red screen.
 #define ASSET_ERROR_COLOR 0x800000       // Dim red
 
-// The panel is mounted turned, so the procedural screens transform as they
-// draw. Assets are authored in plain orientation (x = column, y = row) and
-// need the same treatment, or an IMAGE lands 90 degrees off from the CLOCK.
-//   1 = transpose, setPixel(y, x)          - matches RenderClock's digits
-//   0 = 90-degree rotation, setPixel(W-1-y, x) - matches its colon/seconds bar
-// Those two differ by a mirror. Switch to 0 if images come out mirrored.
-#define ASSET_ORIENT_TRANSPOSE 1
+// The panel is mounted turned, so everything authored in plain screen
+// coordinates (x = column, y = row, origin top-left) has to be transformed on
+// its way to the LEDs. That transform lives in exactly one place -
+// MatrixDriver::setPixelOriented() - and every renderer draws through it. The
+// clock digits, the colon, the seconds bar, the sensor text and image assets
+// each used to carry their own inline version, which is how they drifted into
+// mutually mirrored frames.
+//   PANEL_ORIENT_NONE       (x, y)           panel mounted upright
+//   PANEL_ORIENT_ROT90      (W-1-y, x)       90 degrees
+//   PANEL_ORIENT_ROT180     (W-1-x, H-1-y)
+//   PANEL_ORIENT_ROT270     (y, H-1-x)
+//   PANEL_ORIENT_TRANSPOSE  (y, x)           ROT90 mirrored - the mapping the
+//                                            digits and image assets have used
+// This one value turns the whole display: change it if the screen comes out
+// rotated, and pick the mirrored partner of your rotation if it comes out
+// mirrored (TRANSPOSE mirrors ROT90).
+#define PANEL_ORIENT_NONE      0
+#define PANEL_ORIENT_ROT90     1
+#define PANEL_ORIENT_ROT180    2
+#define PANEL_ORIENT_ROT270    3
+#define PANEL_ORIENT_TRANSPOSE 4
+
+#define PANEL_ORIENTATION PANEL_ORIENT_TRANSPOSE
 
 // Screen playlist rotation
 #define SCREEN_AUTO_ROTATE 0             // 1 = cycle screens automatically, 0 = buttons only

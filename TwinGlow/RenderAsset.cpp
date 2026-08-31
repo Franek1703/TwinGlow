@@ -1,17 +1,5 @@
 #include "RenderAsset.h"
 
-// Map an authored pixel (x = column, y = row) onto the panel's mounted
-// orientation. The procedural screens each do this inline as they draw;
-// assets previously did not, so an IMAGE appeared turned 90 degrees against
-// the CLOCK. See ASSET_ORIENT_TRANSPOSE in Config.h.
-static inline void setOriented(MatrixDriver* matrix, uint8_t x, uint8_t y, uint32_t color) {
-#if ASSET_ORIENT_TRANSPOSE
-    matrix->setPixel(y, x, color);
-#else
-    matrix->setPixel((uint8_t)(MATRIX_WIDTH - 1 - y), x, color);
-#endif
-}
-
 RenderAsset::RenderAsset(MatrixDriver* mat)
     : matrix(mat), frameShownAtMs(0), currentFrameIndex(0),
       currentAnimation(nullptr), needsRestart(true) {
@@ -113,7 +101,7 @@ void RenderAsset::paintFrameBuffer(uint32_t bgColor) {
         if (frameBuffer[i] == 0) continue; // off: leave the background showing
         uint8_t x = i % MATRIX_WIDTH;
         uint8_t y = i / MATRIX_WIDTH;
-        setOriented(matrix, x, y, matrix->color(frameBuffer[i]));
+        matrix->setPixelOriented(x, y, matrix->color(frameBuffer[i]));
     }
     matrix->show();
 }
@@ -126,6 +114,6 @@ void RenderAsset::renderPixels(const std::vector<Pixel>& pixels, uint32_t bgColo
     for (const auto& pixel : pixels) {
         uint8_t x = pixel.index % MATRIX_WIDTH;
         uint8_t y = pixel.index / MATRIX_WIDTH;
-        setOriented(matrix, x, y, matrix->color(pixel.color));
+        matrix->setPixelOriented(x, y, matrix->color(pixel.color));
     }
 }

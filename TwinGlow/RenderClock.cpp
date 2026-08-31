@@ -94,7 +94,10 @@ void RenderClock::renderBigHHMM(int hour, int minute, uint32_t fgColor, uint32_t
     // First digit starts at x=0, second at x=3, colon at x=6, minutes at x=8 and x=11
     drawDigit(0, 4, hour / 10, fgColor);
     drawDigit(4, 4, hour % 10, fgColor);
-    drawColon(7, 5, accentColor, blinkColon);
+    // y=6 centres the two 2x2 segments (rows 6-7 and 9-10) on the digits'
+    // 9-row band (rows 4-12). The old y=5 was tuned against the mirrored frame
+    // drawColon() used to rotate into, where it came out one row lower.
+    drawColon(7, 6, accentColor, blinkColon);
     drawDigit(9, 4, minute / 10, fgColor);
     drawDigit(13, 4, minute % 10, fgColor);
 }
@@ -104,7 +107,10 @@ void RenderClock::renderHHMMPlusSecondsBar(int hour, int minute, int second, uin
     // First digit starts at x=0, second at x=3, colon at x=6, minutes at x=8 and x=11
     drawDigit(0, 4, hour / 10, fgColor);
     drawDigit(4, 4, hour % 10, fgColor);
-    drawColon(7, 5, accentColor, blinkColon);
+    // y=6 centres the two 2x2 segments (rows 6-7 and 9-10) on the digits'
+    // 9-row band (rows 4-12). The old y=5 was tuned against the mirrored frame
+    // drawColon() used to rotate into, where it came out one row lower.
+    drawColon(7, 6, accentColor, blinkColon);
     drawDigit(9, 4, minute / 10, fgColor);
     drawDigit(13, 4, minute % 10, fgColor);
     
@@ -116,18 +122,18 @@ void RenderClock::renderMinimal(int hour, int minute, uint32_t fgColor, uint32_t
     // Smaller digits
     drawDigit(2, 6, hour / 10, fgColor);
     drawDigit(6, 6, hour % 10, fgColor);
-    drawColon(10, 7, accentColor, blinkColon);
+    drawColon(10, 8, accentColor, blinkColon); // centred on the digits' rows 6-14
     drawDigit(12, 6, minute / 10, fgColor);
     drawDigit(14, 6, minute % 10, fgColor);
 }
 
 void RenderClock::drawPatternPixel(uint8_t patternX, uint8_t patternY, uint8_t baseX, uint8_t baseY, uint32_t color) {
-    // Calculate absolute position
+    // Screen coordinates only. The panel's mounted orientation is applied once,
+    // by setPixelOriented(), for every renderer.
     uint8_t absX = baseX + patternX;
     uint8_t absY = baseY + patternY;
     
-    // Draw pixel at rotated position
-    matrix->setPixel(absY, absX, color);
+    matrix->setPixelOriented(absX, absY, color);
 }
 
 void RenderClock::drawPatternDigit(uint8_t x, uint8_t y, uint8_t digit, uint32_t color) {
@@ -164,33 +170,23 @@ void RenderClock::drawColon(uint8_t x, uint8_t y, uint32_t color, bool blink) {
     // Draw colon as two 2x2 pixel segments (no spacing)
     // Top segment: 2x2 pixels at (x, y) to (x+1, y+1)
     // Bottom segment: 2x2 pixels at (x, y+3) to (x+1, y+4)
+    // These used to carry their own 90-degree rotation, which is a mirror of the
+    // one the digits used - the colon landed a pixel off and flipped.
     for (uint8_t dx = 0; dx < 2; dx++) {
         for (uint8_t dy = 0; dy < 2; dy++) {
-            // Top segment
-            uint8_t absX = x + dx;
-            uint8_t absY = y + dy;
-            uint8_t rotatedX = (uint8_t)(MATRIX_WIDTH - 1 - absY);
-            uint8_t rotatedY = absX;
-            matrix->setPixel(rotatedX, rotatedY, color);
-            
-            // Bottom segment
-            absY = y + 3 + dy;
-            rotatedX = (uint8_t)(MATRIX_WIDTH - 1 - absY);
-            rotatedY = absX;
-            matrix->setPixel(rotatedX, rotatedY, color);
+            matrix->setPixelOriented(x + dx, y + dy, color);
+            matrix->setPixelOriented(x + dx, y + 3 + dy, color);
         }
     }
 }
 
 void RenderClock::drawSecondsBar(uint8_t seconds, uint32_t color) {
-    // Draw progress bar at bottom (row 15)
-    // After rotation: bottom row becomes leftmost column
-    int pixels = (seconds * 16) / 60;
-    for (int i = 0; i < pixels && i < 16; i++) {
-        // Original: (i, 15) -> Rotated: (15-15, i) = (0, i)
-        uint8_t rotX = 0;
-        uint8_t rotY = (uint8_t)i;
-        matrix->setPixel(rotX, rotY, color);
+    // Progress bar along the bottom row of the screen. It used to hardcode the
+    // panel column its own rotation put that row in, which was the opposite edge
+    // from the one the digits' mapping implies.
+    int pixels = (seconds * MATRIX_WIDTH) / 60;
+    for (int i = 0; i < pixels && i < MATRIX_WIDTH; i++) {
+        matrix->setPixelOriented((uint8_t)i, MATRIX_HEIGHT - 1, color);
     }
 }
 
@@ -202,7 +198,7 @@ void RenderClock::draw7Segment(uint8_t x, uint8_t y, uint8_t digit, uint32_t col
     // Clear digit area first
     for (int i = 0; i < 3; i++) {
         for (int j = 0; j < 5; j++) {
-            matrix->setPixel(x + i, y + j, 0); // Black
+            matrix->setPixelOriented(x + i, y + j, 0); // Black
         }
     }
     
@@ -231,28 +227,28 @@ void RenderClock::draw7Segment(uint8_t x, uint8_t y, uint8_t digit, uint32_t col
     
     // Draw segments
     if (segments[0]) { // Top
-        for (int i = 0; i < 3; i++) matrix->setPixel(x + i, y, color);
+        for (int i = 0; i < 3; i++) matrix->setPixelOriented(x + i, y, color);
     }
     if (segments[1]) { // Top left
-        matrix->setPixel(x, y + 1, color);
-        matrix->setPixel(x, y + 2, color);
+        matrix->setPixelOriented(x, y + 1, color);
+        matrix->setPixelOriented(x, y + 2, color);
     }
     if (segments[2]) { // Top right
-        matrix->setPixel(x + 2, y + 1, color);
-        matrix->setPixel(x + 2, y + 2, color);
+        matrix->setPixelOriented(x + 2, y + 1, color);
+        matrix->setPixelOriented(x + 2, y + 2, color);
     }
     if (segments[3]) { // Middle
-        for (int i = 0; i < 3; i++) matrix->setPixel(x + i, y + 2, color);
+        for (int i = 0; i < 3; i++) matrix->setPixelOriented(x + i, y + 2, color);
     }
     if (segments[4]) { // Bottom left
-        matrix->setPixel(x, y + 3, color);
-        matrix->setPixel(x, y + 4, color);
+        matrix->setPixelOriented(x, y + 3, color);
+        matrix->setPixelOriented(x, y + 4, color);
     }
     if (segments[5]) { // Bottom right
-        matrix->setPixel(x + 2, y + 3, color);
-        matrix->setPixel(x + 2, y + 4, color);
+        matrix->setPixelOriented(x + 2, y + 3, color);
+        matrix->setPixelOriented(x + 2, y + 4, color);
     }
     if (segments[6]) { // Bottom
-        for (int i = 0; i < 3; i++) matrix->setPixel(x + i, y + 4, color);
+        for (int i = 0; i < 3; i++) matrix->setPixelOriented(x + i, y + 4, color);
     }
 }

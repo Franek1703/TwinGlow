@@ -103,6 +103,30 @@ void MatrixDriver::setPixel(uint8_t x, uint8_t y, uint8_t r, uint8_t g, uint8_t 
     setPixel(x, y, color(r, g, b));
 }
 
+void MatrixDriver::setPixelOriented(uint8_t x, uint8_t y, uint32_t color) {
+    // Bounds-checked in screen space, before the transform, so an out-of-range
+    // coordinate cannot wrap into a valid panel pixel on the way through.
+    if (x >= MATRIX_WIDTH || y >= MATRIX_HEIGHT) return;
+
+#if PANEL_ORIENTATION == PANEL_ORIENT_NONE
+    setPixel(x, y, color);
+#elif PANEL_ORIENTATION == PANEL_ORIENT_ROT90
+    setPixel((uint8_t)(MATRIX_WIDTH - 1 - y), x, color);
+#elif PANEL_ORIENTATION == PANEL_ORIENT_ROT180
+    setPixel((uint8_t)(MATRIX_WIDTH - 1 - x), (uint8_t)(MATRIX_HEIGHT - 1 - y), color);
+#elif PANEL_ORIENTATION == PANEL_ORIENT_ROT270
+    setPixel(y, (uint8_t)(MATRIX_HEIGHT - 1 - x), color);
+#elif PANEL_ORIENTATION == PANEL_ORIENT_TRANSPOSE
+    setPixel(y, x, color);
+#else
+#error "PANEL_ORIENTATION must be one of PANEL_ORIENT_NONE/ROT90/ROT180/ROT270/TRANSPOSE"
+#endif
+}
+
+void MatrixDriver::setPixelOriented(uint8_t x, uint8_t y, uint8_t r, uint8_t g, uint8_t b) {
+    setPixelOriented(x, y, color(r, g, b));
+}
+
 void MatrixDriver::clear() {
     strip.clear();
     strip.show();

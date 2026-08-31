@@ -125,7 +125,7 @@ void RenderSensor::drawText(int x, uint8_t y, const String& text, uint32_t color
                     if (g[row * PixelFont::GLYPH_W + col] == 1) {
                         int px = cursor + col;
                         if (px >= 0 && px < MATRIX_WIDTH) {
-                            matrix->setPixel((uint8_t)px, y + row, color);
+                            matrix->setPixelOriented((uint8_t)px, y + row, color);
                         }
                     }
                 }
@@ -155,7 +155,7 @@ void RenderSensor::drawBigDigits(int x, uint8_t y, const String& digits, uint32_
                         if (pattern[row * PixelFont::DIGIT_BIG_W + col] == 1) {
                             int px = cursor + col;
                             if (px >= 0 && px < MATRIX_WIDTH) {
-                                matrix->setPixel((uint8_t)px, y + row, color);
+                                matrix->setPixelOriented((uint8_t)px, y + row, color);
                             }
                         }
                     }
@@ -171,7 +171,7 @@ void RenderSensor::drawBar(uint8_t x, uint8_t y, uint8_t width, uint8_t height, 
     int fillPixels = (int)(width * fill + 0.5f);
     for (int i = 0; i < fillPixels && i < width; i++) {
         for (int j = 0; j < height && (y + j) < MATRIX_HEIGHT; j++) {
-            matrix->setPixel(x + i, y + j, color);
+            matrix->setPixelOriented(x + i, y + j, color);
         }
     }
 }

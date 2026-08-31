@@ -17,9 +17,14 @@ public:
     void setBrightness(uint8_t brightness);
     uint8_t getBrightness() const { return currentBrightness; }
     
-    // Pixel operations
+    // Pixel operations. setPixel() is panel space - the raw LED grid, used by
+    // the test patterns. Renderers draw in screen space (x = column, y = row,
+    // origin top-left) and go through setPixelOriented(), which applies
+    // PANEL_ORIENTATION so every screen lands in the same frame.
     void setPixel(uint8_t x, uint8_t y, uint32_t color);
     void setPixel(uint8_t x, uint8_t y, uint8_t r, uint8_t g, uint8_t b);
+    void setPixelOriented(uint8_t x, uint8_t y, uint32_t color);
+    void setPixelOriented(uint8_t x, uint8_t y, uint8_t r, uint8_t g, uint8_t b);
     void clear();
     void show();
     
