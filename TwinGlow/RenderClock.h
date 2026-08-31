@@ -21,16 +21,17 @@ public:
 private:
     MatrixDriver* matrix;
     
-    void renderBigHHMM(int hour, int minute, uint32_t fgColor, uint32_t accentColor, uint32_t bgColor, bool blinkColon);
-    void renderHHMMPlusSecondsBar(int hour, int minute, int second, uint32_t fgColor, uint32_t accentColor, uint32_t bgColor, bool blinkColon);
-    void renderMinimal(int hour, int minute, uint32_t fgColor, uint32_t accentColor, uint32_t bgColor, bool blinkColon);
+    // suppressLeadingZero blanks an hours-tens digit of 0, for 12-hour formats.
+    void renderBigHHMM(int hour, int minute, uint32_t fgColor, uint32_t accentColor, uint32_t bgColor, bool blinkColon, bool suppressLeadingZero);
+    void renderHHMMPlusSecondsBar(int hour, int minute, int second, uint32_t fgColor, uint32_t accentColor, uint32_t bgColor, bool blinkColon, bool suppressLeadingZero);
+    void renderMinimal(int hour, int minute, uint32_t fgColor, uint32_t accentColor, uint32_t bgColor, bool blinkColon, bool suppressLeadingZero);
     
-    void drawDigit(uint8_t x, uint8_t y, uint8_t digit, uint32_t color);
+    void drawDigit(uint8_t x, uint8_t y, uint8_t digit, uint32_t color, bool suppressLeadingZero = false);
     void drawColon(uint8_t x, uint8_t y, uint32_t color, bool blink);
     void drawSecondsBar(uint8_t seconds, uint32_t color);
     
     // Pattern-based digit rendering (3x9 patterns) with rotation support
-    void drawPatternDigit(uint8_t x, uint8_t y, uint8_t digit, uint32_t color);
+    void drawPatternDigit(uint8_t x, uint8_t y, uint8_t digit, uint32_t color, bool suppressLeadingZero = false);
     void drawPatternPixel(uint8_t patternX, uint8_t patternY, uint8_t baseX, uint8_t baseY, uint32_t color);
     
     // 7-segment digit patterns (simplified for 16x16) - legacy

@@ -64,8 +64,8 @@ static bool parsePackedPixels(const char* packed, std::vector<Pixel>& out,
 // frames[0].delta is the whole first frame, frames[i].delta is the change from
 // frame i-1.
 static bool parsePackedAnimation(JsonObject doc, CachedAsset& asset) {
-    if (!doc.containsKey("basePixelsPacked") ||
-        !doc.containsKey("frameDurationsMs")) {
+    if (doc["basePixelsPacked"].isNull() ||
+        doc["frameDurationsMs"].isNull()) {
         Serial.println(F("[AssetCache] packed animation missing base or durations"));
         return false;
     }
@@ -88,7 +88,7 @@ static bool parsePackedAnimation(JsonObject doc, CachedAsset& asset) {
         Serial.println(frameCount);
         return false;
     }
-    if (doc.containsKey("frameCount") &&
+    if (!doc["frameCount"].isNull() &&
         (size_t)doc["frameCount"].as<int>() != frameCount) {
         Serial.println(F("[AssetCache] frameCount disagrees with frameDurationsMs"));
         return false;
@@ -135,7 +135,7 @@ static bool parseLegacyAnimation(JsonObject doc, CachedAsset& asset) {
     uint32_t base[256];
     memset(base, 0, sizeof(base));
 
-    if (doc.containsKey("basePixels")) {
+    if (!doc["basePixels"].isNull()) {
         JsonArray baseArray = doc["basePixels"];
         for (JsonArray pixelArray : baseArray) {
             if (pixelArray.size() >= 2) {
@@ -146,7 +146,7 @@ static bool parseLegacyAnimation(JsonObject doc, CachedAsset& asset) {
         }
     }
 
-    if (!doc.containsKey("frames")) {
+    if (doc["frames"].isNull()) {
         Serial.println(F("[AssetCache] legacy animation has no frames"));
         return false;
     }
@@ -167,7 +167,7 @@ static bool parseLegacyAnimation(JsonObject doc, CachedAsset& asset) {
         uint32_t current[256];
         memcpy(current, base, sizeof(base));
 
-        if (frameObj.containsKey("pixels")) {
+        if (!frameObj["pixels"].isNull()) {
             for (JsonArray pixelArray : frameObj["pixels"].as<JsonArray>()) {
                 if (pixelArray.size() >= 2) {
                     int index = pixelArray[0].as<int>();
@@ -178,7 +178,7 @@ static bool parseLegacyAnimation(JsonObject doc, CachedAsset& asset) {
         }
 
         AnimationFrame frame;
-        int delay = frameObj.containsKey("delayMs") ? frameObj["delayMs"].as<int>() : 0;
+        int delay = !frameObj["delayMs"].isNull() ? frameObj["delayMs"].as<int>() : 0;
         if (delay < (int)ANIM_MIN_DURATION_MS) delay = ANIM_MIN_DURATION_MS;
         if (delay > (int)ANIM_MAX_DURATION_MS) delay = ANIM_MAX_DURATION_MS;
         frame.durationMs = (uint16_t)delay;
@@ -271,11 +271,12 @@ bool AssetCache::parseAsset(const String& assetId, const String& jsonStr, Cached
     asset.pixels.clear();
     asset.frames.clear();
 
-    // Sized from the payload. The fixed 8192 this used to allocate could not
-    // hold an animation carrying ANIM_MAX_PACKED_CHARS of pixel data - the
-    // parse failed with NoMemory and the screen rendered as a load error - but
-    // a fixed 16384 wastes most of that on an ordinary image.
-    DynamicJsonDocument doc(jsonStr.length() + 2048);
+    // ArduinoJson 7: the document grows on demand, so there is no capacity to
+    // get wrong. The fixed 8192 this used to carry could not hold an animation
+    // of ANIM_MAX_PACKED_CHARS - it failed with NoMemory and the screen showed
+    // as a load error - while a fixed 16384 wasted most of itself on an
+    // ordinary image. Pressure now surfaces as heap exhaustion instead.
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, jsonStr);
 
     if (error) {
@@ -287,18 +288,18 @@ bool AssetCache::parseAsset(const String& assetId, const String& jsonStr, Cached
     JsonObject root = doc.as<JsonObject>();
 
     // Parse type
-    if (root.containsKey("type")) {
+    if (!root["type"].isNull()) {
         asset.type = root["type"].as<String>();
     }
 
     // Parse encoding
-    if (root.containsKey("encoding")) {
+    if (!root["encoding"].isNull()) {
         asset.encoding = root["encoding"].as<String>();
     }
 
     // Parse based on encoding
     if (asset.encoding == "SPARSE_PACKED_V1") {
-        if (!root.containsKey("pixelsPacked")) {
+        if (root["pixelsPacked"].isNull()) {
             Serial.println(F("[AssetCache] SPARSE_PACKED_V1 asset has no pixelsPacked field"));
             return false;
         }
@@ -306,7 +307,7 @@ bool AssetCache::parseAsset(const String& assetId, const String& jsonStr, Cached
             return false;
         }
     } else if (asset.encoding == "SPARSE_I16_RGB888") {
-        if (root.containsKey("pixels")) {
+        if (!root["pixels"].isNull()) {
             JsonArray pixelsArray = root["pixels"];
             for (JsonArray pixelArray : pixelsArray) {
                 if (pixelArray.size() >= 2) {

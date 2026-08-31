@@ -3,18 +3,6 @@
 #include "PixelFont.h"
 
 // Digit patterns live in PixelFont so RenderSensor can draw from the same data.
-// Used for leading-zero suppression in drawPatternDigit().
-static const uint8_t blank[27] = {
-    0, 0, 0,
-    0, 0, 0,
-    0, 0, 0,
-    0, 0, 0,
-    0, 0, 0,
-    0, 0, 0,
-    0, 0, 0,
-    0, 0, 0,
-    0, 0, 0
-};
 
 RenderClock::RenderClock(MatrixDriver* mat) : matrix(mat) {
 }
@@ -74,25 +62,30 @@ void RenderClock::render(const String& format, const String& layout,
         else if (hour > 12) hour -= 12;
     }
     
+    // A 12-hour clock reads "8:30", not "08:30"; a 24-hour one keeps the zero.
+    // Decided here, where the format is known, and passed down - the digit
+    // renderer used to try to infer it from the pixel coordinates it was handed.
+    bool suppressLeadingZero = (format == "12H");
+
     // Render based on layout
     if (layout == "BIG_HHMM") {
-        renderBigHHMM(hour, minute, fgColor, accentColor, bgColor, blinkColon);
+        renderBigHHMM(hour, minute, fgColor, accentColor, bgColor, blinkColon, suppressLeadingZero);
     } else if (layout == "HHMM_PLUS_SECONDS_BAR") {
-        renderHHMMPlusSecondsBar(hour, minute, second, fgColor, accentColor, bgColor, blinkColon);
+        renderHHMMPlusSecondsBar(hour, minute, second, fgColor, accentColor, bgColor, blinkColon, suppressLeadingZero);
     } else if (layout == "MINIMAL") {
-        renderMinimal(hour, minute, fgColor, accentColor, bgColor, blinkColon);
+        renderMinimal(hour, minute, fgColor, accentColor, bgColor, blinkColon, suppressLeadingZero);
     } else {
         // Default to BIG_HHMM
-        renderBigHHMM(hour, minute, fgColor, accentColor, bgColor, blinkColon);
+        renderBigHHMM(hour, minute, fgColor, accentColor, bgColor, blinkColon, suppressLeadingZero);
     }
     
     matrix->show();
 }
 
-void RenderClock::renderBigHHMM(int hour, int minute, uint32_t fgColor, uint32_t accentColor, uint32_t bgColor, bool blinkColon) {
+void RenderClock::renderBigHHMM(int hour, int minute, uint32_t fgColor, uint32_t accentColor, uint32_t bgColor, bool blinkColon, bool suppressLeadingZero) {
     // Draw HH:MM - digits are 3 pixels wide, no spacing
     // First digit starts at x=0, second at x=3, colon at x=6, minutes at x=8 and x=11
-    drawDigit(0, 4, hour / 10, fgColor);
+    drawDigit(0, 4, hour / 10, fgColor, suppressLeadingZero);
     drawDigit(4, 4, hour % 10, fgColor);
     // y=6 centres the two 2x2 segments (rows 6-7 and 9-10) on the digits'
     // 9-row band (rows 4-12). The old y=5 was tuned against the mirrored frame
@@ -102,10 +95,10 @@ void RenderClock::renderBigHHMM(int hour, int minute, uint32_t fgColor, uint32_t
     drawDigit(13, 4, minute % 10, fgColor);
 }
 
-void RenderClock::renderHHMMPlusSecondsBar(int hour, int minute, int second, uint32_t fgColor, uint32_t accentColor, uint32_t bgColor, bool blinkColon) {
+void RenderClock::renderHHMMPlusSecondsBar(int hour, int minute, int second, uint32_t fgColor, uint32_t accentColor, uint32_t bgColor, bool blinkColon, bool suppressLeadingZero) {
     // Draw HH:MM - digits are 3 pixels wide, no spacing
     // First digit starts at x=0, second at x=3, colon at x=6, minutes at x=8 and x=11
-    drawDigit(0, 4, hour / 10, fgColor);
+    drawDigit(0, 4, hour / 10, fgColor, suppressLeadingZero);
     drawDigit(4, 4, hour % 10, fgColor);
     // y=6 centres the two 2x2 segments (rows 6-7 and 9-10) on the digits'
     // 9-row band (rows 4-12). The old y=5 was tuned against the mirrored frame
@@ -118,9 +111,9 @@ void RenderClock::renderHHMMPlusSecondsBar(int hour, int minute, int second, uin
     drawSecondsBar(second, accentColor);
 }
 
-void RenderClock::renderMinimal(int hour, int minute, uint32_t fgColor, uint32_t accentColor, uint32_t bgColor, bool blinkColon) {
+void RenderClock::renderMinimal(int hour, int minute, uint32_t fgColor, uint32_t accentColor, uint32_t bgColor, bool blinkColon, bool suppressLeadingZero) {
     // Smaller digits
-    drawDigit(2, 6, hour / 10, fgColor);
+    drawDigit(2, 6, hour / 10, fgColor, suppressLeadingZero);
     drawDigit(6, 6, hour % 10, fgColor);
     drawColon(10, 8, accentColor, blinkColon); // centred on the digits' rows 6-14
     drawDigit(12, 6, minute / 10, fgColor);
@@ -136,16 +129,15 @@ void RenderClock::drawPatternPixel(uint8_t patternX, uint8_t patternY, uint8_t b
     matrix->setPixelOriented(absX, absY, color);
 }
 
-void RenderClock::drawPatternDigit(uint8_t x, uint8_t y, uint8_t digit, uint32_t color) {
+void RenderClock::drawPatternDigit(uint8_t x, uint8_t y, uint8_t digit, uint32_t color, bool suppressLeadingZero) {
     if (digit > 9) return;
-    
-    const uint8_t* pattern;
-    if (digit == 0 && x == 0 && y == 0) {
-        pattern = blank; // Special case for leading zero
-    } else {
-        pattern = PixelFont::digitBig(digit);
-        if (pattern == nullptr) return;
-    }
+    // The caller decides whether this slot is a suppressible leading zero. The
+    // old test - digit == 0 && x == 0 && y == 0 - could never fire, because
+    // every layout draws the hours at y = 4 or y = 6.
+    if (suppressLeadingZero && digit == 0) return;
+
+    const uint8_t* pattern = PixelFont::digitBig(digit);
+    if (pattern == nullptr) return;
     
     // Draw 3x9 pattern (3 columns, 9 rows)
     for (uint8_t row = 0; row < 9; row++) {
@@ -157,9 +149,9 @@ void RenderClock::drawPatternDigit(uint8_t x, uint8_t y, uint8_t digit, uint32_t
     }
 }
 
-void RenderClock::drawDigit(uint8_t x, uint8_t y, uint8_t digit, uint32_t color) {
+void RenderClock::drawDigit(uint8_t x, uint8_t y, uint8_t digit, uint32_t color, bool suppressLeadingZero) {
     // Use pattern-based rendering with rotation
-    drawPatternDigit(x, y, digit, color);
+    drawPatternDigit(x, y, digit, color, suppressLeadingZero);
 }
 
 void RenderClock::drawColon(uint8_t x, uint8_t y, uint32_t color, bool blink) {

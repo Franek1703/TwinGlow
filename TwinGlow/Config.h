@@ -135,6 +135,13 @@
 
 #define PANEL_ORIENTATION PANEL_ORIENT_TRANSPOSE
 
+// Verbose asset-fetch instrumentation. Dumps the first 1000 characters of the
+// Firestore response and a hex dump of its first 200 bytes on every getAsset().
+// At 115200 baud that is roughly 200 ms of blocking serial per call - enough to
+// perturb the timing it is meant to measure - so it stays off unless an asset
+// fetch is actually being investigated.
+#define FIRESTORE_DEBUG_ASSETS 0
+
 // Frame budgets: how often each screen type is repainted.
 //
 // Every show() holds interrupts off for roughly 7.6 ms across 256 WS2812s, so

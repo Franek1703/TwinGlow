@@ -890,24 +890,24 @@ void handleRunning() {
                 bool blinkColon = false; // Default
 
                 if (screen->configJson.length() > 0) {
-                    DynamicJsonDocument configDoc(2048);
+                    JsonDocument configDoc;
                     if (deserializeJson(configDoc, screen->configJson) == DeserializationError::Ok) {
-                        if (configDoc.containsKey("showSeconds")) {
+                        if (!configDoc["showSeconds"].isNull()) {
                             showSeconds = configDoc["showSeconds"].as<bool>();
                         }
-                        if (configDoc.containsKey("backgroundColor")) {
+                        if (!configDoc["backgroundColor"].isNull()) {
                             backgroundColor = configDoc["backgroundColor"].as<uint32_t>();
                         }
-                        if (configDoc.containsKey("digitColor")) {
+                        if (!configDoc["digitColor"].isNull()) {
                             digitColor = configDoc["digitColor"].as<uint32_t>();
                         }
-                        if (configDoc.containsKey("colonColor")) {
+                        if (!configDoc["colonColor"].isNull()) {
                             colonColor = configDoc["colonColor"].as<uint32_t>();
                         }
-                        if (configDoc.containsKey("format")) {
+                        if (!configDoc["format"].isNull()) {
                             format = configDoc["format"].as<String>();
                         }
-                        if (configDoc.containsKey("blinkColon")) {
+                        if (!configDoc["blinkColon"].isNull()) {
                             blinkColon = configDoc["blinkColon"].as<bool>();
                         }
                         // layout is still derived from showSeconds below rather
@@ -944,15 +944,15 @@ void handleRunning() {
             uint32_t backgroundColor = 0x000000;
 
             if (screen->configJson.length() > 0) {
-                DynamicJsonDocument configDoc(1024);
+                JsonDocument configDoc;
                 if (deserializeJson(configDoc, screen->configJson) == DeserializationError::Ok) {
-                    if (configDoc.containsKey("showTemperature")) showTemperature = configDoc["showTemperature"].as<bool>();
-                    if (configDoc.containsKey("showHumidity")) showHumidity = configDoc["showHumidity"].as<bool>();
-                    if (configDoc.containsKey("showPressure")) showPressure = configDoc["showPressure"].as<bool>();
-                    if (configDoc.containsKey("useMetricUnits")) units = configDoc["useMetricUnits"].as<bool>() ? "METRIC" : "IMPERIAL";
-                    if (configDoc.containsKey("numberColor")) numberColor = configDoc["numberColor"].as<uint32_t>();
-                    if (configDoc.containsKey("accentColor")) accentColor = configDoc["accentColor"].as<uint32_t>();
-                    if (configDoc.containsKey("backgroundColor")) backgroundColor = configDoc["backgroundColor"].as<uint32_t>();
+                    if (!configDoc["showTemperature"].isNull()) showTemperature = configDoc["showTemperature"].as<bool>();
+                    if (!configDoc["showHumidity"].isNull()) showHumidity = configDoc["showHumidity"].as<bool>();
+                    if (!configDoc["showPressure"].isNull()) showPressure = configDoc["showPressure"].as<bool>();
+                    if (!configDoc["useMetricUnits"].isNull()) units = configDoc["useMetricUnits"].as<bool>() ? "METRIC" : "IMPERIAL";
+                    if (!configDoc["numberColor"].isNull()) numberColor = configDoc["numberColor"].as<uint32_t>();
+                    if (!configDoc["accentColor"].isNull()) accentColor = configDoc["accentColor"].as<uint32_t>();
+                    if (!configDoc["backgroundColor"].isNull()) backgroundColor = configDoc["backgroundColor"].as<uint32_t>();
                 }
             }
 

@@ -82,7 +82,7 @@ bool RtdbRepo::updatePresence(bool online) {
     Serial.print(lastSeenMs);
     Serial.println(F(")"));
     
-    DynamicJsonDocument doc(128);
+    JsonDocument doc;
     doc["online"] = online;
     doc["lastSeenMs"] = lastSeenMs;
     String payload;
@@ -124,7 +124,7 @@ bool RtdbRepo::pushTelemetry(float temperature, float humidity, float pressure, 
     Serial.print(F("[RtdbRepo] Pushing telemetry: "));
     Serial.print(path);
     
-    DynamicJsonDocument doc(256);
+    JsonDocument doc;
     doc["temperatureC"] = round(temperature * 100) / 100.0;
     doc["humidityPct"] = round(humidity * 100) / 100.0;
     doc["pressureHPa"] = round(pressure * 100) / 100.0;
@@ -170,7 +170,7 @@ bool RtdbRepo::checkCommands() {
     String raw = rtdb->get<String>(*aClient, getCommandsPath());
     if (aClient->lastError().code() != 0) return false;
     if (raw.length() == 0 || raw == "null") return false;
-    DynamicJsonDocument doc(1024);
+    JsonDocument doc;
     if (deserializeJson(doc, raw) != DeserializationError::Ok) return false;
     JsonObject obj = doc.as<JsonObject>();
     for (JsonPair kv : obj) {
@@ -194,7 +194,7 @@ bool RtdbRepo::sendToPair(const String& pairId, const String& screenId, const St
     FirebaseRTDBType* rtdb = static_cast<FirebaseRTDBType*>(wrap->getRtdb());
     AsyncClientClass* aClient = wrap->getAsyncClient();
     if (rtdb == nullptr || aClient == nullptr) return false;
-    DynamicJsonDocument doc(256);
+    JsonDocument doc;
     doc["screenId"] = screenId;
     doc["assetId"] = assetId;
     doc["ts"] = millis();

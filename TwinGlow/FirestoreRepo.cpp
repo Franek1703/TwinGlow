@@ -53,11 +53,11 @@ String FirestoreRepo::getUserDevicePath(const String& uid) const {
 
 // Helper: get string from Firestore field object (e.g. {"stringValue": "x"})
 static bool firestoreFieldToString(const JsonObject& field, String& out) {
-    if (field.containsKey("stringValue")) {
+    if (!field["stringValue"].isNull()) {
         out = field["stringValue"].as<String>();
         return true;
     }
-    if (field.containsKey("integerValue")) {
+    if (!field["integerValue"].isNull()) {
         out = field["integerValue"].as<String>();
         return true;
     }
@@ -65,7 +65,7 @@ static bool firestoreFieldToString(const JsonObject& field, String& out) {
 }
 
 static bool firestoreFieldToInt(const JsonObject& field, int& out) {
-    if (field.containsKey("integerValue")) {
+    if (!field["integerValue"].isNull()) {
         out = field["integerValue"].as<int>();
         return true;
     }
@@ -73,7 +73,7 @@ static bool firestoreFieldToInt(const JsonObject& field, int& out) {
 }
 
 static bool firestoreFieldToBool(const JsonObject& field, bool& out) {
-    if (field.containsKey("booleanValue")) {
+    if (!field["booleanValue"].isNull()) {
         out = field["booleanValue"].as<bool>();
         return true;
     }
@@ -103,31 +103,31 @@ bool FirestoreRepo::getDeviceDoc(DeviceDoc& out) {
         return false;
     }
 
-    DynamicJsonDocument doc(2048);
+    JsonDocument doc;
     if (deserializeJson(doc, response) != DeserializationError::Ok) {
         Serial.println(F("[Claiming] getDeviceDoc parse failed"));
         return false;
     }
-    if (!doc.containsKey("fields")) {
+    if (doc["fields"].isNull()) {
         Serial.println(F("[Claiming] getDeviceDoc response missing 'fields'"));
         return false;
     }
 
     JsonObject fields = doc["fields"].as<JsonObject>();
-    if (fields.containsKey("configVersion")) {
+    if (!fields["configVersion"].isNull()) {
         firestoreFieldToInt(fields["configVersion"].as<JsonObject>(), out.configVersion);
     }
-    if (fields.containsKey("tzPosix")) {
+    if (!fields["tzPosix"].isNull()) {
         firestoreFieldToString(fields["tzPosix"].as<JsonObject>(), out.tzPosix);
     }
-    if (fields.containsKey("brightness")) {
+    if (!fields["brightness"].isNull()) {
         firestoreFieldToInt(fields["brightness"].as<JsonObject>(), out.brightness);
     }
-    if (fields.containsKey("hw")) {
+    if (!fields["hw"].isNull()) {
         JsonObject hw = fields["hw"].as<JsonObject>();
-        if (hw.containsKey("mapValue") && hw["mapValue"].containsKey("fields")) {
+        if (!hw["mapValue"].isNull() && !hw["mapValue"]["fields"].isNull()) {
             JsonObject hwFields = hw["mapValue"]["fields"].as<JsonObject>();
-            if (hwFields.containsKey("bme680")) {
+            if (!hwFields["bme680"].isNull()) {
                 firestoreFieldToBool(hwFields["bme680"].as<JsonObject>(), out.bme680Present);
             }
         }
@@ -135,22 +135,22 @@ bool FirestoreRepo::getDeviceDoc(DeviceDoc& out) {
     // Same nested-map shape as hw above. Partial maps keep their defaults
     // rather than being rejected, so an older app that writes fewer keys still
     // gives a usable schedule.
-    if (fields.containsKey("sleepMode")) {
+    if (!fields["sleepMode"].isNull()) {
         JsonObject sleepField = fields["sleepMode"].as<JsonObject>();
-        if (sleepField.containsKey("mapValue") && sleepField["mapValue"].containsKey("fields")) {
+        if (!sleepField["mapValue"].isNull() && !sleepField["mapValue"]["fields"].isNull()) {
             JsonObject sleepFields = sleepField["mapValue"]["fields"].as<JsonObject>();
             out.hasSleep = true;
-            if (sleepFields.containsKey("enabled")) {
+            if (!sleepFields["enabled"].isNull()) {
                 firestoreFieldToBool(sleepFields["enabled"].as<JsonObject>(), out.sleep.enabled);
             }
-            if (sleepFields.containsKey("startMinute")) {
+            if (!sleepFields["startMinute"].isNull()) {
                 firestoreFieldToInt(sleepFields["startMinute"].as<JsonObject>(), out.sleep.startMinute);
             }
-            if (sleepFields.containsKey("endMinute")) {
+            if (!sleepFields["endMinute"].isNull()) {
                 firestoreFieldToInt(sleepFields["endMinute"].as<JsonObject>(), out.sleep.endMinute);
             }
             int sleepBrightness = DEFAULT_SLEEP_BRIGHTNESS;
-            if (sleepFields.containsKey("brightness")) {
+            if (!sleepFields["brightness"].isNull()) {
                 firestoreFieldToInt(sleepFields["brightness"].as<JsonObject>(), sleepBrightness);
             }
             out.sleep.brightness = (uint8_t)constrain(sleepBrightness, 0, 255);
@@ -270,6 +270,15 @@ bool FirestoreRepo::claimDevice(const String& uid) {
     Serial.println(path);
     documents->createDocument(*aClient, parent, path, mask, doc);
     int errCode = aClient->lastError().code();
+    // The membership doc survives reboots, so every boot after the first gets
+    // ALREADY_EXISTS. That is the claim already being in place - the outcome
+    // this call wants - not a failure. FirebaseClient reports HTTP statuses as
+    // the error code but has no constant for 409, hence the literal.
+    const int kHttpConflict = 409;
+    if (errCode == kHttpConflict) {
+        Serial.println(F("[Claiming] Device already claimed by this user"));
+        return true;
+    }
     if (errCode != 0) {
         Serial.print(F("[Claiming] createDocument failed, code="));
         Serial.print(errCode);
@@ -297,12 +306,12 @@ bool FirestoreRepo::getScreens(std::vector<ScreenConfig>& screens) {
         return false;
     }
 
-    DynamicJsonDocument doc(8192);
+    JsonDocument doc;
     if (deserializeJson(doc, response) != DeserializationError::Ok) {
         Serial.println(F("[Firestore] getScreens: JSON parse error"));
         return false;
     }
-    if (!doc.containsKey("documents")) {
+    if (doc["documents"].isNull()) {
         screens.clear();
         Serial.println(F("[Firestore] getScreens: no 'documents' in response"));
         return true;
@@ -330,58 +339,58 @@ bool FirestoreRepo::getScreens(std::vector<ScreenConfig>& screens) {
         sc.availableAssetIds.clear();
         sc.allowManualSwitch = true;
         sc.configJson = "";
-        if (!docObj.containsKey("name") || !docObj.containsKey("fields")) continue;
+        if (docObj["name"].isNull() || docObj["fields"].isNull()) continue;
         String name = docObj["name"].as<String>();
         int lastSlash = name.lastIndexOf('/');
         if (lastSlash >= 0) sc.id = name.substring(lastSlash + 1);
         JsonObject fields = docObj["fields"].as<JsonObject>();
-        if (fields.containsKey("type")) {
+        if (!fields["type"].isNull()) {
             firestoreFieldToString(fields["type"].as<JsonObject>(), sc.type);
             // Normalize to uppercase for consistent comparison
             sc.type.toUpperCase();
         }
-        if (fields.containsKey("order")) firestoreFieldToInt(fields["order"].as<JsonObject>(), sc.order);
-        if (fields.containsKey("enabled")) firestoreFieldToBool(fields["enabled"].as<JsonObject>(), sc.enabled);
-        if (fields.containsKey("durationMs")) {
+        if (!fields["order"].isNull()) firestoreFieldToInt(fields["order"].as<JsonObject>(), sc.order);
+        if (!fields["enabled"].isNull()) firestoreFieldToBool(fields["enabled"].as<JsonObject>(), sc.enabled);
+        if (!fields["durationMs"].isNull()) {
             int d = 0;
             if (firestoreFieldToInt(fields["durationMs"].as<JsonObject>(), d) && d > 0) {
                 // Clamp up, so a too-small value cannot spin the playlist.
                 sc.durationMs = (d < SCREEN_MIN_DURATION_MS) ? SCREEN_MIN_DURATION_MS : d;
             }
         }
-        if (fields.containsKey("pairId")) firestoreFieldToString(fields["pairId"].as<JsonObject>(), sc.pairId);
-        if (fields.containsKey("sharedScreenId")) firestoreFieldToString(fields["sharedScreenId"].as<JsonObject>(), sc.sharedScreenId);
-        if (fields.containsKey("assetId")) firestoreFieldToString(fields["assetId"].as<JsonObject>(), sc.assetId);
+        if (!fields["pairId"].isNull()) firestoreFieldToString(fields["pairId"].as<JsonObject>(), sc.pairId);
+        if (!fields["sharedScreenId"].isNull()) firestoreFieldToString(fields["sharedScreenId"].as<JsonObject>(), sc.sharedScreenId);
+        if (!fields["assetId"].isNull()) firestoreFieldToString(fields["assetId"].as<JsonObject>(), sc.assetId);
         // Asset pool lives on the screen document, so IMAGE/ANIMATION screens
         // can cycle several assets without depending on a pair.
-        if (fields.containsKey("defaultAssetId")) firestoreFieldToString(fields["defaultAssetId"].as<JsonObject>(), sc.defaultAssetId);
-        if (fields.containsKey("allowManualSwitch")) firestoreFieldToBool(fields["allowManualSwitch"].as<JsonObject>(), sc.allowManualSwitch);
-        if (fields.containsKey("availableAssetIds") && fields["availableAssetIds"].containsKey("arrayValue")) {
+        if (!fields["defaultAssetId"].isNull()) firestoreFieldToString(fields["defaultAssetId"].as<JsonObject>(), sc.defaultAssetId);
+        if (!fields["allowManualSwitch"].isNull()) firestoreFieldToBool(fields["allowManualSwitch"].as<JsonObject>(), sc.allowManualSwitch);
+        if (!fields["availableAssetIds"].isNull() && !fields["availableAssetIds"]["arrayValue"].isNull()) {
             JsonArray arr = fields["availableAssetIds"]["arrayValue"]["values"].as<JsonArray>();
             for (JsonObject v : arr) {
-                if (v.containsKey("stringValue")) {
+                if (!v["stringValue"].isNull()) {
                     sc.availableAssetIds.push_back(v["stringValue"].as<String>());
                 }
             }
         }
         // Load config JSON for CLOCK/SENSOR screens
-        if (fields.containsKey("config")) {
+        if (!fields["config"].isNull()) {
             // Firestore stores nested objects as mapValue with fields
             JsonObject configField = fields["config"].as<JsonObject>();
-            if (configField.containsKey("mapValue") && configField["mapValue"].containsKey("fields")) {
+            if (!configField["mapValue"].isNull() && !configField["mapValue"]["fields"].isNull()) {
                 JsonObject configFields = configField["mapValue"]["fields"].as<JsonObject>();
-                DynamicJsonDocument configDoc(2048);
+                JsonDocument configDoc;
                 // Convert Firestore mapValue fields to flat JSON
                 JsonObject configObj = configDoc.to<JsonObject>();
                 // Copy all fields from Firestore format to JSON format
                 for (JsonPair kv : configFields) {
                     String key = kv.key().c_str();
                     JsonObject fieldObj = kv.value().as<JsonObject>();
-                    if (fieldObj.containsKey("booleanValue")) {
+                    if (!fieldObj["booleanValue"].isNull()) {
                         configObj[key] = fieldObj["booleanValue"].as<bool>();
-                    } else if (fieldObj.containsKey("integerValue")) {
+                    } else if (!fieldObj["integerValue"].isNull()) {
                         configObj[key] = fieldObj["integerValue"].as<uint32_t>();
-                    } else if (fieldObj.containsKey("stringValue")) {
+                    } else if (!fieldObj["stringValue"].isNull()) {
                         configObj[key] = fieldObj["stringValue"].as<String>();
                     }
                 }
@@ -425,19 +434,19 @@ bool FirestoreRepo::getSharedScreen(const String& pairId, const String& sharedSc
     String response = documents->get(*aClient, parent, path, options);
     if (aClient->lastError().code() != 0) return false;
 
-    DynamicJsonDocument doc(2048);
+    JsonDocument doc;
     if (deserializeJson(doc, response) != DeserializationError::Ok) return false;
-    if (!doc.containsKey("fields")) return false;
+    if (doc["fields"].isNull()) return false;
 
     JsonObject fields = doc["fields"].as<JsonObject>();
-    if (fields.containsKey("type")) firestoreFieldToString(fields["type"].as<JsonObject>(), config.type);
-    if (fields.containsKey("defaultAssetId")) firestoreFieldToString(fields["defaultAssetId"].as<JsonObject>(), config.defaultAssetId);
-    if (fields.containsKey("allowManualSwitch")) firestoreFieldToBool(fields["allowManualSwitch"].as<JsonObject>(), config.allowManualSwitch);
-    if (fields.containsKey("loop")) firestoreFieldToBool(fields["loop"].as<JsonObject>(), config.loop);
-    if (fields.containsKey("availableAssetIds") && fields["availableAssetIds"].containsKey("arrayValue")) {
+    if (!fields["type"].isNull()) firestoreFieldToString(fields["type"].as<JsonObject>(), config.type);
+    if (!fields["defaultAssetId"].isNull()) firestoreFieldToString(fields["defaultAssetId"].as<JsonObject>(), config.defaultAssetId);
+    if (!fields["allowManualSwitch"].isNull()) firestoreFieldToBool(fields["allowManualSwitch"].as<JsonObject>(), config.allowManualSwitch);
+    if (!fields["loop"].isNull()) firestoreFieldToBool(fields["loop"].as<JsonObject>(), config.loop);
+    if (!fields["availableAssetIds"].isNull() && !fields["availableAssetIds"]["arrayValue"].isNull()) {
         JsonArray arr = fields["availableAssetIds"]["arrayValue"]["values"].as<JsonArray>();
         for (JsonObject v : arr) {
-            if (v.containsKey("stringValue")) {
+            if (!v["stringValue"].isNull()) {
                 config.availableAssetIds.push_back(v["stringValue"].as<String>());
             }
         }
@@ -448,7 +457,7 @@ bool FirestoreRepo::getSharedScreen(const String& pairId, const String& sharedSc
 // Convert Firestore arrayValue of {color, index} objects to flat JSON array for AssetCache::parseAsset
 // Format: [{color: 55807, index: 71}, {color: 55807, index: 73}]
 static void appendFirestorePixelArray(JsonArray& out, JsonVariant firestoreArr) {
-    if (!firestoreArr.containsKey("arrayValue") || !firestoreArr["arrayValue"].containsKey("values")) {
+    if (firestoreArr["arrayValue"].isNull() || firestoreArr["arrayValue"]["values"].isNull()) {
         Serial.println(F("[Firestore] appendFirestorePixelArray: no arrayValue/values"));
         return;
     }
@@ -458,23 +467,23 @@ static void appendFirestorePixelArray(JsonArray& out, JsonVariant firestoreArr) 
     Serial.println(F(" pixel objects"));
     for (JsonVariant v : values) {
         // Check if it's a mapValue (object format: {color: X, index: Y})
-        if (v.containsKey("mapValue") && v["mapValue"].containsKey("fields")) {
+        if (!v["mapValue"].isNull() && !v["mapValue"]["fields"].isNull()) {
             JsonObject fields = v["mapValue"]["fields"].as<JsonObject>();
             int index = -1;
             uint32_t color = 0;
             
-            if (fields.containsKey("index")) {
+            if (!fields["index"].isNull()) {
                 int idx;
                 if (firestoreFieldToInt(fields["index"].as<JsonObject>(), idx)) {
                     index = idx;
                 }
             }
-            if (fields.containsKey("color")) {
+            if (!fields["color"].isNull()) {
                 // Color is stored as integerValue in Firestore
                 JsonObject colorField = fields["color"].as<JsonObject>();
-                if (colorField.containsKey("integerValue")) {
+                if (!colorField["integerValue"].isNull()) {
                     color = colorField["integerValue"].as<uint32_t>();
-                } else if (colorField.containsKey("stringValue")) {
+                } else if (!colorField["stringValue"].isNull()) {
                     // Fallback for string representation
                     color = strtoul(colorField["stringValue"].as<const char*>(), nullptr, 10);
                 }
@@ -487,7 +496,7 @@ static void appendFirestorePixelArray(JsonArray& out, JsonVariant firestoreArr) 
             }
         }
         // Legacy support: array format [[index, color], ...]
-        else if (v.containsKey("arrayValue") && v["arrayValue"].containsKey("values")) {
+        else if (!v["arrayValue"].isNull() && !v["arrayValue"]["values"].isNull()) {
             JsonArray pair = v["arrayValue"]["values"].as<JsonArray>();
             if (pair.size() >= 2) {
                 JsonArray row = out.add<JsonArray>();
@@ -560,7 +569,11 @@ bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset) {
     Serial.print(F("[Firestore] getAsset response length: "));
     Serial.println(response.length());
     
-    // Log raw response (first 1000 chars) even if empty
+#if FIRESTORE_DEBUG_ASSETS
+    // Instrumentation from an asset-fetch hunt, off by default: the preview and
+    // the hex dump together are ~200 ms of blocking serial per call at 115200
+    // baud, which shifts the timing they exist to measure. An empty response is
+    // reported in full by the branch below either way.
     if (response.length() > 0) {
         Serial.print(F("[Firestore] getAsset raw response (first 1000 chars): "));
         String preview = response.length() > 1000 ? response.substring(0, 1000) : response;
@@ -576,9 +589,8 @@ bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset) {
             if ((i + 1) % 32 == 0) Serial.println();
         }
         Serial.println();
-    } else {
-        Serial.println(F("[Firestore] getAsset raw response: (EMPTY - no data received)"));
     }
+#endif
     
     // Check for async client errors first (like getDeviceDoc does)
     int errorCode = aClient->lastError().code();
@@ -629,14 +641,13 @@ bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset) {
         return false;
     }
     
-    // Sized from the payload rather than a fixed 16KB. A fixed buffer here plus
-    // a fixed one for `flat` below reserved 32KB on every asset fetch, on top of
-    // the ~40KB mbedTLS already holds for the TLS session - enough, on a plain
-    // ESP32, to push a later allocation into failure. A failed String
+    // ArduinoJson 7 grows this as it parses. It used to reserve a fixed 16KB
+    // here and another for `flat` below - 32KB on every asset fetch, on top of
+    // the ~40KB mbedTLS holds for the TLS session, which on a plain ESP32 was
+    // enough to push a later allocation into failure. A failed String
     // allocation shows up as a truncated request header, which Google's
     // frontend rejects with an HTML 400 rather than a Firestore JSON error.
-    const size_t responseLen = response.length();
-    DynamicJsonDocument doc(responseLen + 2048);
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, response);
     if (error != DeserializationError::Ok) {
         Serial.print(F("[Firestore] getAsset parse error: id="));
@@ -664,7 +675,7 @@ bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset) {
     Serial.println();
     
     // Check if document exists (Firestore returns error object if not found)
-    if (doc.containsKey("error")) {
+    if (!doc["error"].isNull()) {
         Serial.print(F("[Firestore] getAsset document not found: id="));
         Serial.print(assetId);
         Serial.print(F(" path="));
@@ -675,7 +686,7 @@ bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset) {
     }
     
     // Check for 'fields' key (required for Firestore document)
-    if (!doc.containsKey("fields")) {
+    if (doc["fields"].isNull()) {
         Serial.print(F("[Firestore] getAsset response missing 'fields' key: id="));
         Serial.print(assetId);
         Serial.print(F(" available keys: "));
@@ -702,15 +713,15 @@ bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset) {
         Serial.print(' ');
     }
     Serial.println();
-    if (fields.containsKey("type")) firestoreFieldToString(fields["type"].as<JsonObject>(), asset.type);
-    if (fields.containsKey("encoding")) firestoreFieldToString(fields["encoding"].as<JsonObject>(), asset.encoding);
+    if (!fields["type"].isNull()) firestoreFieldToString(fields["type"].as<JsonObject>(), asset.type);
+    if (!fields["encoding"].isNull()) firestoreFieldToString(fields["encoding"].as<JsonObject>(), asset.encoding);
 
     // The flattened form is strictly smaller than the Firestore-wrapped
-    // response it is built from, so the response size is a safe upper bound.
-    DynamicJsonDocument flat(responseLen + 2048);
+    // response it is built from.
+    JsonDocument flat;
     flat["type"] = asset.type;
     flat["encoding"] = asset.encoding;
-    if (fields.containsKey("pixelsPacked")) {
+    if (!fields["pixelsPacked"].isNull()) {
         // SPARSE_PACKED_V1 carries the whole image as one string, so it is
         // copied straight across - no per-pixel rebuild needed.
         String packed;
@@ -724,9 +735,9 @@ bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset) {
             Serial.println(F("[Firestore] 'pixelsPacked' present but not a string"));
         }
     }
-    if (fields.containsKey("pixels")) {
+    if (!fields["pixels"].isNull()) {
         Serial.println(F("[Firestore] Found 'pixels' field, parsing..."));
-        JsonArray pixels = flat.createNestedArray("pixels");
+        JsonArray pixels = flat["pixels"].to<JsonArray>();
         appendFirestorePixelArray(pixels, fields["pixels"]);
         Serial.print(F("[Firestore] Parsed "));
         Serial.print(pixels.size());
@@ -734,36 +745,36 @@ bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset) {
     } else {
         Serial.println(F("[Firestore] No 'pixels' field found"));
     }
-    if (fields.containsKey("basePixels")) {
-        JsonArray basePixels = flat.createNestedArray("basePixels");
+    if (!fields["basePixels"].isNull()) {
+        JsonArray basePixels = flat["basePixels"].to<JsonArray>();
         appendFirestorePixelArray(basePixels, fields["basePixels"]);
     }
-    if (fields.containsKey("frames")) {
-        JsonArray frames = flat.createNestedArray("frames");
+    if (!fields["frames"].isNull()) {
+        JsonArray frames = flat["frames"].to<JsonArray>();
         JsonArray firestoreFrames = fields["frames"]["arrayValue"]["values"].as<JsonArray>();
         for (JsonVariant fv : firestoreFrames) {
             JsonObject frameObj = frames.add<JsonObject>();
-            if (fv.containsKey("mapValue") && fv["mapValue"].containsKey("fields")) {
+            if (!fv["mapValue"].isNull() && !fv["mapValue"]["fields"].isNull()) {
                 JsonObject ffields = fv["mapValue"]["fields"].as<JsonObject>();
-                if (ffields.containsKey("delayMs")) {
+                if (!ffields["delayMs"].isNull()) {
                     int d; firestoreFieldToInt(ffields["delayMs"].as<JsonObject>(), d);
                     frameObj["delayMs"] = d;
                 }
-                if (ffields.containsKey("pixels")) {
-                    JsonArray px = frameObj.createNestedArray("pixels");
+                if (!ffields["pixels"].isNull()) {
+                    JsonArray px = frameObj["pixels"].to<JsonArray>();
                     appendFirestorePixelArray(px, ffields["pixels"]);
                 }
             }
         }
     }
-    if (fields.containsKey("loop")) {
+    if (!fields["loop"].isNull()) {
         bool l; firestoreFieldToBool(fields["loop"].as<JsonObject>(), l);
         flat["loop"] = l;
     }
     // DELTA_SPARSE_PACKED_V1: the first frame in full plus one packed
     // transition per later frame, all as plain strings, so an animation costs
     // the same shape of transfer as an image rather than a map per pixel.
-    if (fields.containsKey("basePixelsPacked")) {
+    if (!fields["basePixelsPacked"].isNull()) {
         String packed;
         if (firestoreFieldToString(fields["basePixelsPacked"].as<JsonObject>(), packed)) {
             flat["basePixelsPacked"] = packed;
@@ -773,10 +784,10 @@ bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset) {
             Serial.println(F("[Firestore] 'basePixelsPacked' present but not a string"));
         }
     }
-    if (fields.containsKey("frameDeltasPacked")) {
-        JsonArray deltas = flat.createNestedArray("frameDeltasPacked");
+    if (!fields["frameDeltasPacked"].isNull()) {
+        JsonArray deltas = flat["frameDeltasPacked"].to<JsonArray>();
         JsonVariant src = fields["frameDeltasPacked"];
-        if (src.containsKey("arrayValue") && src["arrayValue"].containsKey("values")) {
+        if (!src["arrayValue"].isNull() && !src["arrayValue"]["values"].isNull()) {
             size_t totalChars = 0;
             for (JsonVariant v : src["arrayValue"]["values"].as<JsonArray>()) {
                 String delta;
@@ -792,10 +803,10 @@ bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset) {
             Serial.println(totalChars);
         }
     }
-    if (fields.containsKey("frameDurationsMs")) {
-        JsonArray durations = flat.createNestedArray("frameDurationsMs");
+    if (!fields["frameDurationsMs"].isNull()) {
+        JsonArray durations = flat["frameDurationsMs"].to<JsonArray>();
         JsonVariant src = fields["frameDurationsMs"];
-        if (src.containsKey("arrayValue") && src["arrayValue"].containsKey("values")) {
+        if (!src["arrayValue"].isNull() && !src["arrayValue"]["values"].isNull()) {
             for (JsonVariant v : src["arrayValue"]["values"].as<JsonArray>()) {
                 int ms = 0;
                 firestoreFieldToInt(v.as<JsonObject>(), ms);
@@ -803,7 +814,7 @@ bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset) {
             }
         }
     }
-    if (fields.containsKey("frameCount")) {
+    if (!fields["frameCount"].isNull()) {
         int count = 0;
         if (firestoreFieldToInt(fields["frameCount"].as<JsonObject>(), count)) {
             flat["frameCount"] = count;
