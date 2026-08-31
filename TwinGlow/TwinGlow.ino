@@ -768,6 +768,29 @@ void handleConfigLoading() {
     }
 }
 
+// Whether the CLOCK screen last rendered with a blinking colon. Read by
+// frameIntervalFor() before the screen's config is parsed, and set by the CLOCK
+// branch each time it paints - the first paint of a screen is always forced, so
+// this is current from then on.
+static bool clockColonBlinks = false;
+
+// How long the panel may hold its current frame, by screen type. See the frame
+// budget block in Config.h for why this exists.
+static unsigned long frameIntervalFor(const ScreenConfig* screen) {
+    if (screen == nullptr) return FRAME_INTERVAL_DEFAULT_MS;
+    // strcasecmp, not the body's toUpperCase() or String::equalsIgnoreCase:
+    // this runs on every pass and both of those allocate a String to do it.
+    const char* type = screen->type.c_str();
+    if (strcasecmp(type, "CLOCK") == 0) {
+        return clockColonBlinks ? FRAME_INTERVAL_CLOCK_BLINK_MS
+                                : FRAME_INTERVAL_CLOCK_MS;
+    }
+    if (strcasecmp(type, "SENSOR") == 0) return FRAME_INTERVAL_SENSOR_MS;
+    if (strcasecmp(type, "ANIMATION") == 0) return FRAME_INTERVAL_ANIMATION_MS;
+    if (strcasecmp(type, "IMAGE") == 0) return FRAME_INTERVAL_IMAGE_MS;
+    return FRAME_INTERVAL_DEFAULT_MS;
+}
+
 void handleRunning() {
     // Runtime Wi-Fi maintenance is local/non-blocking and never paints status
     // colors. It was previously called only from WIFI_CONNECTING, leaving a
@@ -805,10 +828,24 @@ void handleRunning() {
     // Entering a screen restarts its animation rather than resuming whatever
     // frame it was on when the playlist last moved away.
     static int lastRenderedIndex = -1;
-    if (curIndex != lastRenderedIndex) {
+    bool screenChanged = (curIndex != lastRenderedIndex);
+    if (screenChanged) {
         lastRenderedIndex = curIndex;
         renderAsset.resetAnimation();
     }
+
+    // Frame budget. The body below ends in a show() on every path, and show()
+    // holds interrupts off for ~7.6 ms across 256 WS2812s - running it once per
+    // loop() pass repainted an unchanged clock about a hundred times a second.
+    // A screen change paints at once; otherwise the panel waits for the budget
+    // its content actually needs. Everything above this point (Wi-Fi, sensor
+    // reads, playlist rotation) still runs every pass.
+    static unsigned long lastFrameMs = 0;
+    if (!screenChanged &&
+        millis() - lastFrameMs < frameIntervalFor(screen)) {
+        return;
+    }
+    lastFrameMs = millis();
     bool logRender = (millis() - lastRenderLogMs >= 5000) || (screen != nullptr && lastLoggedIndex != curIndex);
     if (screen == nullptr) {
         if (lastLoggedIndex != -2) {
@@ -883,6 +920,10 @@ void handleRunning() {
                     layout = "BIG_HHMM"; // No seconds bar
                 }
                 
+                // Feeds frameIntervalFor(): a blinking colon needs four
+                // frames a second, a still one needs a single frame a second.
+                clockColonBlinks = blinkColon;
+
                 // Argument order matters here: this call used to pass
                 // (..., false, showSeconds), which put showSeconds into
                 // blinkColon and made the colon blink whenever seconds were on.
@@ -975,8 +1016,9 @@ void handleRunning() {
         matrix.fill(matrix.color(128, 128, 128));
         matrix.show();
     }
-    // Always push buffer to matrix so last drawn frame is visible
-    matrix.show();
+    // No trailing show() here: every branch above ends in one of its own, so
+    // this was a second full strip write - and a second ~7.6 ms interrupt
+    // blackout - for every frame.
 }
 
 void handleOfflineRunning() {

@@ -135,6 +135,21 @@
 
 #define PANEL_ORIENTATION PANEL_ORIENT_TRANSPOSE
 
+// Frame budgets: how often each screen type is repainted.
+//
+// Every show() holds interrupts off for roughly 7.6 ms across 256 WS2812s, so
+// repainting once per loop() pass (~100 fps) spends most of the CPU pushing
+// identical pixels down the wire - and it is the flicker the troubleshooting
+// notes at the top of this file describe, because the repaint contends with
+// Wi-Fi work. A screen is repainted at the rate its content actually changes;
+// a screen change always paints immediately.
+#define FRAME_INTERVAL_CLOCK_MS 1000       // the seconds bar moves once a second
+#define FRAME_INTERVAL_CLOCK_BLINK_MS 250  // a blinking colon toggles twice a second
+#define FRAME_INTERVAL_SENSOR_MS 500       // value refresh and the AUTO_CYCLE switch
+#define FRAME_INTERVAL_ANIMATION_MS 33     // ~30 fps ceiling; frame timing is the asset's
+#define FRAME_INTERVAL_IMAGE_MS 200        // static, but catches a late-arriving asset
+#define FRAME_INTERVAL_DEFAULT_MS 500      // placeholder patterns
+
 // Screen playlist rotation
 #define SCREEN_AUTO_ROTATE 0             // 1 = cycle screens automatically, 0 = buttons only
 #define SCREEN_DEFAULT_DURATION_MS 8000  // Used when a screen doc has no durationMs
