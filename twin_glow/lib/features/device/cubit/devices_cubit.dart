@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/models/device_model.dart';
+import '../../../core/utils/device_presence.dart';
 import '../../../core/utils/device_timezone.dart';
 import '../../../services/firebase/firebase_repository.dart';
 
@@ -45,15 +46,27 @@ class DevicesState {
 class DevicesCubit extends Cubit<DevicesState> {
   final FirebaseRepository firebaseRepository;
   final String userId;
-  StreamSubscription<Map<String, dynamic>>? _presenceSubscription;
 
-  DevicesCubit(this.firebaseRepository, this.userId)
-      : super(DevicesState()) {
+  /// How often the last presence write is re-judged against the clock.
+  /// Only overridden by tests, which cannot wait out the real interval.
+  final Duration presenceRecheckInterval;
+
+  StreamSubscription<Map<String, dynamic>>? _presenceSubscription;
+  Timer? _presenceRecheckTimer;
+  String? _presenceDeviceId;
+  Map<String, dynamic>? _lastPresence;
+
+  DevicesCubit(
+    this.firebaseRepository,
+    this.userId, {
+    this.presenceRecheckInterval = kPresenceRecheckInterval,
+  }) : super(DevicesState()) {
     loadDevices();
   }
 
   @override
   Future<void> close() {
+    _presenceRecheckTimer?.cancel();
     _presenceSubscription?.cancel();
     return super.close();
   }
@@ -125,28 +138,55 @@ class DevicesCubit extends Cubit<DevicesState> {
 
   void _subscribeToPresence(String deviceId) {
     _presenceSubscription?.cancel();
+    _presenceRecheckTimer?.cancel();
+    _presenceDeviceId = deviceId;
+    _lastPresence = null;
+
     _presenceSubscription = firebaseRepository
         .watchDevicePresence(deviceId)
         .listen((presenceData) {
-      final isOnline = presenceData['online'] == true;
-      
-      // Update device online status
-      final updatedDevices = state.devices.map((device) {
-        if (device.id == deviceId) {
-          return device.copyWith(isOnline: isOnline);
-        }
-        return device;
-      }).toList();
-
-      final updatedActiveDevice = state.activeDevice?.id == deviceId
-          ? state.activeDevice!.copyWith(isOnline: isOnline)
-          : state.activeDevice;
-
-      emit(state.copyWith(
-        devices: updatedDevices,
-        activeDevice: updatedActiveDevice,
-      ));
+      _lastPresence = presenceData;
+      _applyPresence();
     });
+
+    // The device stops writing when it is unplugged, so no further stream event
+    // ever arrives to say it left. Re-judging the value we already hold is what
+    // turns a silent device offline.
+    _presenceRecheckTimer =
+        Timer.periodic(presenceRecheckInterval, (_) => _applyPresence());
+  }
+
+  /// Applies the last presence write to state, aged against the current time.
+  ///
+  /// Emits only when the answer actually changes: this runs every
+  /// [presenceRecheckInterval] and should not rebuild the tree for nothing.
+  void _applyPresence() {
+    final deviceId = _presenceDeviceId;
+    if (deviceId == null || isClosed) return;
+
+    final isOnline = isPresenceOnline(_lastPresence);
+    final known = state.devices
+        .where((device) => device.id == deviceId)
+        .map((device) => device.isOnline);
+    final activeMatches = state.activeDevice?.id != deviceId ||
+        state.activeDevice!.isOnline == isOnline;
+    if (known.every((value) => value == isOnline) && activeMatches) return;
+
+    final updatedDevices = state.devices.map((device) {
+      if (device.id == deviceId) {
+        return device.copyWith(isOnline: isOnline);
+      }
+      return device;
+    }).toList();
+
+    final updatedActiveDevice = state.activeDevice?.id == deviceId
+        ? state.activeDevice!.copyWith(isOnline: isOnline)
+        : state.activeDevice;
+
+    emit(state.copyWith(
+      devices: updatedDevices,
+      activeDevice: updatedActiveDevice,
+    ));
   }
 
   Future<void> setActiveDevice(DeviceModel device) async {

@@ -430,10 +430,11 @@ class FirebaseFakeRepository implements FirebaseRepository {
   // RTDB methods (mock implementations)
   @override
   Stream<Map<String, dynamic>> watchDevicePresence(String deviceId) {
-    // Return a stream that emits mock presence data
+    // Return a stream that emits mock presence data. The key is lastSeenMs,
+    // the one the firmware writes and isPresenceOnline() ages.
     return Stream.value({
       'online': true,
-      'lastSeen': DateTime.now().millisecondsSinceEpoch,
+      'lastSeenMs': DateTime.now().millisecondsSinceEpoch,
     });
   }
 

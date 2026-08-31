@@ -11,6 +11,7 @@ import '../../core/codecs/animation_codec.dart';
 import 'asset_document.dart';
 import '../../core/models/user_model.dart';
 import '../../core/models/pairing_model.dart';
+import '../../core/utils/device_presence.dart';
 
 class FirebaseRepositoryImpl implements FirebaseRepository {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -107,13 +108,13 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
             'hasSensor': data['hw'] != null && (data['hw']['bme680'] == true),
           },
         );
-        // Online status from RTDB
+        // Online status from RTDB. The flag alone is never lowered by the
+        // device, so liveness comes from how fresh lastSeenMs is.
         final presenceRef = _database.ref('presence/$deviceId');
         final snapshot = await presenceRef.get();
-        if (snapshot.exists) {
-          final presenceData = snapshot.value as Map<dynamic, dynamic>?;
-          device = device.copyWith(isOnline: presenceData?['online'] == true);
-        }
+        final presenceData =
+            snapshot.exists ? snapshot.value as Map<dynamic, dynamic>? : null;
+        device = device.copyWith(isOnline: isPresenceOnline(presenceData));
 
         devices.add(device);
       }
