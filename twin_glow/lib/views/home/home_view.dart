@@ -234,6 +234,11 @@ class _HomeContent extends StatelessWidget {
                                 .read<ScreensPlaylistCubit>()
                                 .toggleScreen(screen.id);
                           },
+                          onDelete: (screen) {
+                            context
+                                .read<ScreensPlaylistCubit>()
+                                .deleteScreen(screen.id);
+                          },
                         ),
                       SliverToBoxAdapter(
                         child: Column(
