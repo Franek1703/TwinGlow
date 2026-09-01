@@ -20,6 +20,22 @@ constexpr size_t kResultQueueLength = 6;
 constexpr uint32_t kWorkerStackBytes = 12288;
 constexpr UBaseType_t kWorkerStackWarningBytes = 2048;
 
+// Priority 0 - deliberately the same as IDLE0, not above it.
+//
+// FirebaseClient waits for the socket by spinning, not by blocking:
+//   while (!sData->response.tcpAvailable()) { sys_idle(); ... }
+// and sys_idle() is delay(0), which on ESP32 is vTaskDelay(0) - a yield that
+// never blocks. A yield only reaches tasks of equal or higher priority, so at
+// priority 1 this task locked IDLE0 out entirely. IDLE0 is what feeds the task
+// watchdog (CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0=y, 5 s), while our own
+// timeouts allow a single call to spin for 8-10 s. Measured on hardware, an
+// asset fetch ended in
+//   "task_wdt: - IDLE0 (CPU 0)" / "CPU 0: twinglow-cloud"
+// and a reboot. At equal priority the scheduler round-robins them on each tick,
+// so IDLE0 gets slices and the watchdog stays fed. Costs this task some
+// throughput while core 0 is busy, which is the right trade for background I/O.
+constexpr UBaseType_t kWorkerTaskPriority = 0;
+
 bool deadlineIsInFuture(uint32_t deadline) {
     return deadline != 0 && (int32_t)(deadline - millis()) > 0;
 }
@@ -73,7 +89,7 @@ bool CloudWorker::begin(FirebaseClientWrap* firebaseClient,
         "twinglow-cloud",
         kWorkerStackBytes,
         this,
-        1,
+        kWorkerTaskPriority,
         &taskHandle,
         0
     );
@@ -85,6 +101,16 @@ bool CloudWorker::begin(FirebaseClientWrap* firebaseClient,
         resultQueue = nullptr;
         taskHandle = nullptr;
         return false;
+    }
+
+    // Belt and braces with the priority above. Round-robin keeps IDLE0 running
+    // in the normal case, but a single uninterrupted stretch inside the TLS or
+    // JSON code can still outrun a 5 s deadline, and the penalty for missing it
+    // is a reboot in the middle of cloud I/O rather than a recoverable error.
+    // Unsubscribing IDLE0 gives up hang detection on this core; core 1, which
+    // runs loop() and all rendering, keeps its watchdog.
+    if (!disableCore0WDT()) {
+        Serial.println(F("[CloudWorker] Could not unsubscribe IDLE0 from the task watchdog"));
     }
 
     started = true;
