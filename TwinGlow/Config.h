@@ -70,6 +70,14 @@
 #define FIREBASE_TLS_HANDSHAKE_TIMEOUT_SEC 8
 #define FIREBASE_SYNC_IO_TIMEOUT_SEC 10
 
+// How long the brightness buttons must sit still before the value is written
+// back to Firestore. Each step is its own press, so a run of them used to queue
+// a write, then re-queue a correction the moment that write returned - several
+// document patches, each one a fresh TLS handshake, for a single adjustment the
+// owner experienced as one gesture. Waiting for the panel to settle sends only
+// the value it ends on.
+#define FIREBASE_BRIGHTNESS_SETTLE_MS 1500
+
 // Runtime transport recovery. Two consecutive failures are treated as a dead
 // path even when WiFi.status() still says WL_CONNECTED. The worker closes the
 // stale TLS socket, cycles the station connection, and backs off before trying

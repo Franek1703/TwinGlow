@@ -191,6 +191,8 @@ void loop() {
     // A changed config is reloaded only after the worker has left its current
     // repository call, so the shared FirebaseClient is never used concurrently.
     processCloudResults();
+    // Releases the brightness write-back once the buttons have stopped moving.
+    cloudWorker.tick();
     servicePendingConfigReload();
     
     // State machine

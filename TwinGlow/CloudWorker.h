@@ -60,9 +60,16 @@ public:
     bool requestPairEvent(const String& pairId, const String& screenId, const String& assetId);
     bool requestAsset(const String& assetId);
     // Coalescing is deliberate here: a held button produces a burst of changes,
-    // and only the value the panel ends on is worth a write. The worker reads
-    // the latest value at execution time rather than the one queued first.
+    // and only the value the panel ends on is worth a write. This records the
+    // value and restarts a settle window rather than queueing immediately; the
+    // job is enqueued by tick() once the panel has been still for
+    // FIREBASE_BRIGHTNESS_SETTLE_MS. The worker then reads the latest value at
+    // execution time rather than the one queued first.
     bool requestBrightnessWrite(uint8_t brightness);
+
+    // Releases work that waits on a deadline rather than on an event. Call
+    // every loop() iteration; it neither blocks nor touches the network.
+    void tick();
 
     // Non-blocking result retrieval; call repeatedly from loop().
     bool popResult(CloudResult& result);
@@ -100,6 +107,9 @@ private:
     volatile uint8_t consecutiveTransportFailures;
     volatile uint8_t latestBrightness;
     uint8_t recoveryAttempts;
+    // Written and read only by the Arduino loop task, like jobPending below.
+    bool brightnessWritePending;
+    uint32_t brightnessSettleAtMs;
     portMUX_TYPE stateMux = portMUX_INITIALIZER_UNLOCKED;
 
     // request* and popResult are both called by the Arduino loop task, so these

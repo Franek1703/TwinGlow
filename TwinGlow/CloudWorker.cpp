@@ -8,7 +8,17 @@
 namespace {
 constexpr size_t kJobQueueLength = 6;
 constexpr size_t kResultQueueLength = 6;
-constexpr uint32_t kWorkerStackBytes = 6144;
+// 6144 was enough while the worker only ever read from Firestore and wrote to
+// RTDB. BRIGHTNESS_WRITE added the first Firestore *patch* on this task, and
+// that path overflowed the stack: measured on hardware, a run of brightness
+// button presses ends in
+//   "Stack canary watchpoint triggered (twinglow-cloud)"
+// and a reboot. The same patch shape (updateDeviceCapability) had always run on
+// the Arduino loop task instead, which has far more room, so nothing caught it
+// before. Sized with headroom rather than to the measured edge; the task is
+// created during CONFIG_LOADING with ~68 KB free.
+constexpr uint32_t kWorkerStackBytes = 12288;
+constexpr UBaseType_t kWorkerStackWarningBytes = 2048;
 
 bool deadlineIsInFuture(uint32_t deadline) {
     return deadline != 0 && (int32_t)(deadline - millis()) > 0;
@@ -33,7 +43,8 @@ CloudWorker::CloudWorker()
       jobQueue(nullptr), resultQueue(nullptr), taskHandle(nullptr),
       started(false), paused(false), operationActive(false),
       backoffUntilMs(0), consecutiveTransportFailures(0),
-      recoveryAttempts(0), latestBrightness(0),
+      latestBrightness(0), recoveryAttempts(0),
+      brightnessWritePending(false), brightnessSettleAtMs(0),
       jobPending{false, false, false, false, false, false, false} {
 }
 
@@ -162,12 +173,27 @@ bool CloudWorker::requestPairEvent(const String& pairId, const String& screenId,
 }
 
 bool CloudWorker::requestBrightnessWrite(uint8_t brightness) {
+    if (!started) return false;
     // Recorded before the enqueue, so a coalesced request still updates the
     // value the worker will send.
     latestBrightness = brightness;
+    // Deliberately not enqueued here. Every press restarts the window, so a run
+    // of them costs one document patch instead of one per completed round trip.
+    brightnessWritePending = true;
+    brightnessSettleAtMs = millis() + FIREBASE_BRIGHTNESS_SETTLE_MS;
+    return true;
+}
+
+void CloudWorker::tick() {
+    if (!brightnessWritePending) return;
+    if ((int32_t)(millis() - brightnessSettleAtMs) < 0) return;
+
     CloudJob job{};
     job.operation = CloudOperation::BRIGHTNESS_WRITE;
-    return enqueue(job);
+    // enqueue() refuses while paused or in backoff. Keep the request pending in
+    // that case rather than dropping it, so the app's slider still catches up
+    // once cloud I/O resumes; latestBrightness already holds the settled value.
+    if (enqueue(job)) brightnessWritePending = false;
 }
 
 bool CloudWorker::requestAsset(const String& assetId) {
@@ -214,6 +240,18 @@ void CloudWorker::run() {
         } else {
             execute(job, result);
             recordOutcome(result.success, result.errorCode, operationName(job.operation));
+            // A stack overflow here is a reboot with a register dump and no
+            // hint at which operation caused it. Report the margin while it can
+            // still be printed, so the next hungry call site is visible before
+            // it trips the canary.
+            UBaseType_t stackFreeBytes = uxTaskGetStackHighWaterMark(nullptr);
+            if (stackFreeBytes < kWorkerStackWarningBytes) {
+                Serial.print(F("[CloudWorker] Low stack after "));
+                Serial.print(operationName(job.operation));
+                Serial.print(F(": "));
+                Serial.print((unsigned)stackFreeBytes);
+                Serial.println(F(" bytes free"));
+            }
             portENTER_CRITICAL(&stateMux);
             operationActive = false;
             portEXIT_CRITICAL(&stateMux);
