@@ -102,6 +102,10 @@
 // transport failures are a heap problem wearing a network problem's error code.
 #define FIREBASE_TLS_MIN_BLOCK_BYTES 20000
 #define FIREBASE_RECOVERY_BACKOFF_INITIAL_MS 30000
+// Cycling Wi-Fi costs about seven minutes offline, because the access point
+// locks the device out that long after it leaves. Never spend that on a
+// transport blip that has not persisted at least this long.
+#define FIREBASE_RECOVERY_MIN_OUTAGE_MS 300000
 #define FIREBASE_RECOVERY_BACKOFF_MAX_MS 300000
 // RTDB "doorbell" check. The app ticks /config/{deviceId}/configVersion on every
 // config change; seeing it move makes the device run the Firestore check straight

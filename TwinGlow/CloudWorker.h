@@ -116,6 +116,9 @@ private:
     volatile uint32_t operationStartedMs;
     volatile bool wifiCycleRequested;
     uint8_t recoveryAttempts;
+    // millis() when the current run of transport failures began; 0 while the
+    // last call succeeded. Gates the Wi-Fi cycle on a sustained outage.
+    uint32_t transportFailingSinceMs;
     // Set once per stuck operation so the watchdog intervenes a single time
     // rather than on every loop() pass while the call stays blocked.
     bool watchdogTripped;

@@ -61,7 +61,7 @@ CloudWorker::CloudWorker()
       started(false), paused(false), operationActive(false),
       backoffUntilMs(0), consecutiveTransportFailures(0),
       latestBrightness(0), operationStartedMs(0), wifiCycleRequested(false),
-      recoveryAttempts(0),
+      recoveryAttempts(0), transportFailingSinceMs(0),
       watchdogTripped(false), watchdogTrips(0), lastStuckLogMs(0),
       brightnessWritePending(false), brightnessSettleAtMs(0),
       jobPending{false, false, false, false, false, false, false} {
@@ -479,6 +479,7 @@ void CloudWorker::recordOutcome(bool success, int errorCode, const char* name) {
         }
         consecutiveTransportFailures = 0;
         recoveryAttempts = 0;
+        transportFailingSinceMs = 0;
         backoffUntilMs = 0;
         return;
     }
@@ -486,6 +487,8 @@ void CloudWorker::recordOutcome(bool success, int errorCode, const char* name) {
     // HTTP errors are Firebase rules/auth/application failures. A zero error is
     // normally parsing or missing data. Neither is repaired by cycling Wi-Fi.
     if (errorCode >= 0) return;
+
+    if (transportFailingSinceMs == 0) transportFailingSinceMs = millis();
 
     consecutiveTransportFailures++;
     Serial.print(F("[CloudWorker] Transport failure "));
@@ -524,12 +527,28 @@ void CloudWorker::recordOutcome(bool success, int errorCode, const char* name) {
     // the least heap to attempt it with. Back off and let the freed transport
     // and released assets restore the heap instead.
     size_t largestBlock = ESP.getMaxAllocHeap();
+    uint32_t failingForMs =
+        (transportFailingSinceMs != 0) ? (millis() - transportFailingSinceMs) : 0;
+
     if (largestBlock < FIREBASE_TLS_MIN_BLOCK_BYTES) {
         Serial.print(F("[CloudWorker] Not cycling Wi-Fi: largestBlock="));
         Serial.print(largestBlock);
         Serial.println(F(" is below a TLS handshake; treating this as a memory failure"));
+    } else if ((int32_t)failingForMs < (int32_t)FIREBASE_RECOVERY_MIN_OUTAGE_MS) {
+        // FIREBASE_FAILURES_BEFORE_RECOVERY consecutive failures is about forty
+        // seconds of trouble, and leaving the access point over it is a losing
+        // trade: it locks this device out for roughly seven minutes afterwards,
+        // so a blip that would have cleared on its own instead guarantees a long
+        // outage. The transport reset and backoff above are the cheap half of
+        // recovery and usually enough; the radio is only worth reaching for once
+        // the failures have lasted long enough to be worth seven minutes to fix.
+        Serial.print(F("[CloudWorker] Not cycling Wi-Fi yet: failing for "));
+        Serial.print(failingForMs / 1000);
+        Serial.println(F("s; transport reset and backoff first"));
     } else {
-        Serial.println(F("[CloudWorker] Requesting Wi-Fi cycle after repeated TCP failures"));
+        Serial.print(F("[CloudWorker] Requesting Wi-Fi cycle after "));
+        Serial.print(failingForMs / 1000);
+        Serial.println(F("s of TCP failures"));
         wifiCycleRequested = true;
     }
 
