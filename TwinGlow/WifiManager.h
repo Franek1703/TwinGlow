@@ -45,7 +45,15 @@ private:
     unsigned long retryDelayMs;
     int failureCount;
     int quickRetryCount;
-    
+
+    // A retry drops the radio and re-associates on a later update() pass, so
+    // neither half ever blocks the loop waiting for the other.
+    unsigned long teardownStartedMs;
+    bool teardownPending;
+
+    // millis() when the current offline stretch began; 0 while connected.
+    unsigned long offlineSinceMs;
+
     bool connecting;
     bool persistentReconnect;
     bool wasConnected;
@@ -61,6 +69,7 @@ private:
     static void handleWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info);
     
     void attemptConnection();
+    void finishConnectionAttempt();
     unsigned long calculateBackoffDelay();
     void logPendingEvents();
 };

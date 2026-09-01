@@ -90,6 +90,9 @@
 // stale TLS socket, cycles the station connection, and backs off before trying
 // again so local playback and buttons continue normally.
 #define FIREBASE_FAILURES_BEFORE_RECOVERY 2
+// A TLS handshake needs one large contiguous block. Below this, repeated
+// transport failures are a heap problem wearing a network problem's error code.
+#define FIREBASE_TLS_MIN_BLOCK_BYTES 20000
 #define FIREBASE_RECOVERY_BACKOFF_INITIAL_MS 30000
 #define FIREBASE_RECOVERY_BACKOFF_MAX_MS 300000
 // RTDB "doorbell" check. The app ticks /config/{deviceId}/configVersion on every
@@ -178,9 +181,15 @@
 #define SCREEN_MIN_DURATION_MS 2000      // Floor, so a bad value cannot spin the playlist
 
 #define WIFI_RETRY_QUICK_COUNT 5
+#define WIFI_RETRY_QUICK_DELAY_MS 4000   // Consumer APs rate-limit a client that
+                                         // re-auths every second, which turns a
+                                         // transient drop into a lockout
 #define WIFI_RETRY_BACKOFF_MAX_MS 60000
 #define WIFI_MAX_FAILURES 10
 #define WIFI_CONNECT_ATTEMPT_TIMEOUT_MS 10000
+#define WIFI_TEARDOWN_SETTLE_MS 600      // Radio-off settle before re-associating
+#define WIFI_OFFLINE_REBOOT_MS 720000    // 12 min offline after a good connection
+                                         // means the station is wedged; reboot
 
 // Button timing
 #define BUTTON_DEBOUNCE_MS 50

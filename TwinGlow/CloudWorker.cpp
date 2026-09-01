@@ -485,8 +485,24 @@ void CloudWorker::recordOutcome(bool success, int errorCode, const char* name) {
     // looked like an access point problem. The Arduino loop task consumes this
     // flag and hands the job to WifiManager, which is the only owner of the
     // radio.
-    Serial.println(F("[CloudWorker] Requesting Wi-Fi cycle after repeated TCP failures"));
-    wifiCycleRequested = true;
+    // Measured after resetTransport() above, so it reflects the heap with the
+    // TLS session already released. A handshake needs one large contiguous
+    // block; when the heap cannot offer one, every call fails with the same
+    // code=-1 the radio produces and the diagnostics above show a perfectly
+    // healthy station - associated, strong RSSI, valid route. Cycling Wi-Fi
+    // cannot fix memory, and it is actively harmful: it trades a working
+    // connection for a reconnect attempted at the exact moment the device has
+    // the least heap to attempt it with. Back off and let the freed transport
+    // and released assets restore the heap instead.
+    size_t largestBlock = ESP.getMaxAllocHeap();
+    if (largestBlock < FIREBASE_TLS_MIN_BLOCK_BYTES) {
+        Serial.print(F("[CloudWorker] Not cycling Wi-Fi: largestBlock="));
+        Serial.print(largestBlock);
+        Serial.println(F(" is below a TLS handshake; treating this as a memory failure"));
+    } else {
+        Serial.println(F("[CloudWorker] Requesting Wi-Fi cycle after repeated TCP failures"));
+        wifiCycleRequested = true;
+    }
 
     recoveryAttempts++;
     unsigned long backoffMs = calculateBackoffMs();
