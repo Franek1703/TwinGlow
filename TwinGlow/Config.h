@@ -89,6 +89,9 @@
 // is cleared only when a result comes back, so one hung call silences the
 // presence tick and the config poll permanently while rendering continues.
 #define FIREBASE_OPERATION_WATCHDOG_MS 30000
+// A blocked worker call cannot be cancelled from outside, so past this the
+// only way back to working cloud I/O is a restart.
+#define FIREBASE_OPERATION_STUCK_REBOOT_MS 180000
 
 // Runtime transport recovery. Two consecutive failures are treated as a dead
 // path even when WiFi.status() still says WL_CONNECTED. The worker closes the

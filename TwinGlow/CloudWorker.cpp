@@ -62,7 +62,7 @@ CloudWorker::CloudWorker()
       backoffUntilMs(0), consecutiveTransportFailures(0),
       latestBrightness(0), operationStartedMs(0), wifiCycleRequested(false),
       recoveryAttempts(0),
-      watchdogTripped(false), watchdogTrips(0),
+      watchdogTripped(false), watchdogTrips(0), lastStuckLogMs(0),
       brightnessWritePending(false), brightnessSettleAtMs(0),
       jobPending{false, false, false, false, false, false, false} {
 }
@@ -266,14 +266,43 @@ void CloudWorker::serviceWatchdog() {
         watchdogTripped = false;
         return;
     }
-    if ((int32_t)(millis() - startedMs) < (int32_t)FIREBASE_OPERATION_WATCHDOG_MS) return;
-    if (watchdogTripped) return;
+    uint32_t stuckMs = millis() - startedMs;
+    if ((int32_t)stuckMs < (int32_t)FIREBASE_OPERATION_WATCHDOG_MS) return;
+
+    // Nothing outside the worker task can end a call that is already blocked in
+    // the socket: the reset below is a request the blocked call is free to
+    // ignore, and operationActive must stay set or a second caller gets onto the
+    // shared client. So a call that outlasts this leaves the worker unable to
+    // take another job and unable to post a result - presence and the config
+    // poll stop dead, with nothing logged to say why, and they never resume even
+    // once Wi-Fi comes back. Restarting is the only lever left, the same
+    // conclusion the Wi-Fi path reaches for a station that cannot reassociate.
+    if ((int32_t)stuckMs >= (int32_t)FIREBASE_OPERATION_STUCK_REBOOT_MS) {
+        Serial.print(F("[CloudWorker] Operation stuck for "));
+        Serial.print(stuckMs / 1000);
+        Serial.println(F("s; restarting to recover cloud I/O"));
+        Serial.flush();
+        ESP.restart();
+    }
+
+    if (watchdogTripped) {
+        // One trip line followed by silence made a permanently wedged worker
+        // look exactly like an idle healthy one. Keep saying it.
+        if ((int32_t)(millis() - lastStuckLogMs) >= (int32_t)FIREBASE_OPERATION_WATCHDOG_MS) {
+            lastStuckLogMs = millis();
+            Serial.print(F("[CloudWorker] Still stuck after "));
+            Serial.print(stuckMs / 1000);
+            Serial.println(F("s; cloud I/O is down until it returns or we restart"));
+        }
+        return;
+    }
 
     watchdogTripped = true;
+    lastStuckLogMs = millis();
     if (watchdogTrips < 255) watchdogTrips++;
 
     Serial.print(F("[CloudWorker] Operation stuck for "));
-    Serial.print((millis() - startedMs) / 1000);
+    Serial.print(stuckMs / 1000);
     Serial.print(F("s (trip "));
     Serial.print(watchdogTrips);
     Serial.println(F("), resetting transport"));

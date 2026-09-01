@@ -120,6 +120,8 @@ private:
     // rather than on every loop() pass while the call stays blocked.
     bool watchdogTripped;
     uint8_t watchdogTrips;
+    // Rate limits the "still stuck" line so a wedged worker keeps saying so.
+    uint32_t lastStuckLogMs;
     // Written and read only by the Arduino loop task, like jobPending below.
     bool brightnessWritePending;
     uint32_t brightnessSettleAtMs;
