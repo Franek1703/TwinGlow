@@ -792,11 +792,18 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
   @override
   Future<void> sendCommand(String deviceId, String type, Map<String, dynamic> payload) async {
     try {
-      final commandRef = _database.ref('commands/$deviceId');
+      // One child per command, keyed by a push id. The device walks the
+      // children of /commands/{deviceId} and acknowledges a command by
+      // removing /commands/{deviceId}/{commandId}, so writing the fields onto
+      // the device node itself made 'type' and 'payload' look like two
+      // commands, left nothing for the device to delete, and threw away any
+      // command still queued.
+      final commandRef = _database.ref('commands/$deviceId').push();
       await commandRef.set({
         'type': type,
         'payload': payload,
         'timestamp': ServerValue.timestamp,
+        'status': 'PENDING',
       });
     } catch (e) {
       throw Exception('Failed to send command: $e');
