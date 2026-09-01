@@ -111,6 +111,27 @@ class ScreensPlaylistCubit extends Cubit<ScreensPlaylistState> {
     }
   }
 
+  /// Removes a screen from the playlist and from Firestore.
+  ///
+  /// Emits first, for the same reason [reorderScreens] does: the card has
+  /// already swiped off the list by the time this runs, so waiting for the
+  /// round trip would leave it sitting in a gap it has visibly left. A failed
+  /// delete puts the screen back where it was rather than leaving a hole.
+  Future<void> deleteScreen(String screenId) async {
+    final previousScreens = state.screens;
+    final index = previousScreens.indexWhere((s) => s.id == screenId);
+    if (index == -1) return;
+
+    final remaining = List<ScreenModel>.from(previousScreens)..removeAt(index);
+    emit(state.copyWith(screens: remaining, clearError: true));
+
+    try {
+      await firebaseRepository.deleteScreen(deviceId, screenId);
+    } catch (e) {
+      emit(state.copyWith(screens: previousScreens, error: e.toString()));
+    }
+  }
+
   /// Moves a screen using the raw indices a [SliverReorderableList] reports.
   ///
   /// The list reports [newIndex] against the list *before* the item is lifted
