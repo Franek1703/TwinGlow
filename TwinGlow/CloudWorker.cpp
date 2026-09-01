@@ -1,6 +1,7 @@
 #include "CloudWorker.h"
 
 #include <WiFi.h>
+#include <esp_task_wdt.h>
 #include <new>
 
 #include "Config.h"
@@ -59,7 +60,8 @@ CloudWorker::CloudWorker()
       jobQueue(nullptr), resultQueue(nullptr), taskHandle(nullptr),
       started(false), paused(false), operationActive(false),
       backoffUntilMs(0), consecutiveTransportFailures(0),
-      latestBrightness(0), recoveryAttempts(0),
+      latestBrightness(0), operationStartedMs(0), recoveryAttempts(0),
+      watchdogTripped(false), watchdogTrips(0),
       brightnessWritePending(false), brightnessSettleAtMs(0),
       jobPending{false, false, false, false, false, false, false} {
 }
@@ -107,10 +109,32 @@ bool CloudWorker::begin(FirebaseClientWrap* firebaseClient,
     // in the normal case, but a single uninterrupted stretch inside the TLS or
     // JSON code can still outrun a 5 s deadline, and the penalty for missing it
     // is a reboot in the middle of cloud I/O rather than a recoverable error.
-    // Unsubscribing IDLE0 gives up hang detection on this core; core 1, which
-    // runs loop() and all rendering, keeps its watchdog.
-    if (!disableCore0WDT()) {
-        Serial.println(F("[CloudWorker] Could not unsubscribe IDLE0 from the task watchdog"));
+    //
+    // disableCore0WDT() is the obvious call here and it is the wrong one. It
+    // reaches esp_task_wdt_delete(), which removes IDLE0 from the watchdog's
+    // task list but leaves the idle hook that init registered still installed.
+    // That hook keeps calling esp_task_wdt_reset() on every idle tick, the
+    // lookup now fails every time, and the console fills with
+    //   E task_wdt: esp_task_wdt_reset(707): task not found
+    // at hundreds of lines a second - starting on the very next line after this
+    // function logs success. Reconfiguring the timer clears core 0 from
+    // idle_core_mask instead, which unsubscribes the task *and* deregisters its
+    // hook, so the timer goes quiet the way disabling it was meant to.
+    //
+    // Nothing is subscribed afterwards: this build sets
+    // CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0 only (CPU1 is unset), and the
+    // Arduino core leaves loopTaskWDTEnabled false unless enableLoopWDT() is
+    // called. Hardware hang detection is given up deliberately; serviceWatchdog()
+    // now covers a stuck cloud operation in software, and recovers the transport
+    // instead of rebooting the panel.
+    esp_task_wdt_config_t wdtConfig = {};
+    wdtConfig.timeout_ms = CONFIG_ESP_TASK_WDT_TIMEOUT_S * 1000;
+    wdtConfig.idle_core_mask = 0;
+    wdtConfig.trigger_panic = true;
+    esp_err_t wdtErr = esp_task_wdt_reconfigure(&wdtConfig);
+    if (wdtErr != ESP_OK) {
+        Serial.print(F("[CloudWorker] Could not unsubscribe IDLE0 from the task watchdog, err="));
+        Serial.println((int)wdtErr);
     }
 
     started = true;
@@ -211,6 +235,8 @@ bool CloudWorker::requestBrightnessWrite(uint8_t brightness) {
 }
 
 void CloudWorker::tick() {
+    serviceWatchdog();
+
     if (!brightnessWritePending) return;
     if ((int32_t)(millis() - brightnessSettleAtMs) < 0) return;
 
@@ -220,6 +246,52 @@ void CloudWorker::tick() {
     // that case rather than dropping it, so the app's slider still catches up
     // once cloud I/O resumes; latestBrightness already holds the settled value.
     if (enqueue(job)) brightnessWritePending = false;
+}
+
+// The worker task cannot be unblocked from the outside: it is parked inside a
+// synchronous library call. Closing the socket underneath it is what makes that
+// call return an error instead of waiting forever, so the reset below is issued
+// from this task on purpose, accepting the concurrent touch of the client. The
+// alternative is a device whose cloud I/O never recovers without a power cycle.
+void CloudWorker::serviceWatchdog() {
+    if (!started) return;
+
+    portENTER_CRITICAL(&stateMux);
+    bool busy = operationActive;
+    uint32_t startedMs = operationStartedMs;
+    portEXIT_CRITICAL(&stateMux);
+
+    if (!busy) {
+        watchdogTripped = false;
+        return;
+    }
+    if ((int32_t)(millis() - startedMs) < (int32_t)FIREBASE_OPERATION_WATCHDOG_MS) return;
+    if (watchdogTripped) return;
+
+    watchdogTripped = true;
+    if (watchdogTrips < 255) watchdogTrips++;
+
+    Serial.print(F("[CloudWorker] Operation stuck for "));
+    Serial.print((millis() - startedMs) / 1000);
+    Serial.print(F("s (trip "));
+    Serial.print(watchdogTrips);
+    Serial.println(F("), resetting transport"));
+
+    if (firebase != nullptr) {
+        firebase->logTransportDiagnostics("watchdog");
+        firebase->resetTransport();
+    }
+
+    // jobPending is touched only by the Arduino loop task - request*, popResult
+    // and this function - so it needs no lock. Clearing it lets the 20 s
+    // presence tick and the 60 s config poll queue work again instead of being
+    // coalesced into a job that will never report a result.
+    for (size_t i = 0; i < (size_t)CloudOperation::COUNT; i++) jobPending[i] = false;
+
+    // operationActive is deliberately left set. The worker still owns the shared
+    // FirebaseClient until its call returns, and clearing it here would let
+    // servicePendingConfigReload() start a second, concurrent Firestore read
+    // from loop() on the same client.
 }
 
 bool CloudWorker::requestAsset(const String& assetId) {
@@ -258,7 +330,10 @@ void CloudWorker::run() {
         bool cooldownActive = isBackoffActive();
         portENTER_CRITICAL(&stateMux);
         bool canAttempt = !paused && !cooldownActive;
-        if (canAttempt) operationActive = true;
+        if (canAttempt) {
+            operationActive = true;
+            operationStartedMs = millis();
+        }
         portEXIT_CRITICAL(&stateMux);
 
         if (!canAttempt) {

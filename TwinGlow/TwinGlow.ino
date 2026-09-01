@@ -605,6 +605,26 @@ void handleConfigLoading() {
         return;
     }
 
+    // The worker's stack is one contiguous 12 KB block. Reserve it here, before
+    // a single asset is cached: by the time the playlist is built the largest
+    // free block is down to about 8 KB and xTaskCreatePinnedToCore fails
+    // outright. Nothing treats that failure as fatal, so the device used to
+    // carry on into RUNNING with every periodic cloud operation disabled - no
+    // presence, no config poll, no reload when the app bumps configVersion -
+    // while rendering looked perfectly healthy.
+    static bool workerStarted = false;
+    if (!workerStarted) {
+        workerStarted = true;
+        if (cloudWorker.begin(&firebaseClient, firestoreRepo, rtdbRepo)) {
+            // The reads below run on this task and share one FirebaseClient
+            // with the worker, so keep it idle until they are finished. The
+            // resume() at the end of this function releases it.
+            cloudWorker.pause();
+        } else {
+            Serial.println(F("[CloudWorker] Disabled; periodic cloud I/O will be skipped"));
+        }
+    }
+
     {
         // Read config version
         DeviceDoc deviceDoc;
@@ -662,6 +682,13 @@ void handleConfigLoading() {
                         Serial.print(sc.availableAssetIds.size());
                         Serial.print(F(" defaultAssetId="));
                         Serial.println(sc.defaultAssetId.length() > 0 ? sc.defaultAssetId.c_str() : "(empty)");
+                        // setScreens() drops disabled screens, so their assets can
+                        // never be rendered. Caching them anyway cost four of the
+                        // eight documents fetched for a five-screen playlist and
+                        // left the heap too fragmented for the worker's stack. A
+                        // screen turning back on bumps configVersion, which
+                        // reloads and fetches it then.
+                        if (!sc.enabled) continue;
                         // The screen document owns its asset pool. Only fall back
                         // to the pair's shared document when the screen carries
                         // no pool of its own.
@@ -772,9 +799,8 @@ void handleConfigLoading() {
         static bool tasksScheduled = false;
         if (!tasksScheduled) {
             tasksScheduled = true;
-            if (!cloudWorker.begin(&firebaseClient, firestoreRepo, rtdbRepo)) {
-                Serial.println(F("[CloudWorker] Disabled; periodic cloud I/O will be skipped"));
-            }
+            // cloudWorker.begin() deliberately does not run here: by this point
+            // the cached assets have left no block large enough for its stack.
             scheduler.schedulePresenceUpdate(updatePresence);
             if (bme680Present) {
                 scheduler.scheduleTelemetryUpdate(updateTelemetry);
@@ -1140,7 +1166,15 @@ void processCloudResults() {
 
         switch (result.operation) {
             case CloudOperation::PRESENCE:
-                if (!result.success) Serial.println(F("[Presence] Background update failed"));
+                // Logged on success too. A healthy presence tick and one that
+                // was silently coalesced into a job that never completes used to
+                // produce identical output - nothing at all - which made a
+                // wedged worker indistinguishable from a working one.
+                if (result.success) {
+                    Serial.println(F("[Presence] Heartbeat ok"));
+                } else {
+                    Serial.println(F("[Presence] Background update failed"));
+                }
                 break;
 
             case CloudOperation::TELEMETRY:
@@ -1150,6 +1184,18 @@ void processCloudResults() {
             case CloudOperation::CONFIG_CHECK:
                 if (result.success && result.deviceDoc != nullptr) {
                     DeviceDoc& doc = *result.deviceDoc;
+                    // Printed on every poll, not only when the version moves.
+                    // An unchanged version was previously silent, so a device
+                    // polling a different document than the app writes - the
+                    // device id is random and is regenerated whenever NVS is
+                    // erased - looked exactly like a device with nothing to do.
+                    // The path makes that mismatch visible without a reboot.
+                    Serial.print(F("[Config] Poll ok devices/"));
+                    Serial.print(deviceId);
+                    Serial.print(F(" remote="));
+                    Serial.print(doc.configVersion);
+                    Serial.print(F(" local="));
+                    Serial.println(currentConfigVersion);
                     applyDeviceSettings(doc);
                     applyTimeZone(doc.tzPosix);
                     if (doc.configVersion != currentConfigVersion) {

@@ -78,6 +78,13 @@
 // the value it ends on.
 #define FIREBASE_BRIGHTNESS_SETTLE_MS 1500
 
+// Stuck-operation watchdog. Every transport timeout above is <= 10 s, so a job
+// still running well past this point is wedged inside the library rather than
+// merely slow. Nothing else ever times out an in-flight operation: jobPending
+// is cleared only when a result comes back, so one hung call silences the
+// presence tick and the config poll permanently while rendering continues.
+#define FIREBASE_OPERATION_WATCHDOG_MS 30000
+
 // Runtime transport recovery. Two consecutive failures are treated as a dead
 // path even when WiFi.status() still says WL_CONNECTED. The worker closes the
 // stale TLS socket, cycles the station connection, and backs off before trying

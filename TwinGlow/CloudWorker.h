@@ -106,7 +106,14 @@ private:
     volatile uint32_t backoffUntilMs;
     volatile uint8_t consecutiveTransportFailures;
     volatile uint8_t latestBrightness;
+    // millis() at which the worker entered execute(). Read by the loop task's
+    // watchdog to spot an operation that never returns.
+    volatile uint32_t operationStartedMs;
     uint8_t recoveryAttempts;
+    // Set once per stuck operation so the watchdog intervenes a single time
+    // rather than on every loop() pass while the call stays blocked.
+    bool watchdogTripped;
+    uint8_t watchdogTrips;
     // Written and read only by the Arduino loop task, like jobPending below.
     bool brightnessWritePending;
     uint32_t brightnessSettleAtMs;
@@ -118,6 +125,9 @@ private:
     bool jobPending[(size_t)CloudOperation::COUNT];
 
     bool enqueue(const CloudJob& job);
+    // Breaks a cloud operation that has stopped making progress. Runs on the
+    // Arduino loop task via tick().
+    void serviceWatchdog();
     void run();
     void execute(const CloudJob& job, CloudResult& result);
     void recordOutcome(bool success, int errorCode, const char* operationName);
