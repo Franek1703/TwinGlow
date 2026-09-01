@@ -66,7 +66,9 @@ void main() {
         paths,
         containsAll([
           '/asset/create/image',
+          '/asset/import/image',
           '/asset/create/animation',
+          '/asset/import/animation',
           '/asset/edit/:id',
         ]),
       );

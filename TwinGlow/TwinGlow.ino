@@ -627,7 +627,17 @@ void handleConfigLoading() {
                     Serial.println(F(" screens"));
                     // Every asset any screen points at, gathered first so each
                     // one is fetched exactly once even when screens share it.
+                    //
+                    // Animations are collected separately so they can be fetched
+                    // ahead of the images. They are the large documents - 4-10KB
+                    // against 1-3KB - and each one needs a contiguous block to
+                    // buffer. That block shrinks as assets accumulate: a
+                    // five-screen playlist starts around 36KB and is down to
+                    // 12KB by the sixth fetch, which is where a large animation
+                    // starts failing. Fetching the big ones while the heap is
+                    // still whole is most of the difference.
                     std::vector<String> referencedAssetIds;
+                    std::vector<String> imageAssetIds;
                     for (size_t i = 0; i < screens.size(); i++) {
                         ScreenConfig& sc = screens[i];
                         Serial.print(F("[Config] Screen["));
@@ -683,14 +693,27 @@ void handleConfigLoading() {
                         // A pool with no default must still be cached, so this
                         // cannot gate on assetId alone.
                         if (scTypeUpper == "IMAGE" || scTypeUpper == "ANIMATION") {
+                            // An asset shared between an animation screen and an
+                            // image screen lands in whichever list reaches it
+                            // first, and the merge below drops the duplicate.
+                            std::vector<String>& target =
+                                scTypeUpper == "ANIMATION" ? referencedAssetIds : imageAssetIds;
                             if (sc.assetId.length() > 0) {
-                                addReferencedAsset(referencedAssetIds, sc.assetId);
+                                addReferencedAsset(target, sc.assetId);
                             }
                             for (size_t a = 0; a < sc.availableAssetIds.size(); a++) {
-                                addReferencedAsset(referencedAssetIds, sc.availableAssetIds[a]);
+                                addReferencedAsset(target, sc.availableAssetIds[a]);
                             }
                         }
                     }
+
+                    // Images append behind the animations. addReferencedAsset
+                    // still dedupes, so one referenced by both types is fetched
+                    // once, in its earlier animation slot.
+                    for (const String& aid : imageAssetIds) {
+                        addReferencedAsset(referencedAssetIds, aid);
+                    }
+                    imageAssetIds.clear();
 
                     // Refetch every referenced asset, cached or not. Skipping
                     // the ones already held meant an asset edited in the app

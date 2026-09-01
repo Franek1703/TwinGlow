@@ -3,6 +3,21 @@
 
 #include "Config.h"
 #include <FirebaseClient.h>
+// getAsset() pulls documents up to ~10KB. A stock FirebaseClient buffers a
+// response body twice over, so one of those needs ~20KB of contiguous heap -
+// more than a fragmented ESP32 without PSRAM can supply, and the failure
+// surfaces as an empty body with error code 0 rather than an allocation error.
+// tools/firebaseclient-patch/ fixes that in the library; this catches a build
+// against an unpatched copy, which an Arduino IDE library update produces
+// silently.
+//
+// #error rather than #warning deliberately: the sketch builds with
+// `--warnings none`, which suppresses #warning outright, and an unnoticed
+// unpatched build fails at runtime as a screen that never loads. Recovery is
+// one command.
+#if !defined(FIREBASECLIENT_PAYLOAD_MOVE_PATCH)
+#error "FirebaseClient is missing the TwinGlow payload-move patch; large animation assets will fail to load at runtime. Run tools/firebaseclient-patch/apply.sh"
+#endif
 #include "FirebaseTypes.h"
 #include "SleepSchedule.h"
 #include <Arduino.h>
