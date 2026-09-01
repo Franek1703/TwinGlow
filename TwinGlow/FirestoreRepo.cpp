@@ -833,7 +833,24 @@ bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset) {
             flat["frameCount"] = count;
         }
     }
-    serializeJson(flat, asset.pixelsJson);
+    // serializeJson into an Arduino String truncates silently when the String
+    // cannot grow: the reload logs show pixelsJsonLen=4061 for a payload that
+    // measures 6274 when healthy, and the caller only discovers it one layer
+    // later as "JSON parse error: IncompleteInput" on a fragment. Comparing the
+    // bytes written against measureJson() turns that corruption into a clean
+    // failure the config loader can retry.
+    size_t expectedLen = measureJson(flat);
+    size_t writtenLen = serializeJson(flat, asset.pixelsJson);
+    if (writtenLen != expectedLen || asset.pixelsJson.length() != expectedLen) {
+        Serial.print(F("[Firestore] getAsset: payload truncated, wrote "));
+        Serial.print(writtenLen);
+        Serial.print(F(" of "));
+        Serial.print(expectedLen);
+        Serial.print(F(" bytes, largestBlock="));
+        Serial.println(ESP.getMaxAllocHeap());
+        asset.pixelsJson = "";
+        return false;
+    }
     Serial.print(F("[Firestore] getAsset: id="));
     Serial.print(assetId);
     Serial.print(F(" type="));

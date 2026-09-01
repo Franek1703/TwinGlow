@@ -631,6 +631,26 @@ void handleConfigLoading() {
         }
     }
 
+    // Reclaim the TLS session before the heavy reads below. Measured on
+    // hardware: with a session open the heap holds ~31 KB free with a 9.7 KB
+    // largest block, and the line immediately after a reset reads 74 KB free
+    // with a 34.8 KB largest block - mbedTLS is holding ~40 KB, far more than
+    // the asset cache this code used to trim. An 8.8 KB animation document has
+    // to exist as a response String, a parsed JsonDocument and a serialised
+    // payload at the same time, which does not fit in 9.7 KB; it truncated
+    // silently instead, which is the IncompleteInput and InvalidInput parse
+    // failures the reload logs show.
+    //
+    // Reload only. Boot reaches this state with ~57 KB contiguous and has never
+    // needed it, and the reset costs a fresh handshake on the next call.
+    if (configReloadPending) {
+        Serial.print(F("[Config] Releasing TLS session before reload; largestBlock="));
+        Serial.println(ESP.getMaxAllocHeap());
+        firebaseClient.resetTransport();
+        Serial.print(F("[Config] After release; largestBlock="));
+        Serial.println(ESP.getMaxAllocHeap());
+    }
+
     {
         // Read config version
         DeviceDoc deviceDoc;
