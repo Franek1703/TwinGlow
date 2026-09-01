@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
@@ -23,6 +25,7 @@ import '../../views/screen_creation/screen_creation_view.dart';
 import '../core/models/asset_model.dart';
 import '../core/models/screen_model.dart';
 import '../services/local/onboarding_status_store.dart';
+import '../features/auth/cubit/auth_cubit.dart';
 
 /// Picks the editor for an asset being opened from `/asset/edit/:id`.
 ///
@@ -36,11 +39,76 @@ Widget assetEditorFor({required String assetId, required String? type}) {
       : AssetEditorImageView(assetId: assetId);
 }
 
-GoRouter createAppRouter(OnboardingStatusStore onboardingStatusStore) =>
+/// The only locations a visitor without a session is allowed to sit on.
+const _publicRoutes = {'/auth', '/onboarding'};
+
+/// Decides where a navigation should land for the session described by the
+/// arguments, returning `null` to let the requested location through.
+///
+/// Navigation used to be entirely imperative, so the rules only held for
+/// journeys that went through a button: a deep link straight to `/home` while
+/// signed out rendered a dead "Not authenticated" panel, and nothing sent a
+/// signed-in user on to the app. This is split out from the router so the
+/// matrix can be tested without pumping a widget tree over live Firebase.
+String? authGuardRedirect({
+  required String location,
+  required bool isRestoringSession,
+  required bool isSignedIn,
+}) {
+  // The stored session is read asynchronously at startup. Redirecting while
+  // that is still in flight would throw a signed-in user onto the login form
+  // and rewrite the deep link they actually opened.
+  if (isRestoringSession) return null;
+
+  final isPublic = _publicRoutes.contains(location);
+  if (!isSignedIn) return isPublic ? null : '/auth';
+  return isPublic ? '/home' : null;
+}
+
+/// Re-runs the router's guard whenever the session changes, rather than only
+/// on the next navigation. The subscription ends with the cubit's stream, and
+/// [AuthCubit] is owned by `App` for the lifetime of the process.
+class _AuthRefreshListenable extends ChangeNotifier {
+  _AuthRefreshListenable(Stream<AuthState> stream) {
+    _subscription = stream.listen((_) => notifyListeners());
+  }
+
+  late final StreamSubscription<AuthState> _subscription;
+
+  @override
+  void dispose() {
+    _subscription.cancel();
+    super.dispose();
+  }
+}
+
+/// Builds the app router.
+///
+/// [authCubit] supplies the session the guard reads. Omitting it leaves the
+/// guard off, which is what tests that only inspect the route table want;
+/// the app always passes one.
+GoRouter createAppRouter(
+  OnboardingStatusStore onboardingStatusStore, {
+  AuthCubit? authCubit,
+}) =>
     GoRouter(
       initialLocation: onboardingStatusStore.hasCompletedOnboarding
           ? '/auth'
           : '/onboarding',
+      refreshListenable:
+          authCubit == null ? null : _AuthRefreshListenable(authCubit.stream),
+      redirect: authCubit == null
+          ? null
+          : (context, state) {
+              final auth = authCubit.state;
+              return authGuardRedirect(
+                location: state.matchedLocation,
+                // signOut() keeps the user in state while it is in flight, so
+                // this is only ever the startup session check.
+                isRestoringSession: auth.isLoading && auth.user == null,
+                isSignedIn: auth.isAuthenticated,
+              );
+            },
       routes: [
         GoRoute(
           path: '/onboarding',

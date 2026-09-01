@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'ble_repository.dart';
 
@@ -199,14 +200,19 @@ class BleRepositoryImpl implements BLERepository {
         throw Exception('Device characteristics not available');
       }
 
-      // Write provisioning data
-      await _ssidCharacteristic!.write(ssid.codeUnits, withoutResponse: false);
+      // Write provisioning data. The BLE protocol doc specifies UTF-8 for all
+      // three characteristics; String.codeUnits emits UTF-16 code units, which
+      // silently corrupts every non-ASCII character in an SSID or password.
+      await _ssidCharacteristic!
+          .write(utf8.encode(ssid), withoutResponse: false);
       await Future.delayed(const Duration(milliseconds: 200));
 
-      await _passwordCharacteristic!.write(password.codeUnits, withoutResponse: false);
+      await _passwordCharacteristic!
+          .write(utf8.encode(password), withoutResponse: false);
       await Future.delayed(const Duration(milliseconds: 200));
 
-      await _userIdCharacteristic!.write(userId.codeUnits, withoutResponse: false);
+      await _userIdCharacteristic!
+          .write(utf8.encode(userId), withoutResponse: false);
       await Future.delayed(const Duration(milliseconds: 500));
 
       // Disconnect after provisioning

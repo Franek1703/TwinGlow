@@ -17,11 +17,18 @@ class App extends StatefulWidget {
 }
 
 class _AppState extends State<App> {
-  late final _router = createAppRouter(widget.onboardingStatusStore);
+  // The router's guard and the widget tree have to read the same session, so
+  // the cubit is owned here and handed to both rather than created inline.
+  late final _authCubit = AuthCubit(FirebaseRepositoryImpl());
+  late final _router = createAppRouter(
+    widget.onboardingStatusStore,
+    authCubit: _authCubit,
+  );
 
   @override
   void dispose() {
     _router.dispose();
+    _authCubit.close();
     super.dispose();
   }
 
@@ -32,8 +39,8 @@ class _AppState extends State<App> {
       minTextAdapt: true,
       splitScreenMode: true,
       builder: (context, child) {
-        return BlocProvider(
-          create: (_) => AuthCubit(FirebaseRepositoryImpl()),
+        return BlocProvider.value(
+          value: _authCubit,
           child: MaterialApp.router(
             title: 'TwinGlow',
             theme: AppTheme.darkTheme,
