@@ -67,6 +67,11 @@
 // for up to two minutes. Periodic cloud work runs on a worker task as well,
 // but bounded timeouts also protect boot/config-reload operations.
 #define FIREBASE_TCP_CONNECT_TIMEOUT_MS 5000
+// BearSSL buffers, replacing mbedTLS's 16KB receive buffer. RX must still hold
+// one whole TLS record, so this is the first number to raise if handshakes
+// start failing; every 1KB here costs a contiguous KB the asset fetches need.
+#define FIREBASE_TLS_RX_BUFFER_BYTES 4096
+#define FIREBASE_TLS_TX_BUFFER_BYTES 1024
 #define FIREBASE_TLS_HANDSHAKE_TIMEOUT_SEC 8
 #define FIREBASE_SYNC_IO_TIMEOUT_SEC 10
 

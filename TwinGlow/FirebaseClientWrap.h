@@ -7,7 +7,8 @@
 #include <Arduino.h>
 
 #if defined(ENABLE_DATABASE) || defined(ENABLE_FIRESTORE)
-#include <WiFiClientSecure.h>
+#include <WiFi.h>
+#include <ESP_SSLClient.h>
 #endif
 
 /**
@@ -59,7 +60,10 @@ private:
     bool initialized;
 
 #if defined(ENABLE_DATABASE) || defined(ENABLE_FIRESTORE)
-    WiFiClientSecure sslClient;
+    // BearSSL over a plain socket, rather than WiFiClientSecure's mbedTLS.
+    // See configureTransport() for why the buffer sizing matters here.
+    WiFiClient basicClient;
+    ESP_SSLClient sslClient;
     AsyncClientClass aClient;
 #endif
 

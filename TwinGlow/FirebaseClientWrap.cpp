@@ -76,8 +76,24 @@ bool FirebaseClientWrap::begin() {
 
 void FirebaseClientWrap::configureTransport() {
 #if defined(ENABLE_DATABASE) || defined(ENABLE_FIRESTORE)
+    // BearSSL with explicitly sized buffers, in place of mbedTLS. mbedTLS
+    // sizes its receive buffer from the TLS maximum of 16KB and held roughly
+    // 36KB in total, which did not merely cost free heap - it owned the
+    // largest contiguous block. Releasing the session moved largestBlock from
+    // 9,716 to 34,804 bytes, and every asset fetch ran in what was left of it,
+    // so FirebaseClient's response String - which it grows in 2KB steps with
+    // no reservation - stopped growing partway and handed the parser truncated
+    // JSON. That is the IncompleteInput/InvalidInput failures, and it is why
+    // the same document arrived at three different lengths.
+    //
+    // RX has to hold one whole TLS record, so it is the size to raise first if
+    // handshakes start failing against Google's frontend.
+    sslClient.setClient(&basicClient);
     sslClient.setInsecure();
-    sslClient.setConnectionTimeout(FIREBASE_TCP_CONNECT_TIMEOUT_MS);
+    sslClient.setBufferSizes(FIREBASE_TLS_RX_BUFFER_BYTES, FIREBASE_TLS_TX_BUFFER_BYTES);
+    // One knob here where WiFiClientSecure had a separate connect timeout;
+    // the sync I/O budget is the sensible value for both.
+    sslClient.setTimeout(FIREBASE_SYNC_IO_TIMEOUT_SEC);
     sslClient.setHandshakeTimeout(FIREBASE_TLS_HANDSHAKE_TIMEOUT_SEC);
     aClient.setClient(sslClient);
     aClient.setSyncSendTimeout(FIREBASE_SYNC_IO_TIMEOUT_SEC);
@@ -105,7 +121,7 @@ int FirebaseClientWrap::getLastErrorCode() const {
 void FirebaseClientWrap::logTransportDiagnostics(const char* context) {
 #if defined(ENABLE_DATABASE) || defined(ENABLE_FIRESTORE)
     char tlsMessage[128] = {0};
-    int tlsCode = sslClient.lastError(tlsMessage, sizeof(tlsMessage));
+    int tlsCode = sslClient.getLastSSLError(tlsMessage, sizeof(tlsMessage));
 
     Serial.print(F("[Firebase] Transport diagnostics ("));
     Serial.print(context != nullptr ? context : "unknown");
