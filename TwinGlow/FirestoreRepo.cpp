@@ -307,8 +307,21 @@ bool FirestoreRepo::getScreens(std::vector<ScreenConfig>& screens) {
     }
 
     JsonDocument doc;
-    if (deserializeJson(doc, response) != DeserializationError::Ok) {
-        Serial.println(F("[Firestore] getScreens: JSON parse error"));
+    DeserializationError parseError = deserializeJson(doc, response);
+    if (parseError) {
+        // The error name separates two failures that looked identical from the
+        // outside: NoMemory is the document not fitting the heap a reload
+        // leaves, IncompleteInput is the response itself arriving truncated.
+        // Both used to print the same "JSON parse error" and neither could be
+        // told apart without a rebuild.
+        Serial.print(F("[Firestore] getScreens: JSON parse error: "));
+        Serial.print(parseError.c_str());
+        Serial.print(F(" responseLen="));
+        Serial.print(response.length());
+        Serial.print(F(" freeHeap="));
+        Serial.print(ESP.getFreeHeap());
+        Serial.print(F(" largestBlock="));
+        Serial.println(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
         return false;
     }
     if (doc["documents"].isNull()) {

@@ -60,7 +60,8 @@ CloudWorker::CloudWorker()
       jobQueue(nullptr), resultQueue(nullptr), taskHandle(nullptr),
       started(false), paused(false), operationActive(false),
       backoffUntilMs(0), consecutiveTransportFailures(0),
-      latestBrightness(0), operationStartedMs(0), recoveryAttempts(0),
+      latestBrightness(0), operationStartedMs(0), wifiCycleRequested(false),
+      recoveryAttempts(0),
       watchdogTripped(false), watchdogTrips(0),
       brightnessWritePending(false), brightnessSettleAtMs(0),
       jobPending{false, false, false, false, false, false, false} {
@@ -294,6 +295,12 @@ void CloudWorker::serviceWatchdog() {
     // from loop() on the same client.
 }
 
+bool CloudWorker::consumeWifiCycleRequest() {
+    if (!wifiCycleRequested) return false;
+    wifiCycleRequested = false;
+    return true;
+}
+
 bool CloudWorker::requestAsset(const String& assetId) {
     CloudJob job{};
     job.operation = CloudOperation::ASSET_FETCH;
@@ -467,12 +474,19 @@ void CloudWorker::recordOutcome(bool success, int errorCode, const char* name) {
     }
 
     // WL_CONNECTED only means the ESP32 is associated with the access point;
-    // it can remain true after the route/DNS/NAT path has died. Force a fresh
-    // station session after repeated TCP failures.
-    Serial.println(F("[CloudWorker] Cycling Wi-Fi after repeated TCP failures"));
-    WiFi.disconnect(false, false);
-    vTaskDelay(pdMS_TO_TICKS(100));
-    WiFi.reconnect();
+    // it can remain true after the route/DNS/NAT path has died, so a fresh
+    // station session is still the right response to repeated TCP failures.
+    //
+    // Requested rather than performed. This runs on core 0, and calling
+    // WiFi.disconnect()/reconnect() here raced WifiManager::attemptConnection()
+    // on core 1: the driver rejected the second caller with
+    //   E wifi:sta is connecting, cannot set config
+    // and the station then produced a long run of AUTH_EXPIRE disconnects that
+    // looked like an access point problem. The Arduino loop task consumes this
+    // flag and hands the job to WifiManager, which is the only owner of the
+    // radio.
+    Serial.println(F("[CloudWorker] Requesting Wi-Fi cycle after repeated TCP failures"));
+    wifiCycleRequested = true;
 
     recoveryAttempts++;
     unsigned long backoffMs = calculateBackoffMs();

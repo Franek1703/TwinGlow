@@ -193,6 +193,12 @@ void loop() {
     processCloudResults();
     // Releases the brightness write-back once the buttons have stopped moving.
     cloudWorker.tick();
+    // The worker asks, this task acts. Issuing WiFi.begin()/reconnect() from
+    // the worker's core raced WifiManager's own retry and left the station
+    // cycling through AUTH_EXPIRE, so the radio has exactly one owner.
+    if (cloudWorker.consumeWifiCycleRequest()) {
+        wifiManager.requestReconnect();
+    }
     servicePendingConfigReload();
     
     // State machine
@@ -641,7 +647,23 @@ void handleConfigLoading() {
                 Serial.println(configVersion);
 
                 std::vector<ScreenConfig> screens;
-                if (firestoreRepo->getScreens(screens)) {
+                bool screensLoaded = firestoreRepo->getScreens(screens);
+                if (!screensLoaded && assetCache.size() > 0) {
+                    // getScreens() holds the whole response and the parsed
+                    // document at once. At boot that runs with about 59 KB of
+                    // contiguous heap; a reload runs with about 15 KB, because
+                    // the previous playlist's assets are still cached - and
+                    // every one of them is about to be refetched below anyway.
+                    // Releasing them is the only heap this path controls.
+                    //
+                    // Deliberately a retry rather than an unconditional clear:
+                    // the common case keeps its assets, so a reload that fails
+                    // for some other reason still leaves a rendering playlist.
+                    Serial.println(F("[Config] getScreens failed, retrying with the asset cache released"));
+                    assetCache.clear();
+                    screensLoaded = firestoreRepo->getScreens(screens);
+                }
+                if (screensLoaded) {
                     Serial.print(F("[Config] Firestore returned "));
                     Serial.print(screens.size());
                     Serial.println(F(" screens"));

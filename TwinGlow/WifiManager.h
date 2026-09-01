@@ -21,6 +21,11 @@ public:
     // runtime recovery must continue forever using capped backoff.
     void setPersistentReconnect(bool enabled) { persistentReconnect = enabled; }
     
+    // Asks for a fresh station session from another task. The request is acted
+    // on inside update(), so that every WiFi.begin()/disconnect() in the
+    // firmware is issued from the one task that owns the radio.
+    void requestReconnect() { reconnectRequested = true; }
+
     bool isConnected() const { return WiFi.status() == WL_CONNECTED; }
     String getSsid() const { return currentSsid; }
     IPAddress getIpAddress() const { return WiFi.localIP(); }
@@ -46,6 +51,7 @@ private:
     bool wasConnected;
     bool everConnected;
 
+    volatile bool reconnectRequested;
     volatile bool disconnectEventPending;
     volatile bool gotIpEventPending;
     volatile uint8_t lastDisconnectReason;

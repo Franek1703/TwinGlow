@@ -5,7 +5,7 @@ WifiManager* WifiManager::activeInstance = nullptr;
 WifiManager::WifiManager() 
     : lastAttemptMs(0), retryDelayMs(1000), failureCount(0), 
       quickRetryCount(0), connecting(false), persistentReconnect(false),
-      wasConnected(false), everConnected(false),
+      wasConnected(false), everConnected(false), reconnectRequested(false),
       disconnectEventPending(false), gotIpEventPending(false),
       lastDisconnectReason(0), eventHandlerRegistered(false) {
 }
@@ -51,6 +51,22 @@ bool WifiManager::begin(const String& ssid, const String& password) {
 
 void WifiManager::update() {
     logPendingEvents();
+
+    // Handled before the isConnected() branch below on purpose: the cloud
+    // worker raises this precisely when the station still reports
+    // WL_CONNECTED but nothing routes, which is the case that branch would
+    // otherwise treat as healthy and return from.
+    //
+    // Only the link is dropped here. The runtime-loss path further down sees
+    // it on a later pass and owns the retry, so WiFi.begin() keeps exactly one
+    // call site and cannot race a caller on the other core.
+    if (reconnectRequested) {
+        reconnectRequested = false;
+        Serial.println(F("[WiFi] Cycle requested; dropping the station session"));
+        WiFi.disconnect(false, false, 0);
+        connecting = false;
+        return;
+    }
 
     unsigned long now = millis();
     if (isConnected()) {

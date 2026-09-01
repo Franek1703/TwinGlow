@@ -71,6 +71,11 @@ public:
     // every loop() iteration; it neither blocks nor touches the network.
     void tick();
 
+    // True once when repeated transport failures suggest the station session is
+    // dead. The worker never touches the radio itself; the Arduino loop task
+    // consumes this and asks WifiManager to cycle it. See recordOutcome().
+    bool consumeWifiCycleRequest();
+
     // Non-blocking result retrieval; call repeatedly from loop().
     bool popResult(CloudResult& result);
 
@@ -109,6 +114,7 @@ private:
     // millis() at which the worker entered execute(). Read by the loop task's
     // watchdog to spot an operation that never returns.
     volatile uint32_t operationStartedMs;
+    volatile bool wifiCycleRequested;
     uint8_t recoveryAttempts;
     // Set once per stuck operation so the watchdog intervenes a single time
     // rather than on every loop() pass while the call stays blocked.
