@@ -3,6 +3,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'firebase_repository.dart';
+import 'pairing_service.dart';
+import 'firebase_pairing_store.dart';
+import 'device_access.dart';
 import '../../core/models/device_model.dart';
 import '../../core/models/screen_model.dart';
 import '../../core/models/screen_asset_references.dart';
@@ -14,9 +17,37 @@ import '../../core/models/pairing_model.dart';
 import '../../core/utils/device_presence.dart';
 
 class FirebaseRepositoryImpl implements FirebaseRepository {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseDatabase _database = FirebaseDatabase.instance;
+  final FirebaseAuth _auth;
+  final FirebaseFirestore _firestore;
+  final FirebaseDatabase _database;
+  FirebaseRepositoryImpl({
+    FirebaseAuth? auth,
+    FirebaseFirestore? firestore,
+    FirebaseDatabase? database,
+  }) : _auth = auth ?? FirebaseAuth.instance,
+       _firestore = firestore ?? FirebaseFirestore.instance,
+       _database = database ?? FirebaseDatabase.instance;
+  PairingService _pairing(String uid) {
+    final user = _auth.currentUser;
+    if (user == null || user.uid != uid) {
+      throw StateError('Authentication required');
+    }
+    return PairingService(
+      FirebasePairingStore(_database),
+      uid,
+      user.email ?? '',
+    );
+  }
+
+  Future<void> _ensurePairingProfile() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    try {
+      await _pairing(user.uid).ensureProfile();
+    } catch (e) {
+      debugPrint('Pairing directory update failed: $e');
+    }
+  }
 
   // Auth methods
   @override
@@ -26,6 +57,7 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
         email: email,
         password: password,
       );
+      await _ensurePairingProfile();
       return _userFromFirebaseUser(credential.user);
     } on FirebaseAuthException catch (e) {
       throw _handleAuthException(e);
@@ -39,7 +71,7 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
         email: email,
         password: password,
       );
-      
+
       // Create user document in Firestore
       if (credential.user != null) {
         await _firestore.collection('users').doc(credential.user!.uid).set({
@@ -47,7 +79,8 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
           'createdAt': Timestamp.fromDate(DateTime.now()),
         });
       }
-      
+
+      await _ensurePairingProfile();
       return _userFromFirebaseUser(credential.user);
     } on FirebaseAuthException catch (e) {
       throw _handleAuthException(e);
@@ -63,11 +96,12 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
   Future<UserModel?> getCurrentUser() async {
     final user = _auth.currentUser;
     if (user == null) return null;
-    
+
+    await _ensurePairingProfile();
     // Fetch user document for displayName
     final doc = await _firestore.collection('users').doc(user.uid).get();
     final data = doc.data();
-    
+
     return UserModel(
       id: user.uid,
       email: user.email ?? '',
@@ -88,37 +122,36 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
           .get();
       if (mappingSnapshot.docs.isEmpty) return [];
 
-      // For each deviceId in mappings, fetch the device metadata from /devices/{deviceId}
-      final devices = <DeviceModel>[];
-      for (final mapDoc in mappingSnapshot.docs) {
-        final deviceId = mapDoc.id;
-        final deviceDoc = await _firestore.collection('devices').doc(deviceId).get();
-        if (!deviceDoc.exists) continue;
-
-        // Prefer user's name override if present
-        final data = deviceDoc.data()!;
-        final mapData = mapDoc.data();
-        final name = (mapData['nameOverride'] as String?) ?? data['name'] as String? ?? '';
-        var device = _deviceFromFirestore(
-          deviceId,
-          {
+      return loadOwnedDeviceMappings<
+        QueryDocumentSnapshot<Map<String, dynamic>>,
+        DeviceModel
+      >(
+        mappings: mappingSnapshot.docs,
+        userId: userId,
+        deviceId: (mapping) => mapping.id,
+        readAccess: (id) async =>
+            (await _database.ref('deviceAccess/$id').get()).value,
+        load: (mapping) async {
+          final id = mapping.id;
+          final doc = await _firestore.collection('devices').doc(id).get();
+          if (!doc.exists) return null;
+          final data = doc.data()!;
+          final device = _deviceFromFirestore(id, {
             ...data,
-            'name': name,
-            // Include hasSensor and other metadata from /devices
-            'hasSensor': data['hw'] != null && (data['hw']['bme680'] == true),
-          },
-        );
-        // Online status from RTDB. The flag alone is never lowered by the
-        // device, so liveness comes from how fresh lastSeenMs is.
-        final presenceRef = _database.ref('presence/$deviceId');
-        final snapshot = await presenceRef.get();
-        final presenceData =
-            snapshot.exists ? snapshot.value as Map<dynamic, dynamic>? : null;
-        device = device.copyWith(isOnline: isPresenceOnline(presenceData));
-
-        devices.add(device);
-      }
-      return devices;
+            'name':
+                (mapping.data()['nameOverride'] as String?) ??
+                data['name'] as String? ??
+                '',
+            'hasSensor': data['hw'] != null && data['hw']['bme680'] == true,
+          });
+          final presence = await _database.ref('presence/$id').get();
+          return device.copyWith(
+            isOnline: isPresenceOnline(
+              presence.exists ? presence.value as Map<dynamic, dynamic>? : null,
+            ),
+          );
+        },
+      );
     } catch (e) {
       print('error: $e');
       throw Exception('Failed to get devices: $e');
@@ -181,14 +214,14 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
     try {
       // Delete device document
       await _firestore.collection('devices').doc(deviceId).delete();
-      
+
       // Delete all screens for this device
       final screensSnapshot = await _firestore
           .collection('devices')
           .doc(deviceId)
           .collection('screens')
           .get();
-      
+
       final batch = _firestore.batch();
       for (var doc in screensSnapshot.docs) {
         batch.delete(doc.reference);
@@ -225,11 +258,14 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
           .collection('devices')
           .doc(deviceId)
           .collection('screens');
-      
+
       // Get current max order
-      final existingScreens = await screensRef.orderBy('order', descending: true).limit(1).get();
-      final nextOrder = existingScreens.docs.isEmpty 
-          ? 0 
+      final existingScreens = await screensRef
+          .orderBy('order', descending: true)
+          .limit(1)
+          .get();
+      final nextOrder = existingScreens.docs.isEmpty
+          ? 0
           : (existingScreens.docs.first.data()['order'] as int? ?? 0) + 1;
 
       await screensRef.doc(screen.id).set({
@@ -255,7 +291,11 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
   }
 
   @override
-  Future<void> updateScreen(String deviceId, String screenId, ScreenModel screen) async {
+  Future<void> updateScreen(
+    String deviceId,
+    String screenId,
+    ScreenModel screen,
+  ) async {
     try {
       await _firestore
           .collection('devices')
@@ -263,15 +303,15 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
           .collection('screens')
           .doc(screenId)
           .update({
-        'name': screen.name,
-        'enabled': screen.enabled,
-        'isShared': screen.isShared,
-        'assetId': screen.assetId,
-        'config': screen.config,
-        'previewData': screen.previewData,
-        'updatedAt': Timestamp.fromDate(DateTime.now()),
-        ..._poolFields(screen),
-      });
+            'name': screen.name,
+            'enabled': screen.enabled,
+            'isShared': screen.isShared,
+            'assetId': screen.assetId,
+            'config': screen.config,
+            'previewData': screen.previewData,
+            'updatedAt': Timestamp.fromDate(DateTime.now()),
+            ..._poolFields(screen),
+          });
 
       // Increment device configVersion
       await _incrementDeviceConfigVersion(deviceId);
@@ -289,19 +329,8 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
           .collection('screens')
           .doc(screenId);
 
-      // Firestore has no foreign keys, so the shared-screen pointer would
-      // dangle if we only deleted the screen. The screen doc records where its
-      // pointer lives, which makes the cleanup a direct delete.
-      final snapshot = await screenRef.get();
-      final data = snapshot.data();
-      final pairId = data?['pairId'] as String?;
-      final sharedScreenId = data?['sharedScreenId'] as String?;
-
       final batch = _firestore.batch();
       batch.delete(screenRef);
-      if (pairId != null && sharedScreenId != null) {
-        batch.delete(_sharedScreenRef(pairId, sharedScreenId));
-      }
       await batch.commit();
 
       // Increment device configVersion
@@ -322,17 +351,6 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
     };
   }
 
-  DocumentReference<Map<String, dynamic>> _sharedScreenRef(
-    String pairId,
-    String sharedScreenId,
-  ) {
-    return _firestore
-        .collection('pairs')
-        .doc(pairId)
-        .collection('sharedScreens')
-        .doc(sharedScreenId);
-  }
-
   @override
   Future<void> setScreenShared(
     String deviceId,
@@ -347,49 +365,12 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
           .collection('screens')
           .doc(screenId);
 
-      // Without a pair there is nowhere to point, so record the intent on the
-      // screen and stop. Sharing becomes effective once a pair exists.
-      if (pairId == null || pairId.isEmpty) {
-        await screenRef.update({
-          'isShared': isShared,
-          'updatedAt': Timestamp.fromDate(DateTime.now()),
-        });
-        await _incrementDeviceConfigVersion(deviceId);
-        return;
-      }
-
-      // Deterministic id keeps the operation idempotent - re-sharing the same
-      // screen overwrites its pointer instead of creating a duplicate.
-      final sharedScreenId = '${deviceId}_$screenId';
-      final batch = _firestore.batch();
-
-      if (isShared) {
-        final snapshot = await screenRef.get();
-        batch.update(screenRef, {
-          'isShared': true,
-          'pairId': pairId,
-          'sharedScreenId': sharedScreenId,
-          'updatedAt': Timestamp.fromDate(DateTime.now()),
-        });
-        // The pointer carries no content - only which screen is shared.
-        batch.set(_sharedScreenRef(pairId, sharedScreenId), {
-          'deviceId': deviceId,
-          'screenId': screenId,
-          'ownerUid': _auth.currentUser?.uid,
-          'type': (snapshot.data()?['type'] as String? ?? 'image').toUpperCase(),
-          'sharedAt': Timestamp.fromDate(DateTime.now()),
-        });
-      } else {
-        batch.update(screenRef, {
-          'isShared': false,
-          'pairId': FieldValue.delete(),
-          'sharedScreenId': FieldValue.delete(),
-          'updatedAt': Timestamp.fromDate(DateTime.now()),
-        });
-        batch.delete(_sharedScreenRef(pairId, sharedScreenId));
-      }
-
-      await batch.commit();
+      await screenRef.update({
+        'isShared': isShared,
+        'pairId': FieldValue.delete(),
+        'sharedScreenId': FieldValue.delete(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
       await _incrementDeviceConfigVersion(deviceId);
     } catch (e) {
       throw Exception('Failed to update screen sharing: $e');
@@ -449,34 +430,16 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
   @override
   Future<List<AssetModel>> getUserAssets(String userId) async {
     try {
-      // Support both 'userId' (legacy) and 'ownerUid' (new format)
-      final querySnapshot = await _firestore
+      // Canonical ownership supports private collection queries. Historical
+      // userId-only assets require the explicit administrator migration.
+      final snapshot = await _firestore
           .collection('assets')
           .where('ownerUid', isEqualTo: userId)
           .where('isDefault', isEqualTo: false)
           .get();
-
-      // Also query legacy format for backward compatibility
-      final legacySnapshot = await _firestore
-          .collection('assets')
-          .where('userId', isEqualTo: userId)
-          .where('isDefault', isEqualTo: false)
-          .get();
-
-      final allDocs = <String, dynamic>{};
-      for (var doc in querySnapshot.docs) {
-        allDocs[doc.id] = doc.data();
-      }
-      for (var doc in legacySnapshot.docs) {
-        if (!allDocs.containsKey(doc.id)) {
-          allDocs[doc.id] = doc.data();
-        }
-      }
-
-      return allDocs.entries.map((entry) {
-        print("entry: ${entry.value}");
-        return _assetFromFirestore(entry.key, entry.value);
-      }).toList();
+      return snapshot.docs
+          .map((doc) => _assetFromFirestore(doc.id, doc.data()))
+          .toList();
     } catch (e) {
       throw Exception('Failed to get user assets: $e');
     }
@@ -533,8 +496,7 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
         'type': asset.type.name.toUpperCase(),
         'updatedAt': Timestamp.fromDate(DateTime.now()),
         ...fields.values,
-        for (final name in fields.obsoleteFieldNames)
-          name: FieldValue.delete(),
+        for (final name in fields.obsoleteFieldNames) name: FieldValue.delete(),
       });
       await _bumpDevicesUsingAsset(assetId);
     } catch (e) {
@@ -578,7 +540,9 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
       final batch = _firestore.batch();
       for (final screen in screensUsingAsset) {
         final data = screen.data();
-        final references = _assetReferencesFromScreenData(data).without(assetId);
+        final references = _assetReferencesFromScreenData(
+          data,
+        ).without(assetId);
         batch.update(screen.reference, {
           'assetId': references.assetId ?? FieldValue.delete(),
           'defaultAssetId': references.defaultAssetId ?? FieldValue.delete(),
@@ -602,167 +566,50 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
     }
   }
 
-  // Pairing methods
+  // Pairing is authoritative in RTDB; no cross-database ACL mirroring.
   @override
-  Future<PairingModel> getPairing(String userId) async {
-    try {
-      // Query pairs where userA or userB equals userId
-      final pairsQueryA = await _firestore
-          .collection('pairs')
-          .where('userA', isEqualTo: userId)
-          .limit(1)
-          .get();
-
-      final pairsQueryB = await _firestore
-          .collection('pairs')
-          .where('userB', isEqualTo: userId)
-          .limit(1)
-          .get();
-
-      PairingModel? pairing;
-      
-      if (pairsQueryA.docs.isNotEmpty) {
-        final pairData = pairsQueryA.docs.first.data();
-        final otherUserId = pairData['userB'] as String?;
-        if (otherUserId != null) {
-          final otherUser = await _getUserById(otherUserId);
-          pairing = PairingModel(
-            pairId: pairsQueryA.docs.first.id,
-            pairedUserId: otherUserId,
-            pairedUserName: otherUser?.displayName ?? otherUser?.email,
-            sharedScreensCount: await _countSharedScreens(userId, otherUserId),
-          );
-        }
-      } else if (pairsQueryB.docs.isNotEmpty) {
-        final pairData = pairsQueryB.docs.first.data();
-        final otherUserId = pairData['userA'] as String?;
-        if (otherUserId != null) {
-          final otherUser = await _getUserById(otherUserId);
-          pairing = PairingModel(
-            pairId: pairsQueryB.docs.first.id,
-            pairedUserId: otherUserId,
-            pairedUserName: otherUser?.displayName ?? otherUser?.email,
-            sharedScreensCount: await _countSharedScreens(userId, otherUserId),
-          );
-        }
-      }
-
-      return pairing ?? PairingModel();
-    } catch (e) {
-      throw Exception('Failed to get pairing: $e');
-    }
-  }
+  Future<PairingModel> getPairing(String userId) =>
+      _pairing(userId).getPairing();
+  @override
+  Stream<PairingModel> watchPairing(String userId) =>
+      _pairing(userId).watchPairing();
+  @override
+  Stream<List<PairingInvite>> watchPairingInvites(
+    String userId, {
+    required bool incoming,
+  }) => _pairing(userId).watchInvites(incoming);
+  @override
+  Future<List<DeviceModel>> getPairableDevices(String userId) =>
+      getDevices(userId);
 
   @override
-  Future<void> sendPairingInvite(String userId, String targetEmail) async {
-    try {
-      // Find user by email
-      final usersQuery = await _firestore
-          .collection('users')
-          .where('email', isEqualTo: targetEmail)
-          .limit(1)
-          .get();
-
-      if (usersQuery.docs.isEmpty) {
-        throw Exception('User not found');
-      }
-
-      final targetUserId = usersQuery.docs.first.id;
-
-      // Create invite document
-      await _firestore.collection('pairingInvites').add({
-        'fromUserId': userId,
-        'toUserId': targetUserId,
-        'status': 'pending',
-        'createdAt': Timestamp.fromDate(DateTime.now()),
-      });
-    } catch (e) {
-      throw Exception('Failed to send pairing invite: $e');
-    }
-  }
-
+  Stream<Map<String, dynamic>> watchPairingAcknowledgment(
+    String pairId,
+    String receiverDeviceId,
+  ) => _database
+      .ref('pairing/acks/$pairId/$receiverDeviceId')
+      .onValue
+      .map((e) => pairingMap(e.snapshot.value));
   @override
-  Future<void> acceptPairingInvite(String userId, String inviteId) async {
-    try {
-      final inviteDoc = await _firestore
-          .collection('pairingInvites')
-          .doc(inviteId)
-          .get();
-
-      if (!inviteDoc.exists) {
-        throw Exception('Invite not found');
-      }
-
-      final inviteData = inviteDoc.data()!;
-      final fromUserId = inviteData['fromUserId'] as String;
-
-      if (fromUserId == userId) {
-        throw Exception('Cannot accept own invite');
-      }
-
-      // Create pair document
-      final pairId = '${fromUserId}_$userId';
-      await _firestore.collection('pairs').doc(pairId).set({
-        'userA': fromUserId,
-        'userB': userId,
-        'createdAt': Timestamp.fromDate(DateTime.now()),
-      });
-
-      // Update user documents with pairId
-      await _firestore.collection('users').doc(fromUserId).update({
-        'pairId': pairId,
-      });
-      await _firestore.collection('users').doc(userId).update({
-        'pairId': pairId,
-      });
-
-      // Delete invite
-      await inviteDoc.reference.delete();
-    } catch (e) {
-      throw Exception('Failed to accept pairing invite: $e');
-    }
-  }
-
+  Future<void> sendPairingInvite(
+    String userId,
+    String targetEmail,
+    String deviceId,
+  ) => _pairing(userId).sendInvite(targetEmail, deviceId);
   @override
-  Future<void> unpair(String userId) async {
-    try {
-      final pairing = await getPairing(userId);
-      if (!pairing.isPaired || pairing.pairedUserId == null) {
-        return;
-      }
-
-      // Find and delete pair document
-      final pairsQueryA = await _firestore
-          .collection('pairs')
-          .where('userA', isEqualTo: userId)
-          .limit(1)
-          .get();
-
-      final pairsQueryB = await _firestore
-          .collection('pairs')
-          .where('userB', isEqualTo: userId)
-          .limit(1)
-          .get();
-
-      if (pairsQueryA.docs.isNotEmpty) {
-        await pairsQueryA.docs.first.reference.delete();
-      } else if (pairsQueryB.docs.isNotEmpty) {
-        await pairsQueryB.docs.first.reference.delete();
-      }
-
-      // Remove pairId from user documents
-      await _firestore.collection('users').doc(userId).update({
-        'pairId': FieldValue.delete(),
-      });
-      if (pairing.pairedUserId != null) {
-        await _firestore.collection('users').doc(pairing.pairedUserId!).update({
-          'pairId': FieldValue.delete(),
-        });
-      }
-    } catch (e) {
-      throw Exception('Failed to unpair: $e');
-    }
-  }
+  Future<void> acceptPairingInvite(
+    String userId,
+    String inviteId,
+    String deviceId,
+  ) => _pairing(userId).acceptInvite(inviteId, deviceId);
+  @override
+  Future<void> resolvePairingInvite(
+    String userId,
+    String inviteId,
+    String status,
+  ) => _pairing(userId).resolveInvite(inviteId, status);
+  @override
+  Future<void> unpair(String userId) => _pairing(userId).unpair();
 
   // RTDB methods
   @override
@@ -790,7 +637,11 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
   }
 
   @override
-  Future<void> sendCommand(String deviceId, String type, Map<String, dynamic> payload) async {
+  Future<void> sendCommand(
+    String deviceId,
+    String type,
+    Map<String, dynamic> payload,
+  ) async {
     try {
       // One child per command, keyed by a push id. The device walks the
       // children of /commands/{deviceId} and acknowledges a command by
@@ -875,7 +726,8 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
       endMinute:
           (raw['endMinute'] as num?)?.toInt() ?? SleepSchedule.defaultEndMinute,
       brightness:
-          (raw['brightness'] as num?)?.toInt() ?? SleepSchedule.defaultBrightness,
+          (raw['brightness'] as num?)?.toInt() ??
+          SleepSchedule.defaultBrightness,
     );
   }
 
@@ -887,12 +739,12 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
       enabled: data['enabled'] ?? true,
       isShared: data['isShared'] ?? false,
       assetId: data['assetId'],
-      config: data['config'] != null 
+      config: data['config'] != null
           ? Map<String, dynamic>.from(data['config'])
           : null,
       previewData: data['previewData'] != null
           ? List<List<int>>.from(
-              (data['previewData'] as List).map((row) => List<int>.from(row))
+              (data['previewData'] as List).map((row) => List<int>.from(row)),
             )
           : null,
       defaultAssetId: data['defaultAssetId'],
@@ -945,7 +797,7 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
     } else if (data['pixelData'] != null) {
       // Legacy format: full grid (for backward compatibility)
       pixelData = List<List<int>>.from(
-        (data['pixelData'] as List).map((row) => List<int>.from(row))
+        (data['pixelData'] as List).map((row) => List<int>.from(row)),
       );
     }
 
@@ -1015,8 +867,10 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
           .set(ServerValue.increment(1));
     } catch (e) {
       // Logged, not rethrown: the Firestore poll still delivers the change.
-      debugPrint('Config doorbell failed for $deviceId (device will still '
-          'update on its 60s poll): $e');
+      debugPrint(
+        'Config doorbell failed for $deviceId (device will still '
+        'update on its 60s poll): $e',
+      );
     }
   }
 
@@ -1045,27 +899,36 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
       // Never fail the asset save over the notification, but do say so:
       // swallowing this would look exactly like the stale-device bug this
       // helper prevents.
-      debugPrint('Could not notify devices using asset $assetId; they will '
-          'show stale pixels until another edit bumps them: $e');
+      debugPrint(
+        'Could not notify devices using asset $assetId; they will '
+        'show stale pixels until another edit bumps them: $e',
+      );
     }
   }
 
   Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
-      _getScreensUsingAsset(String userId, String assetId) async {
+  _getScreensUsingAsset(String userId, String assetId) async {
     final deviceMappings = await _firestore
         .collection('users')
         .doc(userId)
         .collection('devices')
         .get();
-    final screenSnapshots = await Future.wait(
-      deviceMappings.docs.map(
-        (device) => _firestore
-            .collection('devices')
-            .doc(device.id)
-            .collection('screens')
-            .get(),
-      ),
-    );
+    final screenSnapshots =
+        await loadOwnedDeviceMappings<
+          QueryDocumentSnapshot<Map<String, dynamic>>,
+          QuerySnapshot<Map<String, dynamic>>
+        >(
+          mappings: deviceMappings.docs,
+          userId: userId,
+          deviceId: (mapping) => mapping.id,
+          readAccess: (id) async =>
+              (await _database.ref('deviceAccess/$id').get()).value,
+          load: (mapping) => _firestore
+              .collection('devices')
+              .doc(mapping.id)
+              .collection('screens')
+              .get(),
+        );
 
     return screenSnapshots
         .expand((snapshot) => snapshot.docs)
@@ -1089,41 +952,6 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
     );
   }
 
-  Future<UserModel?> _getUserById(String userId) async {
-    try {
-      final doc = await _firestore.collection('users').doc(userId).get();
-      if (!doc.exists) return null;
-      final data = doc.data()!;
-      return UserModel(
-        id: userId,
-        email: data['email'] ?? '',
-        displayName: data['displayName'],
-      );
-    } catch (e) {
-      return null;
-    }
-  }
-
-  Future<int> _countSharedScreens(String userId1, String userId2) async {
-    // Count screens that are shared between these two users
-    // This is a simplified implementation - in reality, you'd need to check
-    // sharedScreenRef and pairId relationships
-    try {
-      // Get all devices for user1
-      final devices1 = await getDevices(userId1);
-      
-      int count = 0;
-      for (var device in devices1) {
-        final screens = await getScreens(device.id);
-        count += screens.where((s) => s.isShared).length;
-      }
-      
-      return count;
-    } catch (e) {
-      return 0;
-    }
-  }
-
   /// Converts SPARSE_PACKED_V1 back to a full 16x16 grid, with alpha forced to
   /// 255 to match [_convertFromSparseFormat].
   List<List<int>> _convertFromPackedFormat(String packed) {
@@ -1133,7 +961,9 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
     for (int i = 0; i < packed.length; i += 8) {
       final index = int.tryParse(packed.substring(i, i + 2), radix: 16);
       final rgb888 = int.tryParse(packed.substring(i + 2, i + 8), radix: 16);
-      if (index == null || rgb888 == null || index < 0 || index >= 256) continue;
+      if (index == null || rgb888 == null || index < 0 || index >= 256) {
+        continue;
+      }
 
       final y = index ~/ 16;
       final x = index % 16;
@@ -1143,48 +973,17 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
     return grid;
   }
 
-  /// Converts full 16x16 grid to sparse format: [{"index": i, "color": c}, ...]
-  /// where index = y*16 + x (0-255) and color is RGB888 (0xRRGGBB)
-  /// Uses array of maps format which is more Firestore-friendly than nested arrays
-  ///
-  /// Retained only to read assets written before SPARSE_PACKED_V1; new writes
-  /// go through [_convertToPackedFormat].
-  List<Map<String, int>> _convertToSparseFormat(List<List<int>>? pixelData) {
-    if (pixelData == null || pixelData.isEmpty) return [];
-    
-    final sparsePixels = <Map<String, int>>[];
-    
-    for (int y = 0; y < pixelData.length && y < 16; y++) {
-      final row = pixelData[y];
-      for (int x = 0; x < row.length && x < 16; x++) {
-        final color = row[x];
-        // Skip black pixels (0 or transparent)
-        if (color != 0) {
-          // Convert ARGB to RGB888 (remove alpha channel)
-          final rgb888 = color & 0xFFFFFF;
-          final index = y * 16 + x;
-          sparsePixels.add({
-            'index': index,
-            'color': rgb888,
-          });
-        }
-      }
-    }
-    
-    return sparsePixels;
-  }
-
   /// Converts sparse format [{"index": i, "color": c}, ...] back to full 16x16 grid
   /// Supports both array-of-maps format (new) and array-of-arrays format (legacy)
   /// where index = y*16 + x and color is RGB888 (converted to ARGB with alpha=255)
   List<List<int>> _convertFromSparseFormat(List<dynamic> sparsePixels) {
     // Initialize 16x16 grid with zeros (black/transparent)
     final grid = List.generate(16, (_) => List.filled(16, 0));
-    
+
     for (final pixelEntry in sparsePixels) {
       int? index;
       int? rgb888;
-      
+
       // Try array-of-maps format first (new format)
       if (pixelEntry is Map) {
         index = pixelEntry['index'] as int?;
@@ -1195,11 +994,11 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
         index = pixelEntry[0] as int?;
         rgb888 = pixelEntry[1] as int?;
       }
-      
+
       if (index != null && rgb888 != null && index >= 0 && index < 256) {
         final y = index ~/ 16;
         final x = index % 16;
-        
+
         if (y < 16 && x < 16) {
           // Convert RGB888 to ARGB (add alpha channel = 255)
           final argb = 0xFF000000 | rgb888;
@@ -1207,7 +1006,7 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
         }
       }
     }
-    
+
     return grid;
   }
 }
