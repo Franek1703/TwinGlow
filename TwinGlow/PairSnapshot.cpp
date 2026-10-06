@@ -7,7 +7,7 @@ bool identifier(const String& s){
 }
 String packedPixels(const std::vector<Pixel>& pixels){
     String out;if(!out.reserve(pixels.size()*8))return String();
-    for(const auto& p:pixels){char run[9];snprintf(run,sizeof(run),"%02x%06lx",p.index,(unsigned long)(p.color&0xffffff));out+=run;}
+    for(const auto& p:pixels){char run[9];snprintf(run,sizeof(run),"%02x%06lx",(unsigned)p.index,(unsigned long)(p.color&0xffffff));out+=run;}
     return out;
 }
 }

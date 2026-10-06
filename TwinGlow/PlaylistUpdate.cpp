@@ -23,5 +23,15 @@ bool PlaylistUpdate::accept(const String& id,const String& json){
     if(ready()||id!=next())return false;
     CachedAsset asset;
     if(!cache.parseAsset(id,json,asset))return false;
-    cache.addAsset(std::move(asset));++index;return true;
+    return accept(id, std::move(asset));
+}
+bool PlaylistUpdate::accept(const String& id, CachedAsset&& asset) {
+    if (ready() || id != next() || asset.id != id || !asset.isValid()) return false;
+    cache.addAsset(std::move(asset)); ++index; return true;
+}
+bool PlaylistUpdate::acceptUnchanged(const String& id) {
+    if (ready() || id != next()) return false;
+    auto asset = cache.getAsset(id);
+    if (!asset || asset->sourceRevision.isEmpty()) return false;
+    ++index; return true;
 }

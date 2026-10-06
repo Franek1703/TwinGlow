@@ -636,8 +636,12 @@ void servicePlaylistUpdate() {
         currentConfigVersion=playlistUpdate->version;
         playlistUpdate.reset();
         Serial.println(F("[Config] Staged playlist committed"));
-    } else if (stagedAssetInFlight.isEmpty() && cloudWorker.requestAsset(playlistUpdate->next())) {
-        stagedAssetInFlight=playlistUpdate->next();
+    } else if (stagedAssetInFlight.isEmpty()) {
+        String id = playlistUpdate->next();
+        auto cached = playlistUpdate->cache.getAsset(id);
+        if (cloudWorker.requestAsset(id, cached ? cached->sourceRevision : String())) {
+            stagedAssetInFlight = id;
+        }
     }
 }
 
@@ -1092,8 +1096,10 @@ void processCloudResults() {
             case CloudOperation::ASSET_FETCH: {
                 String id=result.resourceId;
                 if (!stagedAssetInFlight.isEmpty() && id==stagedAssetInFlight) {
-                    bool valid=result.success && result.assetData && playlistUpdate &&
-                               playlistUpdate->accept(id,result.assetData->pixelsJson);
+                    bool valid = result.success && result.assetData && playlistUpdate &&
+                        (result.assetData->unchanged
+                            ? playlistUpdate->acceptUnchanged(id)
+                            : playlistUpdate->accept(id, std::move(result.assetData->content)));
                     stagedAssetInFlight="";
                     if (!valid) {
                         playlistUpdate.reset();
@@ -1101,9 +1107,8 @@ void processCloudResults() {
                     }
                 } else {
                     if (result.success && result.assetData) {
-                        CachedAsset asset;
-                        if (assetCache.parseAsset(id,result.assetData->pixelsJson,asset)) {
-                            renderAsset.resetAnimation();assetCache.addAsset(std::move(asset));lastFailedRuntimeAssetId="";
+                        if (!result.assetData->unchanged && result.assetData->content.isValid()) {
+                            renderAsset.resetAnimation();assetCache.addAsset(std::move(result.assetData->content));lastFailedRuntimeAssetId="";
                         } else lastFailedRuntimeAssetId=id;
                     } else lastFailedRuntimeAssetId=id;
                     pendingRuntimeAssetId="";

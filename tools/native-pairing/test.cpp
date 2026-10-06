@@ -69,6 +69,35 @@ int main(){
     AssetCache parser;CachedAsset image,animation;
     assert(parser.parseAsset("image",fixture("pairing-image.json"),image));
     assert(parser.parseAsset("animation",fixture("pairing-animation.json"),animation));
+    // Actual Firestore Value wrappers decode directly, without a flattened
+    // JSON copy. Cached pixels own their data after the response is freed.
+    CachedAsset wrappedImage, wrappedAnimation;
+    {
+        char response[] = R"({"fields":{"type":{"stringValue":"IMAGE"},"encoding":{"stringValue":"SPARSE_PACKED_V1"},"pixelsPacked":{"stringValue":"ffffffff00ff0000"}}})";
+        JsonDocument wrapped; assert(!deserializeJson(wrapped, response));
+        assert(parser.parseFirestorePackedAsset("wrapped", wrapped["fields"], wrappedImage));
+    }
+    assert(sizeof(Pixel) == 4 && wrappedImage.pixels[0].index == 255 && wrappedImage.pixels[0].color == 0xffffff);
+    const char* wrappedAnimationJson = R"({"type":{"stringValue":"ANIMATION"},"encoding":{"stringValue":"DELTA_SPARSE_PACKED_V1"},"basePixelsPacked":{"stringValue":"00ff0000"},"frameDeltasPacked":{"arrayValue":{"values":[{"stringValue":"000000001100ff00"}]}},"frameDurationsMs":{"arrayValue":{"values":[{"integerValue":"100"},{"integerValue":"250"}]}},"frameCount":{"integerValue":"2"}})";
+    {
+        std::vector<char> response(wrappedAnimationJson, wrappedAnimationJson + strlen(wrappedAnimationJson) + 1);
+        JsonDocument wrapped; assert(!deserializeJson(wrapped, response.data()));
+        assert(parser.parseFirestorePackedAsset("wrapped-animation", wrapped.as<JsonObject>(), wrappedAnimation));
+    }
+    assert(wrappedAnimation.frames.size() == 2 && wrappedAnimation.frames[1].durationMs == 250);
+    assert(wrappedAnimation.frames[1].delta[1].index == 17 && wrappedAnimation.frames[1].delta[1].color == 0x00ff00);
+    for (const char* invalid : {"x", "-1", "5001", "2147483648", "100ms"}) {
+        JsonDocument wrapped; assert(!deserializeJson(wrapped, wrappedAnimationJson));
+        wrapped["frameDurationsMs"]["arrayValue"]["values"][0]["integerValue"] = invalid;
+        CachedAsset rejected;
+        assert(!parser.parseFirestorePackedAsset("invalid", wrapped.as<JsonObject>(), rejected));
+    }
+    {
+        JsonDocument wrapped; assert(!deserializeJson(wrapped, wrappedAnimationJson));
+        wrapped["frameDeltasPacked"]["arrayValue"]["values"][0]["stringValue"] = 123;
+        CachedAsset rejected;
+        assert(!parser.parseFirestorePackedAsset("invalid", wrapped.as<JsonObject>(), rejected));
+    }
     String encoded;assert(encodePairContent(image,encoded));JsonDocument d;deserializeJson(d,encoded);assert(d["pixelsPacked"]=="00ff00001100ff00");
     assert(encodePairContent(animation,encoded));deserializeJson(d,encoded);assert(d["frameDeltasPacked"][0]=="000000001100ff00");
     PairSend publication;publication.meta=meta();publication.contentJson=encoded;
@@ -100,5 +129,26 @@ int main(){
     AssetCache live;live.addAsset(image);auto original=live.getAsset("image");PlaylistUpdate update({screen("one","image"),screen("two","new")},live,9);assert(update.accept("image",fixture("pairing-image.json")));assert(!update.accept("new","{"));assert(live.getAsset("image")==original&&live.getAsset("image")->pixels[0].color==0x0000ff);
     assert(update.accept("new",fixture("pairing-image.json"))&&update.ready());
     ScreenPlaylist playlist;auto one=screen("one","image"),two=screen("two","new");two.availableAssetIds={"new","image"};playlist.setScreens({one,two});playlist.next();playlist.getCurrentScreen()->currentAssetIndex=1;playlist.setScreens({two,one});assert(playlist.getCurrentScreen()->id=="two"&&playlist.getCurrentAssetId()=="image");
+    // Reorders and sharing changes reuse checked revisions without replacing
+    // live objects. An edited asset is staged privately; a failure never
+    // consumes its position or modifies the working display/cache.
+    AssetCache revisionCache;
+    image.sourceRevision = "2026-10-06T14:00:00.000001Z";
+    revisionCache.addAsset(image);
+    auto cachedBefore = revisionCache.getAsset("image");
+    PlaylistUpdate reorder({screen("same", "image")}, revisionCache, 72);
+    assert(!reorder.acceptUnchanged("other") && !reorder.ready());
+    assert(reorder.acceptUnchanged("image") && reorder.ready());
+    assert(reorder.cache.getAsset("image") == cachedBefore && revisionCache.getAsset("image") == cachedBefore);
+    PlaylistUpdate edited({screen("same", "image")}, revisionCache, 73);
+    CachedAsset replacement;
+    assert(parser.parseAsset("image", "{\"type\":\"IMAGE\",\"encoding\":\"SPARSE_PACKED_V1\",\"pixelsPacked\":\"000000ff\"}", replacement));
+    replacement.sourceRevision = "2026-10-06T14:01:00.000001Z";
+    assert(edited.accept("image", std::move(replacement)) && edited.ready());
+    assert(edited.cache.getAsset("image")->pixels[0].color == 0x0000ff);
+    assert(revisionCache.getAsset("image") == cachedBefore && cachedBefore->sourceRevision == "2026-10-06T14:00:00.000001Z");
+    AssetCache unversioned; wrappedImage.id = "unversioned"; unversioned.addAsset(wrappedImage);
+    PlaylistUpdate oldCache({screen("legacy", "unversioned")}, unversioned, 74);
+    assert(!oldCache.acceptUnchanged("unversioned") && !oldCache.ready());
     std::cout<<"Native pairing tests passed: codec, rendering, sleep, ack, duplicates, restart, failures, latest send, expiry, unpair, cache, selection\n";
 }

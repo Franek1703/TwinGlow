@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <vector>
 #include "SleepSchedule.h"
+#include "AssetCache.h"
 // Data structures
 struct ScreenConfig {
     String id;
@@ -41,10 +42,6 @@ struct DeviceDoc {
 };
 
 struct AssetData {
-    String id;
-    String type; // IMAGE, ANIMATION
-    String encoding; // SPARSE_I16_RGB888, DELTA_SPARSE_I16_RGB888
-    String pixelsJson; // JSON string for pixels
-    String basePixelsJson; // JSON string for base pixels (animations)
-    String framesJson; // JSON string for frames (animations)
+    CachedAsset content;
+    bool unchanged = false;
 };

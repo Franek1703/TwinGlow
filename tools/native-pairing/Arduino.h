@@ -14,6 +14,7 @@ public:
     String(const std::string& v):s(v){}
     String(unsigned long long n):s(std::to_string(n)){}
     const char* c_str()const{return s.c_str();}
+    char* begin(){return s.data();}
     size_t length()const{return s.size();}
     bool isEmpty()const{return s.empty();}
     bool reserve(size_t n){s.reserve(n);return true;}

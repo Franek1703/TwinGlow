@@ -16,9 +16,12 @@
  * playback only ever deals with cumulative transitions.
  */
 struct Pixel {
-    uint8_t index;  // 0-255 (y*16 + x)
-    uint32_t color; // 0xRRGGBB, 0 = off
+    // Only used in RAM, never serialized by copying the struct. A byte index
+    // and RGB888 fit in one aligned word instead of eight bytes with padding.
+    uint32_t index : 8;  // 0-255 (y*16 + x)
+    uint32_t color : 24; // 0xRRGGBB, 0 = off
 };
+static_assert(sizeof(Pixel) == 4, "Pixel cache must use one word per pixel");
 
 // Limits mirrored from the app's AnimationCodec. The device re-checks them
 // rather than trusting the document: a malformed asset must fail to parse, not
@@ -48,6 +51,7 @@ struct CachedAsset {
     String id;
     String type; // IMAGE, ANIMATION
     String encoding;
+    String sourceRevision; // Firestore document updateTime; empty for snapshots
 
     // IMAGE
     std::vector<Pixel> pixels;
@@ -85,6 +89,7 @@ public:
     bool parseAsset(const String& assetId, const String& jsonStr, CachedAsset& asset);
 
     bool parseAssetObject(const String& assetId, JsonObject root, CachedAsset& asset);
+    bool parseFirestorePackedAsset(const String& assetId, JsonObject fields, CachedAsset& asset);
     std::shared_ptr<CachedAsset> getSharedAsset(const String& assetId);
 
     size_t size() const { return assets.size(); }

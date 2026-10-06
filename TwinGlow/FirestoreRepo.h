@@ -58,7 +58,7 @@ public:
     bool getScreens(std::vector<ScreenConfig>& screens);
     
     // Asset operations
-    bool getAsset(const String& assetId, AssetData& asset);
+    bool getAsset(const String& assetId, AssetData& asset, const String& knownRevision = String());
     
     // Config version polling. The device doc is fetched whole anyway, so the
     // timezone, brightness and sleep window ride along on the existing 60s

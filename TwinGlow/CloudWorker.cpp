@@ -337,11 +337,12 @@ bool CloudWorker::consumeWifiCycleRequest() {
     return true;
 }
 
-bool CloudWorker::requestAsset(const String& assetId) {
+bool CloudWorker::requestAsset(const String& assetId, const String& knownRevision) {
     if (jobPending[(size_t)CloudOperation::ASSET_FETCH]) return false;
     CloudJob job{};
     job.operation = CloudOperation::ASSET_FETCH;
     strlcpy(job.assetId, assetId.c_str(), sizeof(job.assetId));
+    strlcpy(job.assetRevision, knownRevision.c_str(), sizeof(job.assetRevision));
     return enqueue(job);
 }
 
@@ -476,7 +477,7 @@ void CloudWorker::execute(const CloudJob& job, CloudResult& result) {
         case CloudOperation::ASSET_FETCH: {
             AssetData* asset = new (std::nothrow) AssetData();
             if (asset != nullptr && firestore != nullptr &&
-                firestore->getAsset(job.assetId, *asset)) {
+                firestore->getAsset(job.assetId, *asset, job.assetRevision)) {
                 result.assetData = asset;
                 result.success = true;
             } else {

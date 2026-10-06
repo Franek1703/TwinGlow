@@ -37,7 +37,7 @@ public:
     bool requestPairFetch(PairMeta* meta);
     bool requestPairAck(PairMeta* meta,bool displayed);
     bool requestScreens(int version);
-    bool requestAsset(const String& assetId);
+    bool requestAsset(const String& assetId, const String& knownRevision = String());
     // Coalescing is deliberate here: a held button produces a burst of changes,
     // and only the value the panel ends on is worth a write. This records the
     // value and restarts a settle window rather than queueing immediately; the
@@ -77,6 +77,7 @@ private:
         bool displayed;
         int revision;
         char assetId[96];
+        char assetRevision[40];
     };
 
     FirebaseClientWrap* firebase;

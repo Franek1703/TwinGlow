@@ -14,4 +14,6 @@ public:
     bool ready()const{return index==required.size();}
     String next()const{return ready()?String():required[index];}
     bool accept(const String& id,const String& json);
+    bool accept(const String& id, CachedAsset&& asset);
+    bool acceptUnchanged(const String& id);
 };
