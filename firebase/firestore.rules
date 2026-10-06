@@ -190,7 +190,9 @@ service cloud.firestore {
       allow delete: if owner(id);
       match /screens/{screenId} {
         allow read: if owner(id) || device(id);
-        allow create: if (owner(id) && (!('sharedScreenId' in request.resource.data) || (validReference(request.resource.data) && referenceBound(request.resource.data,id,screenId)))) || appendReference(request.resource.data,id,screenId);
+        // Private creates have no sharedScreenId. Guard the shared-only helper
+        // before evaluating its document lookups, including transaction creates.
+        allow create: if (owner(id) && (!('sharedScreenId' in request.resource.data) || (validReference(request.resource.data) && referenceBound(request.resource.data,id,screenId)))) || ('sharedScreenId' in request.resource.data && appendReference(request.resource.data,id,screenId));
         allow update: if (owner(id) && (!('sharedScreenId' in request.resource.data) || (validReference(request.resource.data) && referenceBound(request.resource.data,id,screenId) && (!('sharedScreenId' in resource.data) || request.resource.data.sharedScreenId == resource.data.sharedScreenId)))) || restoreReference(id,screenId);
         allow delete: if owner(id) || (human() && 'sharedScreenId' in resource.data && participant(grant(sharedData(resource.data.sharedScreenId).pairId)) && sharedAfter(resource.data.sharedScreenId).state == 'REVOKED' && bumped(sharedData(resource.data.sharedScreenId).pairId));
       }

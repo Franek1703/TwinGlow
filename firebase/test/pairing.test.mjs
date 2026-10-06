@@ -204,6 +204,44 @@ test('verified legacy ownership migration preserves content and enables canonica
 });
 
 const fsHuman=uid=>env.authenticatedContext(uid,{email:`${uid}@example.com`}).firestore();
+for (const [uid, device] of [['alice','A'], ['bob','B']]) test(`owner ${uid} creates private screen types with transactional playlist appends`,async()=>{
+  await sharingReady();await publishAlbum();
+  const fs=fsHuman(uid),counter=doc(fs,`playlistState/${device}`),deviceRef=doc(fs,`devices/${device}`);
+  const initial=(await getDoc(counter)).data().nextOrder;
+  const initialConfig=(await getDoc(deviceRef)).data().configVersion;
+  const types=['animation','image','clock','sensor','game'];
+  for (const [i,type] of types.entries()) {
+    const screen=doc(fs,`devices/${device}/screens/new_${type}`);
+    const poolType=type==='animation'||type==='image';
+    assert.equal((await getDoc(screen)).exists(),false);
+    await assertSucceeds(runTransaction(fs,async tx=>{
+      const state=await tx.get(counter),existing=await tx.get(screen);
+      assert.equal(existing.exists(),false);
+      tx.update(counter,{nextOrder:state.data().nextOrder+1});
+      tx.update(deviceRef,{configVersion:increment(1)});
+      tx.set(screen,{type,name:`${type} screen`,enabled:true,isShared:false,order:state.data().nextOrder,assetId:poolType?'selected_asset':null,config:null,previewData:null,createdAt:new Date(),...(poolType?{defaultAssetId:'selected_asset',availableAssetIds:['selected_asset'],allowManualSwitch:true}:{})});
+    }));
+    assert.equal((await getDoc(screen)).data().order,initial+i);
+    assert.equal((await getDoc(counter)).data().nextOrder,initial+i+1);
+    assert.equal((await getDoc(deviceRef)).data().configVersion,initialConfig+i+1);
+  }
+});
+test('private screen creation denies partner, stranger, firmware and anonymous clients without partial playlist changes',async()=>{
+  await sharingReady();await publishAlbum();
+  for (const fs of [fsHuman('bob'),fsHuman('eve'),fsDevice('A'),env.unauthenticatedContext().firestore()]) {
+    const batch=writeBatch(fs);
+    batch.set(doc(fs,'devices/A/screens/unauthorized'),{type:'animation',order:4,enabled:true,isShared:false});
+    batch.update(doc(fs,'playlistState/A'),{nextOrder:5});
+    batch.update(doc(fs,'devices/A'),{configVersion:increment(1)});
+    await assertFails(batch.commit());
+    // Also test the screen write alone so other batch permissions cannot mask it.
+    await assertFails(setDoc(doc(fs,'devices/A/screens/unauthorized'),{type:'animation',order:4,enabled:true,isShared:false}));
+  }
+  const fs=fsHuman('alice');
+  assert.equal((await getDoc(doc(fs,'devices/A/screens/unauthorized'))).exists(),false);
+  assert.equal((await getDoc(doc(fs,'playlistState/A'))).data().nextOrder,4);
+  assert.equal((await getDoc(doc(fs,'devices/A'))).data().configVersion,1);
+});
 const fsDevice=id=>env.authenticatedContext(`auth-${id}`,{twinGlowDeviceId:id}).firestore();
 const sharingGrant={schemaVersion:1,userA:'alice',userB:'bob',deviceA:'A',deviceB:'B',acceptedA:true,acceptedB:false,state:'PENDING',contentVersion:0};
 const album={schemaVersion:2,name:'Five images',type:'IMAGE',availableAssetIds:['a0','a1','a2','a3','a4'],defaultAssetId:'a0',allowManualSwitch:true,config:{},contentVersion:0,pairId:'pair',createdBy:'alice',state:'STAGING',screenRefs:{A:'source',B:'shared'}};
