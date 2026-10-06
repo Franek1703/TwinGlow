@@ -1,8 +1,8 @@
-# FirebaseClient payload-move patch
+# FirebaseClient patches
 
-TwinGlow needs a two-line behaviour change in the [FirebaseClient][lib] library.
-This directory carries the change so an Arduino IDE library update cannot undo
-it silently.
+TwinGlow needs fixes for response-buffer memory use, long request lines, and
+document-mask copying in the [FirebaseClient][lib] library. This directory
+carries the patches so an Arduino IDE library update cannot undo them silently.
 
 ```sh
 tools/firebaseclient-patch/apply.sh          # patch the installed library
@@ -102,9 +102,8 @@ build against a freshly-updated library fails immediately instead of shipping
 firmware that breaks at runtime:
 
 ```
-FirestoreRepo.h:18:2: error: #error "FirebaseClient is missing the TwinGlow
-payload-move patch; large animation assets will fail to load at runtime.
-Run tools/firebaseclient-patch/apply.sh"
+error: #error "FirebaseClient is missing required TwinGlow patches.
+Run tools/firebaseclient-patch/apply.sh and rebuild."
 ```
 
 It is an `#error` and not a `#warning` on purpose: the sketch builds with
@@ -121,3 +120,51 @@ gated behind `BOARD_HAS_PSRAM` would also help, since `Content-Length` is
 already parsed into `payloadLen`.
 
 [lib]: https://github.com/mobizt/FirebaseClient
+
+## Request line patch required by pairing
+
+The installed FirebaseClient 2.2.13 also formats the path and query through a
+300-byte buffer in `RequestHandler::addRequestHeader`. Field masks and pagination
+tokens can exceed it, truncating ` HTTP/1.1\r\n` and producing HTTP 400 errors.
+The request-line hunk appends the strings directly and defines
+`FIREBASECLIENT_REQUEST_LINE_PATCH`. `FirestoreRepo.h` requires this patch.
+The installer checks each hunk independently, so it upgrades a previously
+payload-patched installation and refuses incompatible upstream source.
+
+Screens are fetched four at a time with a field mask that excludes preview
+pixels. Assets use a mask for both packed and legacy encodings. Pagination still
+follows `nextPageToken` until complete; failure preserves the live playlist.
+
+## Document-mask lifetime patch (ESP32 restart fix)
+
+FirebaseClient 2.2.13's `DocumentMask` inherits a pointer to its own string array
+from `BaseObjects`. Its implicit copy operations copy that pointer as well as
+the array. `ListDocumentsOptions::mask(DocumentMask(...))` therefore leaves its
+stored mask pointing into a destroyed temporary after the statement finishes.
+Calling `pageToken()` afterward rebuilds the query and dereferences the dangling
+pointer through `msk.c_str()`. On the reported ESP32 build this becomes a null
+read in `ListDocumentsOptions::set()` and a `LoadProhibited` restart.
+
+The patch adds a copy constructor and assignment operator to `DocumentMask`.
+They copy the field buffers while retaining the destination's own base pointer.
+`FIREBASECLIENT_DOCUMENT_MASK_COPY_PATCH` is required by `FirestoreRepo.h` so an
+unpatched Arduino library cannot silently reproduce this crash.
+
+A second fix in `FirestorePagination.h` handles missing/null `nextPageToken`
+values explicitly. ArduinoJson's `as<String>()` serializes them as the literal
+text `"null"`, incorrectly requesting another page even for an empty collection.
+Malformed non-string tokens fail the load, preserving the working playlist.
+
+Run the regression tests with:
+
+```sh
+python3 tools/firebaseclient-patch/test.py --reproduce-original
+bash tools/native-pairing/test.sh
+```
+
+The first test extracts the installed SDK's actual base, mask and list-options
+classes, supplies host-side Arduino formatting stubs, and runs ASan/UBSan. It
+reproduces the original dangling reference and checks copying, assignment,
+temporary masks, page-token updates and requests without masks after the fix.
+The native firmware tests cover missing, null, empty, valid and malformed page
+tokens. These checks do not replace flashing and observing the physical ESP32.

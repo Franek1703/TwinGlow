@@ -125,6 +125,37 @@ HUNKS = [
     ),
 ]
 
+HUNKS.append((
+    "src/firestore/DataOptions.h",
+    '    explicit DocumentMask(const String &fieldPaths = "") { setFieldPaths(fieldPaths); }',
+    '''    explicit DocumentMask(const String &fieldPaths = "") { setFieldPaths(fieldPaths); }
+
+#define FIREBASECLIENT_DOCUMENT_MASK_COPY_PATCH 1
+    // BaseObjects holds a pointer into BaseO2's own buffers. Default copying
+    // aliases the source buffers, which may belong to a temporary mask.
+    DocumentMask(const DocumentMask &other) : BaseO2() { *this = other; }
+    DocumentMask &operator=(const DocumentMask &other)
+    {
+        if (this != &other)
+        {
+            buf[0] = other.buf[0];
+            buf[1] = other.buf[1];
+        }
+        return *this;
+    }'''
+))
+
+HUNKS.append((
+    "src/core/AsyncClient/RequestHandler.h",
+    r'''        sut.printTo(val[reqns::header], 300, "%s%s%s HTTP/1.1\r\n", path.length() == 0 || (path.length() && path[0] != '/') ? "/" : "", path.c_str(), extras.c_str());''',
+    '''#define FIREBASECLIENT_REQUEST_LINE_PATCH 1
+        // Append without the stock 300-byte format buffer: masks and page tokens can exceed it.
+        if (path.length() == 0 || path[0] != '/') val[reqns::header] += "/";
+        val[reqns::header] += path;
+        val[reqns::header] += extras;
+        val[reqns::header] += " HTTP/1.1\\r\\n";'''
+))
+
 DEFAULT_DIRS = [
     Path.home() / "Documents/Arduino/libraries/FirebaseClient",
     Path.home() / "Arduino/libraries/FirebaseClient",
@@ -175,14 +206,6 @@ def main(argv):
             print(f"error: missing {rel} - is this a FirebaseClient install?", file=sys.stderr)
             return 2
 
-    if GUARD in read_source(lib / HUNKS[0][0]):
-        print("already patched; nothing to do")
-        return 0
-
-    if check_only:
-        print("NOT patched - run apply.sh to fix")
-        return 1
-
     # Verify every anchor before writing anything, so a library version this
     # patch does not understand leaves the install untouched rather than
     # half-modified.
@@ -192,6 +215,8 @@ def main(argv):
         if rel not in texts:
             texts[rel] = read_source(lib / rel)
             crlf[rel] = "\r\n" in texts[rel]
+        if texts[rel].count(to_eol(_, crlf[rel])) == 1:
+            continue
         found = texts[rel].count(to_eol(anchor, crlf[rel]))
         if found != 1:
             print(
@@ -202,7 +227,14 @@ def main(argv):
             )
             return 3
 
+    if check_only:
+        complete=all(to_eol(replacement,crlf[rel]) in texts[rel] for rel,anchor,replacement in HUNKS)
+        print("patched" if complete else "NOT fully patched - run apply.sh")
+        return 0 if complete else 1
+
     for rel, anchor, replacement in HUNKS:
+        if to_eol(replacement,crlf[rel]) in texts[rel]:
+            continue
         texts[rel] = texts[rel].replace(
             to_eol(anchor, crlf[rel]), to_eol(replacement, crlf[rel]), 1
         )
