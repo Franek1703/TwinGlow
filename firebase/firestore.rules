@@ -1,0 +1,55 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function human() { return signedIn() && !('twinGlowDeviceId' in request.auth.token); }
+    function access(id) { return get(/databases/$(database)/documents/deviceAccess/$(id)).data; }
+    function owner(id) { return human() && access(id).enabled == true && access(id).ownerUid == request.auth.uid; }
+    function device(id) {
+      return signedIn() && request.auth.token.get('twinGlowDeviceId', '') == id
+        && access(id).enabled == true && access(id).authUid == request.auth.uid;
+    }
+    function assetReader(data) {
+      return signedIn() && (data.get('isDefault', false) == true
+        || (human() && data.ownerUid == request.auth.uid)
+        || (device(request.auth.token.twinGlowDeviceId)
+          && data.ownerUid == access(request.auth.token.twinGlowDeviceId).ownerUid));
+    }
+    match /deviceAccess/{id} {
+      allow read: if owner(id) || device(id);
+      allow write: if false;
+    }
+    match /users/{uid} {
+      allow read, create, update: if human() && request.auth.uid == uid;
+      match /devices/{id} {
+        allow read: if human() && request.auth.uid == uid;
+        allow create, update: if (owner(id) || device(id)) && access(id).ownerUid == uid
+          && request.resource.data.role == 'OWNER'
+          && request.resource.data.keys().hasOnly(['role', 'nameOverride', 'addedAt']);
+        allow delete: if owner(id) && request.auth.uid == uid;
+      }
+    }
+    match /devices/{id} {
+      allow read: if owner(id) || device(id);
+      allow create: if (owner(id) || device(id))
+        && request.resource.data.keys().hasOnly(['name','fwVersion','hw','configVersion','timezone','tzPosix','brightness','sleepMode','createdAt','updatedAt','hasSensor','userId','isOnline']);
+      allow update: if owner(id) || (device(id)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fwVersion','hw','brightness']));
+      allow delete: if owner(id);
+      match /screens/{screenId} {
+        allow read: if owner(id) || device(id);
+        allow write: if owner(id);
+      }
+    }
+    match /assets/{assetId} {
+      allow read: if assetReader(resource.data);
+      allow create: if human() && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.isDefault == false;
+      allow update: if human() && resource.data.ownerUid == request.auth.uid
+        && resource.data.isDefault == false && request.resource.data.isDefault == false
+        && request.resource.data.ownerUid == resource.data.ownerUid;
+      allow delete: if human() && resource.data.ownerUid == request.auth.uid && resource.data.isDefault == false;
+    }
+    // Legacy pairs/sharedScreens are deliberately inactive after cutover.
+  }
+}

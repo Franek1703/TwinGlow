@@ -1,0 +1,319 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "deviceAccess": {
+      "$deviceId": {
+        ".read": "(auth != null && auth.token.twinGlowDeviceId == null && root.child('deviceAccess').child($deviceId).child('ownerUid').val() == auth.uid && root.child('deviceAccess').child($deviceId).child('enabled').val() == true) || (auth != null && auth.token.twinGlowDeviceId == $deviceId && root.child('deviceAccess').child($deviceId).child('authUid').val() == auth.uid && root.child('deviceAccess').child($deviceId).child('enabled').val() == true)",
+        ".write": false
+      }
+    },
+    "presence": {
+      "$deviceId": {
+        ".read": "(auth != null && auth.token.twinGlowDeviceId == null && root.child('deviceAccess').child($deviceId).child('ownerUid').val() == auth.uid && root.child('deviceAccess').child($deviceId).child('enabled').val() == true) || (auth != null && auth.token.twinGlowDeviceId == $deviceId && root.child('deviceAccess').child($deviceId).child('authUid').val() == auth.uid && root.child('deviceAccess').child($deviceId).child('enabled').val() == true)",
+        ".write": "(auth != null && auth.token.twinGlowDeviceId == $deviceId && root.child('deviceAccess').child($deviceId).child('authUid').val() == auth.uid && root.child('deviceAccess').child($deviceId).child('enabled').val() == true)"
+      }
+    },
+    "telemetry": {
+      "$deviceId": {
+        ".read": "(auth != null && auth.token.twinGlowDeviceId == null && root.child('deviceAccess').child($deviceId).child('ownerUid').val() == auth.uid && root.child('deviceAccess').child($deviceId).child('enabled').val() == true) || (auth != null && auth.token.twinGlowDeviceId == $deviceId && root.child('deviceAccess').child($deviceId).child('authUid').val() == auth.uid && root.child('deviceAccess').child($deviceId).child('enabled').val() == true)",
+        ".write": "(auth != null && auth.token.twinGlowDeviceId == $deviceId && root.child('deviceAccess').child($deviceId).child('authUid').val() == auth.uid && root.child('deviceAccess').child($deviceId).child('enabled').val() == true)"
+      }
+    },
+    "commands": {
+      "$deviceId": {
+        ".read": "(auth != null && auth.token.twinGlowDeviceId == $deviceId && root.child('deviceAccess').child($deviceId).child('authUid').val() == auth.uid && root.child('deviceAccess').child($deviceId).child('enabled').val() == true)",
+        ".write": "(auth != null && auth.token.twinGlowDeviceId == null && root.child('deviceAccess').child($deviceId).child('ownerUid').val() == auth.uid && root.child('deviceAccess').child($deviceId).child('enabled').val() == true)"
+      }
+    },
+    "config": {
+      "$deviceId": {
+        ".read": "(auth != null && auth.token.twinGlowDeviceId == null && root.child('deviceAccess').child($deviceId).child('ownerUid').val() == auth.uid && root.child('deviceAccess').child($deviceId).child('enabled').val() == true) || (auth != null && auth.token.twinGlowDeviceId == $deviceId && root.child('deviceAccess').child($deviceId).child('authUid').val() == auth.uid && root.child('deviceAccess').child($deviceId).child('enabled').val() == true)",
+        "configVersion": {
+          ".write": "(auth != null && auth.token.twinGlowDeviceId == null && root.child('deviceAccess').child($deviceId).child('ownerUid').val() == auth.uid && root.child('deviceAccess').child($deviceId).child('enabled').val() == true)",
+          ".validate": "newData.isNumber() && newData.val() % 1 == 0 && newData.val() >= 0 && newData.val() <= 2147483647"
+        },
+        "pair": {
+          ".write": "(!data.exists() && newData.exists() && auth != null && auth.token.twinGlowDeviceId == null && newData.parent().parent().parent().child('pairing/pairs').child(newData.child('pairId').val()).child('userB').val() == auth.uid && (newData.parent().parent().parent().child('pairing/pairs').child(newData.child('pairId').val()).child('state').val() == 'ACTIVE') && (newData.parent().parent().parent().child('pairing/pairs').child(newData.child('pairId').val()).child('deviceA').val() == $deviceId || newData.parent().parent().parent().child('pairing/pairs').child(newData.child('pairId').val()).child('deviceB').val() == $deviceId)) || (data.exists() && !newData.exists() && (auth != null && auth.token.twinGlowDeviceId == null && (root.child('pairing/pairs').child(data.child('pairId').val()).child('userA').val() == auth.uid || root.child('pairing/pairs').child(data.child('pairId').val()).child('userB').val() == auth.uid)) && (newData.parent().parent().parent().child('pairing/pairs').child(data.child('pairId').val()).child('state').val() == 'ENDED'))",
+          ".validate": "newData.hasChildren(['pairId','partnerDeviceId']) && newData.child('partnerDeviceId').val() == (newData.parent().parent().parent().child('pairing/pairs').child(newData.child('pairId').val()).child('deviceA').val() == $deviceId ? newData.parent().parent().parent().child('pairing/pairs').child(newData.child('pairId').val()).child('deviceB').val() : newData.parent().parent().parent().child('pairing/pairs').child(newData.child('pairId').val()).child('deviceA').val())",
+          "pairId": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 95 && !newData.val().matches(/[.#$\\[\\]\\/]/)"
+          },
+          "partnerDeviceId": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 95 && !newData.val().matches(/[.#$\\[\\]\\/]/)"
+          },
+          "$other": {
+            ".validate": false
+          }
+        },
+        "incoming": {
+          ".write": "(newData.exists() && (auth != null && auth.token.twinGlowDeviceId == newData.child('senderDeviceId').val() && root.child('deviceAccess').child(newData.child('senderDeviceId').val()).child('authUid').val() == auth.uid && root.child('deviceAccess').child(newData.child('senderDeviceId').val()).child('enabled').val() == true) && (root.child('pairing/pairs').child(newData.child('pairId').val()).child('state').val() == 'ACTIVE') && (root.child('pairing/pairs').child(newData.child('pairId').val()).child('deviceA').val() == $deviceId || root.child('pairing/pairs').child(newData.child('pairId').val()).child('deviceB').val() == $deviceId) && newData.child('senderDeviceId').val() == (root.child('pairing/pairs').child(newData.child('pairId').val()).child('deviceA').val() == $deviceId ? root.child('pairing/pairs').child(newData.child('pairId').val()).child('deviceB').val() : root.child('pairing/pairs').child(newData.child('pairId').val()).child('deviceA').val())) || (!newData.exists() && (auth != null && auth.token.twinGlowDeviceId == null && (root.child('pairing/pairs').child(root.child('config').child($deviceId).child('pair/pairId').val()).child('userA').val() == auth.uid || root.child('pairing/pairs').child(root.child('config').child($deviceId).child('pair/pairId').val()).child('userB').val() == auth.uid)) && (newData.parent().parent().parent().child('pairing/pairs').child(root.child('config').child($deviceId).child('pair/pairId').val()).child('state').val() == 'ENDED'))",
+          ".validate": "newData.hasChildren(['schemaVersion','eventId','sequence','pairId','senderDeviceId','recipientDeviceId','screenId','assetId','sentAt']) && newData.child('recipientDeviceId').val() == $deviceId && newData.child('schemaVersion').val() == newData.parent().parent().parent().child('pairing/mailboxes').child(newData.child('pairId').val()).child(newData.child('senderDeviceId').val()).child('meta/schemaVersion').val() && newData.child('eventId').val() == newData.parent().parent().parent().child('pairing/mailboxes').child(newData.child('pairId').val()).child(newData.child('senderDeviceId').val()).child('meta/eventId').val() && newData.child('sequence').val() == newData.parent().parent().parent().child('pairing/mailboxes').child(newData.child('pairId').val()).child(newData.child('senderDeviceId').val()).child('meta/sequence').val() && newData.child('pairId').val() == newData.parent().parent().parent().child('pairing/mailboxes').child(newData.child('pairId').val()).child(newData.child('senderDeviceId').val()).child('meta/pairId').val() && newData.child('senderDeviceId').val() == newData.parent().parent().parent().child('pairing/mailboxes').child(newData.child('pairId').val()).child(newData.child('senderDeviceId').val()).child('meta/senderDeviceId').val() && newData.child('recipientDeviceId').val() == newData.parent().parent().parent().child('pairing/mailboxes').child(newData.child('pairId').val()).child(newData.child('senderDeviceId').val()).child('meta/recipientDeviceId').val() && newData.child('screenId').val() == newData.parent().parent().parent().child('pairing/mailboxes').child(newData.child('pairId').val()).child(newData.child('senderDeviceId').val()).child('meta/screenId').val() && newData.child('assetId').val() == newData.parent().parent().parent().child('pairing/mailboxes').child(newData.child('pairId').val()).child(newData.child('senderDeviceId').val()).child('meta/assetId').val() && newData.child('sentAt').val() == newData.parent().parent().parent().child('pairing/mailboxes').child(newData.child('pairId').val()).child(newData.child('senderDeviceId').val()).child('meta/sentAt').val()",
+          "schemaVersion": {
+            ".validate": "newData.val() == 1"
+          },
+          "eventId": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 95 && !newData.val().matches(/[.#$\\[\\]\\/]/)"
+          },
+          "sequence": {
+            ".validate": "newData.isNumber() && newData.val() % 1 == 0 && newData.val() >= 1 && newData.val() <= 9007199254740991"
+          },
+          "pairId": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 95 && !newData.val().matches(/[.#$\\[\\]\\/]/)"
+          },
+          "senderDeviceId": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 95 && !newData.val().matches(/[.#$\\[\\]\\/]/)"
+          },
+          "recipientDeviceId": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 95 && !newData.val().matches(/[.#$\\[\\]\\/]/)"
+          },
+          "screenId": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 95 && !newData.val().matches(/[.#$\\[\\]\\/]/)"
+          },
+          "assetId": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 95 && !newData.val().matches(/[.#$\\[\\]\\/]/)"
+          },
+          "sentAt": {
+            ".validate": "newData.isNumber() && newData.val() % 1 == 0 && newData.val() >= 1 && newData.val() <= 9007199254740991"
+          },
+          "$other": {
+            ".validate": false
+          }
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "pairing": {
+      "directory": {
+        ".indexOn": [
+          "email"
+        ],
+        ".read": "auth != null && auth.token.twinGlowDeviceId == null && query.orderByChild == 'email' && query.equalTo != null && query.limitToFirst == 1",
+        "$uid": {
+          ".read": "auth != null && auth.token.twinGlowDeviceId == null && auth.uid == $uid",
+          ".write": "auth != null && auth.token.twinGlowDeviceId == null && auth.uid == $uid",
+          ".validate": "newData.hasChildren(['email']) && newData.child('email').val() == auth.token.email.toLowerCase()",
+          "email": {
+            ".validate": "newData.isString() && newData.val().length <= 254"
+          },
+          "displayName": {
+            ".validate": "newData.isString() && newData.val().length <= 100"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      },
+      "invites": {
+        ".indexOn": [
+          "fromUid",
+          "toUid"
+        ],
+        ".read": "auth != null && auth.token.twinGlowDeviceId == null && ((query.orderByChild == 'fromUid' || query.orderByChild == 'toUid') && query.equalTo == auth.uid)",
+        "$inviteId": {
+          ".read": "auth != null && auth.token.twinGlowDeviceId == null && (data.child('fromUid').val() == auth.uid || data.child('toUid').val() == auth.uid)",
+          ".write": "auth != null && auth.token.twinGlowDeviceId == null && newData.exists() && ((!data.exists() && newData.child('fromUid').val() == auth.uid && newData.child('toUid').val() != auth.uid && (auth != null && auth.token.twinGlowDeviceId == null && root.child('deviceAccess').child(newData.child('fromDeviceId').val()).child('ownerUid').val() == auth.uid && root.child('deviceAccess').child(newData.child('fromDeviceId').val()).child('enabled').val() == true) && newData.child('status').val() == 'pending') || (data.exists() && data.child('status').val() == 'pending' && (data.child('fromUid').val() == auth.uid || data.child('toUid').val() == auth.uid)))",
+          ".validate": "newData.hasChildren(['schemaVersion','fromUid','toUid','fromDeviceId','fromEmail','toEmail','status','createdAt','updatedAt']) && newData.child('schemaVersion').val() == 1 && newData.child('updatedAt').val() == now && ((!data.exists() && newData.child('createdAt').val() == now && newData.child('fromEmail').val() == auth.token.email.toLowerCase() && newData.child('toEmail').val() == newData.parent().parent().parent().child('pairing/directory').child(newData.child('toUid').val()).child('email').val() && !root.child('pairing/users').child(newData.child('fromUid').val()).exists() && !root.child('pairing/users').child(newData.child('toUid').val()).exists() && newData.parent().parent().parent().child('pairing/pending').child(newData.child('fromUid').val()).child(newData.child('toUid').val()).val() == $inviteId && !newData.child('pairId').exists()) || (data.exists() && newData.child('schemaVersion').val() == data.child('schemaVersion').val() && newData.child('fromUid').val() == data.child('fromUid').val() && newData.child('toUid').val() == data.child('toUid').val() && newData.child('fromDeviceId').val() == data.child('fromDeviceId').val() && newData.child('fromEmail').val() == data.child('fromEmail').val() && newData.child('toEmail').val() == data.child('toEmail').val() && newData.child('createdAt').val() == data.child('createdAt').val() && !newData.parent().parent().parent().child('pairing/pending').child(data.child('fromUid').val()).child(data.child('toUid').val()).exists() && ((newData.child('status').val() == 'cancelled' && auth.uid == data.child('fromUid').val()) || (newData.child('status').val() == 'rejected' && auth.uid == data.child('toUid').val()) || (newData.child('status').val() == 'expired' && data.child('createdAt').val() + 604800000 <= now) || (newData.child('status').val() == 'accepted' && auth.uid == data.child('toUid').val() && data.child('createdAt').val() + 604800000 > now && newData.parent().parent().parent().child('pairing/pairs').child(newData.child('pairId').val()).child('inviteId').val() == $inviteId && (newData.parent().parent().parent().child('pairing/pairs').child(newData.child('pairId').val()).child('state').val() == 'ACTIVE') && !root.child('pairing/pairs').child(newData.child('pairId').val()).exists()))))",
+          "schemaVersion": {
+            ".validate": "newData.isNumber() && newData.val() % 1 == 0 && newData.val() >= 1 && newData.val() <= 1"
+          },
+          "fromUid": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 95 && !newData.val().matches(/[.#$\\[\\]\\/]/)"
+          },
+          "toUid": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 95 && !newData.val().matches(/[.#$\\[\\]\\/]/)"
+          },
+          "fromDeviceId": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 95 && !newData.val().matches(/[.#$\\[\\]\\/]/)"
+          },
+          "fromEmail": {
+            ".validate": "newData.isString() && newData.val().length <= 254"
+          },
+          "toEmail": {
+            ".validate": "newData.isString() && newData.val().length <= 254"
+          },
+          "status": {
+            ".validate": "newData.isString() && newData.val().length <= 10"
+          },
+          "createdAt": {
+            ".validate": "newData.isNumber() && newData.val() % 1 == 0 && newData.val() >= 1 && newData.val() <= 9007199254740991"
+          },
+          "updatedAt": {
+            ".validate": "newData.isNumber() && newData.val() % 1 == 0 && newData.val() >= 1 && newData.val() <= 9007199254740991"
+          },
+          "pairId": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 95 && !newData.val().matches(/[.#$\\[\\]\\/]/)"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      },
+      "pending": {
+        "$fromUid": {
+          "$toUid": {
+            ".read": "auth != null && auth.token.twinGlowDeviceId == null && (auth.uid == $fromUid || auth.uid == $toUid)",
+            ".write": "auth != null && auth.token.twinGlowDeviceId == null && ((!data.exists() && newData.exists() && auth.uid == $fromUid && newData.parent().parent().parent().parent().child('pairing/invites').child(newData.val()).child('fromUid').val() == $fromUid && newData.parent().parent().parent().parent().child('pairing/invites').child(newData.val()).child('toUid').val() == $toUid && newData.parent().parent().parent().parent().child('pairing/invites').child(newData.val()).child('status').val() == 'pending') || (data.exists() && !newData.exists() && (auth.uid == $fromUid || auth.uid == $toUid) && newData.parent().parent().parent().parent().child('pairing/invites').child(data.val()).child('status').val() != 'pending'))",
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 95 && !newData.val().matches(/[.#$\\[\\]\\/]/)"
+          }
+        }
+      },
+      "users": {
+        "$uid": {
+          ".read": "auth != null && auth.token.twinGlowDeviceId == null && auth.uid == $uid",
+          ".write": "auth != null && auth.token.twinGlowDeviceId == null && ((!data.exists() && newData.exists() && newData.parent().parent().parent().child('pairing/pairs').child(newData.val()).child('userB').val() == auth.uid && (newData.parent().parent().parent().child('pairing/pairs').child(newData.val()).child('state').val() == 'ACTIVE') && (newData.parent().parent().parent().child('pairing/pairs').child(newData.val()).child('userA').val() == $uid || newData.parent().parent().parent().child('pairing/pairs').child(newData.val()).child('userB').val() == $uid)) || (data.exists() && !newData.exists() && (auth != null && auth.token.twinGlowDeviceId == null && (root.child('pairing/pairs').child(data.val()).child('userA').val() == auth.uid || root.child('pairing/pairs').child(data.val()).child('userB').val() == auth.uid)) && (newData.parent().parent().parent().child('pairing/pairs').child(data.val()).child('state').val() == 'ENDED')))",
+          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 95 && !newData.val().matches(/[.#$\\[\\]\\/]/)"
+        }
+      },
+      "pairs": {
+        "$pairId": {
+          ".read": "((auth != null && auth.token.twinGlowDeviceId == null && (data.child('userA').val() == auth.uid || data.child('userB').val() == auth.uid)) || ((auth != null && auth.token.twinGlowDeviceId == data.child('deviceA').val() && root.child('deviceAccess').child(data.child('deviceA').val()).child('authUid').val() == auth.uid && root.child('deviceAccess').child(data.child('deviceA').val()).child('enabled').val() == true)) || ((auth != null && auth.token.twinGlowDeviceId == data.child('deviceB').val() && root.child('deviceAccess').child(data.child('deviceB').val()).child('authUid').val() == auth.uid && root.child('deviceAccess').child(data.child('deviceB').val()).child('enabled').val() == true)))",
+          ".write": "(auth != null && auth.token.twinGlowDeviceId == null && !data.exists() && newData.exists() && root.child('pairing/invites').child(newData.child('inviteId').val()).child('status').val() == 'pending' && root.child('pairing/invites').child(newData.child('inviteId').val()).child('toUid').val() == auth.uid && root.child('pairing/invites').child(newData.child('inviteId').val()).child('createdAt').val() + 604800000 > now) || ((auth != null && auth.token.twinGlowDeviceId == null && (data.child('userA').val() == auth.uid || data.child('userB').val() == auth.uid)) && (data.child('state').val() == 'ACTIVE') && (newData.child('state').val() == 'ENDED'))",
+          ".validate": "newData.hasChildren(['schemaVersion','userA','userB','deviceA','deviceB','userAEmail','userBEmail','inviteId','state','createdAt']) && ((!data.exists() && (newData.child('state').val() == 'ACTIVE') && newData.child('schemaVersion').val() == 1\n  && newData.child('userA').val() == root.child('pairing/invites').child(newData.child('inviteId').val()).child('fromUid').val()\n  && newData.child('userB').val() == root.child('pairing/invites').child(newData.child('inviteId').val()).child('toUid').val()\n  && newData.child('deviceA').val() == root.child('pairing/invites').child(newData.child('inviteId').val()).child('fromDeviceId').val()\n  && newData.child('userAEmail').val() == root.child('pairing/invites').child(newData.child('inviteId').val()).child('fromEmail').val()\n  && newData.child('userBEmail').val() == root.child('pairing/invites').child(newData.child('inviteId').val()).child('toEmail').val()\n  && root.child('deviceAccess').child(newData.child('deviceB').val()).child('ownerUid').val() == auth.uid\n  && root.child('deviceAccess').child(newData.child('deviceB').val()).child('enabled').val() == true\n  && root.child('deviceAccess').child(newData.child('deviceA').val()).child('ownerUid').val() == newData.child('userA').val()\n  && root.child('deviceAccess').child(newData.child('deviceA').val()).child('enabled').val() == true\n  && newData.child('userA').val() != newData.child('userB').val()\n  && newData.child('deviceA').val() != newData.child('deviceB').val()\n  && newData.child('createdAt').val() == now\n  && !root.child('pairing/users').child(newData.child('userA').val()).exists()\n  && !root.child('pairing/users').child(newData.child('userB').val()).exists()\n  && !root.child('config').child(newData.child('deviceA').val()).child('pair').exists()\n  && !root.child('config').child(newData.child('deviceB').val()).child('pair').exists()\n  && newData.parent().parent().parent().child('pairing/users').child(newData.child('userA').val()).val() == $pairId\n  && newData.parent().parent().parent().child('pairing/users').child(newData.child('userB').val()).val() == $pairId\n  && newData.parent().parent().parent().child('config').child(newData.child('deviceA').val()).child('pair/pairId').val() == $pairId\n  && newData.parent().parent().parent().child('config').child(newData.child('deviceB').val()).child('pair/pairId').val() == $pairId\n  && newData.parent().parent().parent().child('config').child(newData.child('deviceA').val()).child('pair/partnerDeviceId').val() == newData.child('deviceB').val()\n  && newData.parent().parent().parent().child('config').child(newData.child('deviceB').val()).child('pair/partnerDeviceId').val() == newData.child('deviceA').val()\n  && newData.parent().parent().parent().child('pairing/invites').child(newData.child('inviteId').val()).child('status').val() == 'accepted' && newData.parent().parent().parent().child('pairing/invites').child(newData.child('inviteId').val()).child('pairId').val() == $pairId) || (data.exists() && (newData.child('state').val() == 'ENDED') && newData.child('userA').val() == data.child('userA').val() && newData.child('userB').val() == data.child('userB').val() && newData.child('deviceA').val() == data.child('deviceA').val() && newData.child('deviceB').val() == data.child('deviceB').val() && newData.child('userAEmail').val() == data.child('userAEmail').val() && newData.child('userBEmail').val() == data.child('userBEmail').val() && newData.child('inviteId').val() == data.child('inviteId').val() && newData.child('createdAt').val() == data.child('createdAt').val() && newData.child('schemaVersion').val() == data.child('schemaVersion').val() && newData.child('endedAt').val() == now\n  && newData.parent().parent().parent().child('pairing/users').child(data.child('userA').val()).val() != $pairId\n  && newData.parent().parent().parent().child('pairing/users').child(data.child('userB').val()).val() != $pairId\n  && newData.parent().parent().parent().child('config').child(data.child('deviceA').val()).child('pair/pairId').val() != $pairId\n  && newData.parent().parent().parent().child('config').child(data.child('deviceB').val()).child('pair/pairId').val() != $pairId\n  && !newData.parent().parent().parent().child('pairing/mailboxes').child($pairId).exists()\n  && !newData.parent().parent().parent().child('pairing/acks').child($pairId).exists()\n  && !newData.parent().parent().parent().child('config').child(data.child('deviceA').val()).child('incoming').exists()\n  && !newData.parent().parent().parent().child('config').child(data.child('deviceB').val()).child('incoming').exists()))",
+          "schemaVersion": {
+            ".validate": "newData.isNumber() && newData.val() % 1 == 0 && newData.val() >= 1 && newData.val() <= 1"
+          },
+          "userA": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 95 && !newData.val().matches(/[.#$\\[\\]\\/]/)"
+          },
+          "userB": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 95 && !newData.val().matches(/[.#$\\[\\]\\/]/)"
+          },
+          "deviceA": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 95 && !newData.val().matches(/[.#$\\[\\]\\/]/)"
+          },
+          "deviceB": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 95 && !newData.val().matches(/[.#$\\[\\]\\/]/)"
+          },
+          "userAEmail": {
+            ".validate": "newData.isString() && newData.val().length <= 254"
+          },
+          "userBEmail": {
+            ".validate": "newData.isString() && newData.val().length <= 254"
+          },
+          "inviteId": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 95 && !newData.val().matches(/[.#$\\[\\]\\/]/)"
+          },
+          "state": {
+            ".validate": "newData.isString() && newData.val().length <= 6"
+          },
+          "createdAt": {
+            ".validate": "newData.isNumber() && newData.val() % 1 == 0 && newData.val() >= 1 && newData.val() <= 9007199254740991"
+          },
+          "endedAt": {
+            ".validate": "newData.isNumber() && newData.val() % 1 == 0 && newData.val() >= 1 && newData.val() <= 9007199254740991"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      },
+      "mailboxes": {
+        "$pairId": {
+          ".write": "!newData.exists() && (auth != null && auth.token.twinGlowDeviceId == null && (root.child('pairing/pairs').child($pairId).child('userA').val() == auth.uid || root.child('pairing/pairs').child($pairId).child('userB').val() == auth.uid)) && (newData.parent().parent().parent().child('pairing/pairs').child($pairId).child('state').val() == 'ENDED')",
+          "$senderDeviceId": {
+            ".read": "(root.child('pairing/pairs').child($pairId).child('state').val() == 'ACTIVE') && ((auth != null && auth.token.twinGlowDeviceId == null && (root.child('pairing/pairs').child($pairId).child('userA').val() == auth.uid || root.child('pairing/pairs').child($pairId).child('userB').val() == auth.uid)) || ((auth != null && auth.token.twinGlowDeviceId == root.child('pairing/pairs').child($pairId).child('deviceA').val() && root.child('deviceAccess').child(root.child('pairing/pairs').child($pairId).child('deviceA').val()).child('authUid').val() == auth.uid && root.child('deviceAccess').child(root.child('pairing/pairs').child($pairId).child('deviceA').val()).child('enabled').val() == true)) || ((auth != null && auth.token.twinGlowDeviceId == root.child('pairing/pairs').child($pairId).child('deviceB').val() && root.child('deviceAccess').child(root.child('pairing/pairs').child($pairId).child('deviceB').val()).child('authUid').val() == auth.uid && root.child('deviceAccess').child(root.child('pairing/pairs').child($pairId).child('deviceB').val()).child('enabled').val() == true)))",
+            ".write": "(newData.exists() && (auth != null && auth.token.twinGlowDeviceId == $senderDeviceId && root.child('deviceAccess').child($senderDeviceId).child('authUid').val() == auth.uid && root.child('deviceAccess').child($senderDeviceId).child('enabled').val() == true) && (root.child('pairing/pairs').child($pairId).child('state').val() == 'ACTIVE') && (root.child('pairing/pairs').child($pairId).child('deviceA').val() == $senderDeviceId || root.child('pairing/pairs').child($pairId).child('deviceB').val() == $senderDeviceId)) || (data.exists() && !newData.exists() && (auth != null && auth.token.twinGlowDeviceId == null && (root.child('pairing/pairs').child($pairId).child('userA').val() == auth.uid || root.child('pairing/pairs').child($pairId).child('userB').val() == auth.uid)) && (newData.parent().parent().parent().parent().child('pairing/pairs').child($pairId).child('state').val() == 'ENDED'))",
+            ".validate": "newData.hasChildren(['meta','content']) && newData.child('meta').hasChildren(['schemaVersion','eventId','sequence','pairId','senderDeviceId','recipientDeviceId','screenId','assetId','sentAt']) && newData.child('meta/pairId').val() == $pairId && newData.child('meta/senderDeviceId').val() == $senderDeviceId && newData.child('meta/recipientDeviceId').val() == (root.child('pairing/pairs').child($pairId).child('deviceA').val() == $senderDeviceId ? root.child('pairing/pairs').child($pairId).child('deviceB').val() : root.child('pairing/pairs').child($pairId).child('deviceA').val()) && newData.child('meta/sentAt').val() == now && (!data.exists() || newData.child('meta/sequence').val() > data.child('meta/sequence').val()) && newData.parent().parent().parent().parent().child('config').child(newData.child('meta/recipientDeviceId').val()).child('incoming/schemaVersion').val() == newData.child('meta/schemaVersion').val() && newData.parent().parent().parent().parent().child('config').child(newData.child('meta/recipientDeviceId').val()).child('incoming/eventId').val() == newData.child('meta/eventId').val() && newData.parent().parent().parent().parent().child('config').child(newData.child('meta/recipientDeviceId').val()).child('incoming/sequence').val() == newData.child('meta/sequence').val() && newData.parent().parent().parent().parent().child('config').child(newData.child('meta/recipientDeviceId').val()).child('incoming/pairId').val() == newData.child('meta/pairId').val() && newData.parent().parent().parent().parent().child('config').child(newData.child('meta/recipientDeviceId').val()).child('incoming/senderDeviceId').val() == newData.child('meta/senderDeviceId').val() && newData.parent().parent().parent().parent().child('config').child(newData.child('meta/recipientDeviceId').val()).child('incoming/recipientDeviceId').val() == newData.child('meta/recipientDeviceId').val() && newData.parent().parent().parent().parent().child('config').child(newData.child('meta/recipientDeviceId').val()).child('incoming/screenId').val() == newData.child('meta/screenId').val() && newData.parent().parent().parent().parent().child('config').child(newData.child('meta/recipientDeviceId').val()).child('incoming/assetId').val() == newData.child('meta/assetId').val() && newData.parent().parent().parent().parent().child('config').child(newData.child('meta/recipientDeviceId').val()).child('incoming/sentAt').val() == newData.child('meta/sentAt').val()",
+            "meta": {
+              "schemaVersion": {
+                ".validate": "newData.val() == 1"
+              },
+              "eventId": {
+                ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 95 && !newData.val().matches(/[.#$\\[\\]\\/]/)"
+              },
+              "sequence": {
+                ".validate": "newData.isNumber() && newData.val() % 1 == 0 && newData.val() >= 1 && newData.val() <= 9007199254740991"
+              },
+              "pairId": {
+                ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 95 && !newData.val().matches(/[.#$\\[\\]\\/]/)"
+              },
+              "senderDeviceId": {
+                ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 95 && !newData.val().matches(/[.#$\\[\\]\\/]/)"
+              },
+              "recipientDeviceId": {
+                ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 95 && !newData.val().matches(/[.#$\\[\\]\\/]/)"
+              },
+              "screenId": {
+                ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 95 && !newData.val().matches(/[.#$\\[\\]\\/]/)"
+              },
+              "assetId": {
+                ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 95 && !newData.val().matches(/[.#$\\[\\]\\/]/)"
+              },
+              "sentAt": {
+                ".validate": "newData.isNumber() && newData.val() % 1 == 0 && newData.val() >= 1 && newData.val() <= 9007199254740991"
+              },
+              "$other": {
+                ".validate": false
+              }
+            },
+            "content": {
+              ".validate": "(newData.child('type').val() == 'IMAGE' && newData.child('encoding').val() == 'SPARSE_PACKED_V1' && newData.hasChildren(['pixelsPacked']) && !newData.child('basePixelsPacked').exists() && !newData.child('frameDeltasPacked').exists() && !newData.child('frameDurationsMs').exists() && !newData.child('frameCount').exists() && !newData.child('loop').exists()) || (newData.child('type').val() == 'ANIMATION' && newData.child('encoding').val() == 'DELTA_SPARSE_PACKED_V1' && newData.hasChildren(['basePixelsPacked','frameDurationsMs','frameDeltasPacked','frameCount','loop']) && !newData.child('pixelsPacked').exists() && (newData.child('frameDurationsMs/0').exists() == (newData.child('frameCount').val() > 0)) && (newData.child('frameDurationsMs/1').exists() == (newData.child('frameCount').val() > 1)) && (newData.child('frameDurationsMs/2').exists() == (newData.child('frameCount').val() > 2)) && (newData.child('frameDurationsMs/3').exists() == (newData.child('frameCount').val() > 3)) && (newData.child('frameDurationsMs/4').exists() == (newData.child('frameCount').val() > 4)) && (newData.child('frameDurationsMs/5').exists() == (newData.child('frameCount').val() > 5)) && (newData.child('frameDurationsMs/6').exists() == (newData.child('frameCount').val() > 6)) && (newData.child('frameDurationsMs/7').exists() == (newData.child('frameCount').val() > 7)) && (newData.child('frameDurationsMs/8').exists() == (newData.child('frameCount').val() > 8)) && (newData.child('frameDurationsMs/9').exists() == (newData.child('frameCount').val() > 9)) && (newData.child('frameDurationsMs/10').exists() == (newData.child('frameCount').val() > 10)) && (newData.child('frameDurationsMs/11').exists() == (newData.child('frameCount').val() > 11)) && (newData.child('frameDurationsMs/12').exists() == (newData.child('frameCount').val() > 12)) && (newData.child('frameDurationsMs/13').exists() == (newData.child('frameCount').val() > 13)) && (newData.child('frameDurationsMs/14').exists() == (newData.child('frameCount').val() > 14)) && (newData.child('frameDurationsMs/15').exists() == (newData.child('frameCount').val() > 15)) && (newData.child('frameDeltasPacked/0').exists() == (newData.child('frameCount').val() > 1)) && (newData.child('frameDeltasPacked/1').exists() == (newData.child('frameCount').val() > 2)) && (newData.child('frameDeltasPacked/2').exists() == (newData.child('frameCount').val() > 3)) && (newData.child('frameDeltasPacked/3').exists() == (newData.child('frameCount').val() > 4)) && (newData.child('frameDeltasPacked/4').exists() == (newData.child('frameCount').val() > 5)) && (newData.child('frameDeltasPacked/5').exists() == (newData.child('frameCount').val() > 6)) && (newData.child('frameDeltasPacked/6').exists() == (newData.child('frameCount').val() > 7)) && (newData.child('frameDeltasPacked/7').exists() == (newData.child('frameCount').val() > 8)) && (newData.child('frameDeltasPacked/8').exists() == (newData.child('frameCount').val() > 9)) && (newData.child('frameDeltasPacked/9').exists() == (newData.child('frameCount').val() > 10)) && (newData.child('frameDeltasPacked/10').exists() == (newData.child('frameCount').val() > 11)) && (newData.child('frameDeltasPacked/11').exists() == (newData.child('frameCount').val() > 12)) && (newData.child('frameDeltasPacked/12').exists() == (newData.child('frameCount').val() > 13)) && (newData.child('frameDeltasPacked/13').exists() == (newData.child('frameCount').val() > 14)) && (newData.child('frameDeltasPacked/14').exists() == (newData.child('frameCount').val() > 15)) && (newData.child('basePixelsPacked').val().length + (newData.child('frameDeltasPacked/0').exists() ? newData.child('frameDeltasPacked/0').val().length : 0) + (newData.child('frameDeltasPacked/1').exists() ? newData.child('frameDeltasPacked/1').val().length : 0) + (newData.child('frameDeltasPacked/2').exists() ? newData.child('frameDeltasPacked/2').val().length : 0) + (newData.child('frameDeltasPacked/3').exists() ? newData.child('frameDeltasPacked/3').val().length : 0) + (newData.child('frameDeltasPacked/4').exists() ? newData.child('frameDeltasPacked/4').val().length : 0) + (newData.child('frameDeltasPacked/5').exists() ? newData.child('frameDeltasPacked/5').val().length : 0) + (newData.child('frameDeltasPacked/6').exists() ? newData.child('frameDeltasPacked/6').val().length : 0) + (newData.child('frameDeltasPacked/7').exists() ? newData.child('frameDeltasPacked/7').val().length : 0) + (newData.child('frameDeltasPacked/8').exists() ? newData.child('frameDeltasPacked/8').val().length : 0) + (newData.child('frameDeltasPacked/9').exists() ? newData.child('frameDeltasPacked/9').val().length : 0) + (newData.child('frameDeltasPacked/10').exists() ? newData.child('frameDeltasPacked/10').val().length : 0) + (newData.child('frameDeltasPacked/11').exists() ? newData.child('frameDeltasPacked/11').val().length : 0) + (newData.child('frameDeltasPacked/12').exists() ? newData.child('frameDeltasPacked/12').val().length : 0) + (newData.child('frameDeltasPacked/13').exists() ? newData.child('frameDeltasPacked/13').val().length : 0) + (newData.child('frameDeltasPacked/14').exists() ? newData.child('frameDeltasPacked/14').val().length : 0)) <= 8192)",
+              "type": {
+                ".validate": "newData.val() == 'IMAGE' || newData.val() == 'ANIMATION'"
+              },
+              "encoding": {
+                ".validate": "newData.isString() && newData.val().length <= 32"
+              },
+              "pixelsPacked": {
+                ".validate": "newData.isString() && newData.val().length <= 2048 && newData.val().length % 8 == 0 && newData.val().matches(/^[0-9a-fA-F]*$/)"
+              },
+              "basePixelsPacked": {
+                ".validate": "newData.isString() && newData.val().length <= 2048 && newData.val().length % 8 == 0 && newData.val().matches(/^[0-9a-fA-F]*$/)"
+              },
+              "frameCount": {
+                ".validate": "newData.isNumber() && newData.val() % 1 == 0 && newData.val() >= 2 && newData.val() <= 16"
+              },
+              "loop": {
+                ".validate": "newData.val() == true"
+              },
+              "frameDurationsMs": {
+                "$index": {
+                  ".validate": "$index.matches(/^(0|[1-9]|1[0-5])$/) && newData.isNumber() && newData.val() % 1 == 0 && newData.val() >= 50 && newData.val() <= 5000"
+                }
+              },
+              "frameDeltasPacked": {
+                "$index": {
+                  ".validate": "$index.matches(/^(0|[1-9]|1[0-4])$/) && newData.isString() && newData.val().length <= 2048 && newData.val().length % 8 == 0 && newData.val().matches(/^[0-9a-fA-F]*$/)"
+                }
+              },
+              "$other": {
+                ".validate": false
+              }
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        }
+      },
+      "acks": {
+        "$pairId": {
+          ".write": "!newData.exists() && (auth != null && auth.token.twinGlowDeviceId == null && (root.child('pairing/pairs').child($pairId).child('userA').val() == auth.uid || root.child('pairing/pairs').child($pairId).child('userB').val() == auth.uid)) && (newData.parent().parent().parent().child('pairing/pairs').child($pairId).child('state').val() == 'ENDED')",
+          "$receiverDeviceId": {
+            ".read": "(root.child('pairing/pairs').child($pairId).child('state').val() == 'ACTIVE') && ((auth != null && auth.token.twinGlowDeviceId == null && (root.child('pairing/pairs').child($pairId).child('userA').val() == auth.uid || root.child('pairing/pairs').child($pairId).child('userB').val() == auth.uid)) || ((auth != null && auth.token.twinGlowDeviceId == root.child('pairing/pairs').child($pairId).child('deviceA').val() && root.child('deviceAccess').child(root.child('pairing/pairs').child($pairId).child('deviceA').val()).child('authUid').val() == auth.uid && root.child('deviceAccess').child(root.child('pairing/pairs').child($pairId).child('deviceA').val()).child('enabled').val() == true)) || ((auth != null && auth.token.twinGlowDeviceId == root.child('pairing/pairs').child($pairId).child('deviceB').val() && root.child('deviceAccess').child(root.child('pairing/pairs').child($pairId).child('deviceB').val()).child('authUid').val() == auth.uid && root.child('deviceAccess').child(root.child('pairing/pairs').child($pairId).child('deviceB').val()).child('enabled').val() == true)))",
+            ".write": "(newData.exists() && (auth != null && auth.token.twinGlowDeviceId == $receiverDeviceId && root.child('deviceAccess').child($receiverDeviceId).child('authUid').val() == auth.uid && root.child('deviceAccess').child($receiverDeviceId).child('enabled').val() == true) && (root.child('pairing/pairs').child($pairId).child('state').val() == 'ACTIVE') && (root.child('pairing/pairs').child($pairId).child('deviceA').val() == $receiverDeviceId || root.child('pairing/pairs').child($pairId).child('deviceB').val() == $receiverDeviceId)) || (data.exists() && !newData.exists() && (auth != null && auth.token.twinGlowDeviceId == null && (root.child('pairing/pairs').child($pairId).child('userA').val() == auth.uid || root.child('pairing/pairs').child($pairId).child('userB').val() == auth.uid)) && (newData.parent().parent().parent().parent().child('pairing/pairs').child($pairId).child('state').val() == 'ENDED'))",
+            ".validate": "newData.hasChildren(['eventId','sequence','status','at']) && newData.child('at').val() == now && newData.child('eventId').val() == root.child('config').child($receiverDeviceId).child('incoming/eventId').val() && newData.child('sequence').val() == root.child('config').child($receiverDeviceId).child('incoming/sequence').val() && (!data.exists() || newData.child('sequence').val() >= data.child('sequence').val())",
+            "eventId": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 95 && !newData.val().matches(/[.#$\\[\\]\\/]/)"
+            },
+            "sequence": {
+              ".validate": "newData.isNumber() && newData.val() % 1 == 0 && newData.val() >= 1 && newData.val() <= 9007199254740991"
+            },
+            "status": {
+              ".validate": "newData.val() == 'displayed' || newData.val() == 'rejected'"
+            },
+            "at": {
+              ".validate": "newData.isNumber() && newData.val() % 1 == 0 && newData.val() >= 1 && newData.val() <= 9007199254740991"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        }
+      }
+    }
+  }
+}
