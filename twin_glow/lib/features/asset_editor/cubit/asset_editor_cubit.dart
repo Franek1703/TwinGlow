@@ -137,6 +137,7 @@ class AssetEditorCubit extends Cubit<AssetEditorState> {
 
       final asset = AssetModel(
         id: assetId,
+        revision: state.asset?.revision ?? 0,
         name: state.name,
         type: assetType,
         tags: state.tags,
@@ -149,7 +150,13 @@ class AssetEditorCubit extends Cubit<AssetEditorState> {
         await firebaseRepository.updateAsset(assetId, asset);
       }
 
-      emit(state.copyWith(isLoading: false, asset: asset, clearError: true));
+      emit(
+        state.copyWith(
+          isLoading: false,
+          asset: asset.copyWith(revision: asset.revision + 1),
+          clearError: true,
+        ),
+      );
     } catch (e) {
       emit(state.copyWith(isLoading: false, error: e.toString()));
     }

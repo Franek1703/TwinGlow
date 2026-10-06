@@ -10,6 +10,9 @@ public:
     AssetCache cache;
     std::vector<String> required;
     int version;
+    String sharingPairId;
+    int sharingVersion=0;
+    bool sharingActive=false;
     size_t index=0;
     bool ready()const{return index==required.size();}
     String next()const{return ready()?String():required[index];}

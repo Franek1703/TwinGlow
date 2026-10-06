@@ -1,5 +1,8 @@
 # Pairing and received display: implementation and verification
 
+Shared album storage and the former shared-preview UI are superseded by
+[Shared screens v2](shared_screens_implementation.md). Snapshot delivery sections remain applicable.
+
 This is the executable record of the approved plan. Scope: one selected device
 per user, one active pair per user, latest pending snapshot wins, held received
 override, restart returns to the local playlist. No Functions or billing upgrade.

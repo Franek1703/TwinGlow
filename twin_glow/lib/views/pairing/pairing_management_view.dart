@@ -79,7 +79,7 @@ class _PairingManagementViewState extends State<PairingManagementView> {
                           '${state.pairing.deviceId} ↔ ${state.pairing.partnerDeviceId}',
                         ),
                         const Text(
-                          'Enable sharing on an image or animation screen, then hold ACTION to send its selected content.',
+                          'Shared screens appear in both playlists and both people can edit them. Hold ACTION to send the currently displayed content.',
                         ),
                         if (state.acknowledgment['status'] != null)
                           Text(

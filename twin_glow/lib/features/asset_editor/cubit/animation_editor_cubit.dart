@@ -350,6 +350,7 @@ class AnimationEditorCubit extends Cubit<AnimationEditorState> {
 
       final asset = AssetModel(
         id: assetId,
+        revision: state.asset?.revision ?? 0,
         name: state.name,
         type: AssetType.animation,
         tags: state.tags,
@@ -363,7 +364,13 @@ class AnimationEditorCubit extends Cubit<AnimationEditorState> {
         await firebaseRepository.updateAsset(assetId, asset);
       }
 
-      emit(state.copyWith(isLoading: false, asset: asset, clearError: true));
+      emit(
+        state.copyWith(
+          isLoading: false,
+          asset: asset.copyWith(revision: asset.revision + 1),
+          clearError: true,
+        ),
+      );
     } catch (e) {
       // Frames stay in state, so a retry after a transient failure does not
       // start from a blank timeline.

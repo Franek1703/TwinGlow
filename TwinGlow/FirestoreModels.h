@@ -6,6 +6,7 @@
 // Data structures
 struct ScreenConfig {
     String id;
+    String sharedScreenId;
     String type; // CLOCK, IMAGE, ANIMATION, SENSOR
     int order;
     bool enabled;
@@ -34,6 +35,9 @@ struct ScreenConfig {
 // brightness to zero on the first poll.
 struct DeviceDoc {
     int configVersion = 0;
+    String sharingPairId;
+    int sharingVersion = 0;
+    bool sharingActive = false;
     bool bme680Present = false;
     String tzPosix;              // "" = absent
     int brightness = -1;         // -1 = absent

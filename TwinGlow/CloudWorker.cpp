@@ -439,8 +439,10 @@ void CloudWorker::execute(const CloudJob& job, CloudResult& result) {
         case CloudOperation::CONFIG_CHECK: {
             DeviceDoc* doc = new (std::nothrow) DeviceDoc();
             if (doc != nullptr && firestore != nullptr && firestore->checkConfigVersion(*doc)) {
-                result.deviceDoc = doc;
-                result.success = true;
+                PairState pair;
+                if(rtdb && rtdb->getPairState(pair) && firestore->readSharingState(pair.pairId,*doc)) {
+                    result.deviceDoc = doc; result.success = true;
+                } else delete doc;
             } else {
                 delete doc;
             }
@@ -463,7 +465,9 @@ void CloudWorker::execute(const CloudJob& job, CloudResult& result) {
             result.success=rtdb && job.pairMeta && rtdb->acknowledgePair(*job.pairMeta,job.displayed);break;
         case CloudOperation::SCREENS_FETCH:
             result.screens=new(std::nothrow) std::vector<ScreenConfig>();
-            result.success=firestore && result.screens && firestore->getScreens(*result.screens);break;
+            result.success=firestore && result.screens && firestore->getScreens(*result.screens);
+            if(result.success) { result.deviceDoc=new(std::nothrow)DeviceDoc(); if(result.deviceDoc)firestore->sharingSnapshot(*result.deviceDoc);else result.success=false; }
+            break;
 
         case CloudOperation::BRIGHTNESS_WRITE: {
             // Read here rather than from the job, so a burst of button presses

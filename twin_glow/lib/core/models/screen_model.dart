@@ -1,10 +1,4 @@
-enum ScreenType {
-  clock,
-  image,
-  animation,
-  sensor,
-  game,
-}
+enum ScreenType { clock, image, animation, sensor, game }
 
 class ScreenModel {
   final String id;
@@ -21,6 +15,8 @@ class ScreenModel {
   final String? defaultAssetId;
   final List<String> availableAssetIds;
   final bool allowManualSwitch;
+  final String? sharedScreenId;
+  final int? sharedVersion;
 
   ScreenModel({
     required this.id,
@@ -34,6 +30,8 @@ class ScreenModel {
     this.defaultAssetId,
     this.availableAssetIds = const [],
     this.allowManualSwitch = true,
+    this.sharedScreenId,
+    this.sharedVersion,
   });
 
   /// Whether this screen type can carry an asset pool.
@@ -52,6 +50,8 @@ class ScreenModel {
     String? defaultAssetId,
     List<String>? availableAssetIds,
     bool? allowManualSwitch,
+    String? sharedScreenId,
+    int? sharedVersion,
   }) {
     return ScreenModel(
       id: id ?? this.id,
@@ -65,6 +65,8 @@ class ScreenModel {
       defaultAssetId: defaultAssetId ?? this.defaultAssetId,
       availableAssetIds: availableAssetIds ?? this.availableAssetIds,
       allowManualSwitch: allowManualSwitch ?? this.allowManualSwitch,
+      sharedScreenId: sharedScreenId ?? this.sharedScreenId,
+      sharedVersion: sharedVersion ?? this.sharedVersion,
     );
   }
 

@@ -87,7 +87,28 @@ class ScreenEditorImageCubit extends Cubit<ScreenEditorImageState> {
            isShared: screen.isShared,
            availableAssets: availableAssets,
          ),
-       );
+       ) {
+    reloadPoolAssets();
+  }
+
+  Future<void> reloadPoolAssets() async {
+    try {
+      final assets = await firebaseRepository.getAssetsByIds(
+        state.poolAssetIds,
+      );
+      if (!isClosed) {
+        emit(
+          state.copyWith(
+            availableAssets: {
+              for (final a in [...state.availableAssets, ...assets]) a.id: a,
+            }.values.toList(),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!isClosed) emit(state.copyWith(error: e.toString()));
+    }
+  }
 
   static List<String> _initialPool(ScreenModel screen) {
     if (screen.availableAssetIds.isNotEmpty) {
@@ -148,6 +169,10 @@ class ScreenEditorImageCubit extends Cubit<ScreenEditorImageState> {
     );
   }
 
+  void renameScreen(String name) {
+    emit(state.copyWith(screen: state.screen.copyWith(name: name)));
+  }
+
   void toggleSharing() {
     emit(state.copyWith(isShared: !state.isShared));
   }
@@ -165,9 +190,11 @@ class ScreenEditorImageCubit extends Cubit<ScreenEditorImageState> {
       final updatedScreen = ScreenModel(
         id: state.screen.id,
         type: state.screen.type,
-        name: state.screen.type == ScreenType.animation
-            ? 'Animation Screen'
-            : 'Image Screen',
+        name:
+            state.screen.name ??
+            (state.screen.type == ScreenType.animation
+                ? 'Animation Screen'
+                : 'Image Screen'),
         enabled: state.screen.enabled,
         isShared: state.isShared,
         previewData: state.screen.previewData,
@@ -177,6 +204,8 @@ class ScreenEditorImageCubit extends Cubit<ScreenEditorImageState> {
         defaultAssetId: defaultAssetId,
         availableAssetIds: pool,
         allowManualSwitch: state.screen.allowManualSwitch,
+        sharedScreenId: state.screen.sharedScreenId,
+        sharedVersion: state.screen.sharedVersion,
       );
 
       if (isNewScreen) {

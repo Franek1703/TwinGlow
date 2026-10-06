@@ -55,6 +55,8 @@ public:
     bool claimDevice(const String& uid);
     
     // Screen operations
+    bool readSharingState(const String& pairId, DeviceDoc& out);
+    void sharingSnapshot(DeviceDoc& out) const;
     bool getScreens(std::vector<ScreenConfig>& screens);
     
     // Asset operations
@@ -69,6 +71,7 @@ private:
     FirebaseClientWrap* wrap;
     String projectId;
     String deviceId;
+    DeviceDoc sharingState;
     
     String getDevicePath() const;  // "devices/{deviceId}" for Firestore
     String getScreensPath() const;

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -5,7 +6,7 @@ import 'package:firebase_database/firebase_database.dart';
 import 'firebase_repository.dart';
 import 'pairing_service.dart';
 import 'firebase_pairing_store.dart';
-import 'shared_screens_service.dart';
+import 'shared_firestore_service.dart';
 import 'shared_catalog_queue.dart';
 import 'device_access.dart';
 import '../../core/models/device_model.dart';
@@ -52,6 +53,9 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
       debugPrint('Pairing directory update failed: $e');
     }
   }
+
+  SharedFirestoreService get _shared =>
+      SharedFirestoreService(_firestore, _auth.currentUser!.uid);
 
   // Auth methods
   @override
@@ -247,9 +251,32 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
           .orderBy('order')
           .get();
 
-      return querySnapshot.docs.map((doc) {
-        return _screenFromFirestore(doc.id, doc.data());
-      }).toList();
+      final result = <ScreenModel>[];
+      for (final doc in querySnapshot.docs) {
+        final local = doc.data();
+        final sharedId = local['sharedScreenId'] as String?;
+        if (sharedId == null) {
+          result.add(_screenFromFirestore(doc.id, local));
+          continue;
+        }
+        final shared = (await _shared.shared(sharedId).get()).data();
+        if (shared == null) throw StateError('Shared screen is unavailable');
+        if (shared['state'] != 'ACTIVE') continue;
+        final access = (await _shared.grant(shared['pairId'] as String).get())
+            .data();
+        if (access?['state'] != 'ACTIVE') continue;
+        result.add(
+          _screenFromFirestore(doc.id, {
+            ...shared,
+            ...local,
+            'type': (shared['type'] as String).toLowerCase(),
+            'assetId': shared['defaultAssetId'],
+            'isShared': true,
+            'sharedVersion': shared['contentVersion'],
+          }),
+        );
+      }
+      return result;
     } catch (e) {
       throw Exception('Failed to get screens: $e');
     }
@@ -263,30 +290,41 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
           .doc(deviceId)
           .collection('screens');
 
-      // Get current max order
-      final existingScreens = await screensRef
-          .orderBy('order', descending: true)
-          .limit(1)
-          .get();
-      final nextOrder = existingScreens.docs.isEmpty
-          ? 0
-          : (existingScreens.docs.first.data()['order'] as int? ?? 0) + 1;
-
-      await screensRef.doc(screen.id).set({
-        'type': screen.type.name,
-        'name': screen.name,
-        'enabled': screen.enabled,
-        'isShared': screen.isShared,
-        'order': nextOrder,
-        'assetId': screen.assetId,
-        'config': screen.config,
-        'previewData': screen.previewData,
-        'createdAt': Timestamp.fromDate(DateTime.now()),
-        ..._poolFields(screen),
+      await _shared.initializeOrder(deviceId);
+      final counter = _firestore.doc('playlistState/$deviceId');
+      final existing = await screensRef.doc(screen.id).get();
+      if (existing.exists) {
+        await updateScreen(deviceId, screen.id, screen);
+        return screen;
+      }
+      await _firestore.runTransaction((tx) async {
+        final state = await tx.get(counter);
+        final existing = await tx.get(screensRef.doc(screen.id));
+        if (existing.exists) {
+          throw StateError('Screen was created elsewhere. Refresh.');
+        }
+        final nextOrder = state.data()!['nextOrder'] as int;
+        tx.update(counter, {'nextOrder': nextOrder + 1});
+        tx.update(_firestore.doc('devices/$deviceId'), {
+          'configVersion': FieldValue.increment(1),
+        });
+        tx.set(screensRef.doc(screen.id), {
+          'type': screen.type.name,
+          'name': screen.name,
+          'enabled': screen.enabled,
+          'isShared': false,
+          'order': nextOrder,
+          'assetId': screen.assetId,
+          'config': screen.config,
+          'previewData': screen.previewData,
+          'createdAt': Timestamp.fromDate(DateTime.now()),
+          ..._poolFields(screen),
+        });
       });
-
-      // Increment device configVersion
-      await _incrementDeviceConfigVersion(deviceId);
+      await _ringConfigDoorbell(deviceId);
+      if (screen.isShared) {
+        await setScreenShared(deviceId, screen.id, null, true);
+      }
 
       await _syncSharedScreensForDevice(deviceId);
       return screen;
@@ -302,25 +340,61 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
     ScreenModel screen,
   ) async {
     try {
-      await _firestore
-          .collection('devices')
-          .doc(deviceId)
-          .collection('screens')
-          .doc(screenId)
-          .update({
-            'name': screen.name,
-            'enabled': screen.enabled,
-            'isShared': screen.isShared,
-            'assetId': screen.assetId,
-            'config': screen.config,
-            'previewData': screen.previewData,
-            'updatedAt': Timestamp.fromDate(DateTime.now()),
-            ..._poolFields(screen),
+      final ref = _firestore.doc('devices/$deviceId/screens/$screenId');
+      final local = (await ref.get()).data()!;
+      final sharedId = local['sharedScreenId'] as String?;
+      if (sharedId != null) {
+        final data = (await _shared.shared(sharedId).get()).data()!;
+        final original = _screenFromFirestore(screenId, {
+          ...data,
+          'type': (data['type'] as String).toLowerCase(),
+        });
+        final contentChanged = !SharedFirestoreService.sameContent(
+          SharedFirestoreService.content(original),
+          SharedFirestoreService.content(screen),
+        );
+        if (contentChanged) {
+          await _shared.update(
+            sharedId,
+            screen,
+            localDevice: deviceId,
+            localScreen: screenId,
+          );
+        }
+        if (!screen.isShared) {
+          await _shared.stop(sharedId);
+          return;
+        }
+        if (contentChanged) {
+          await _ringConfigDoorbell(deviceId);
+          return;
+        }
+        // Local toggles never write shared configuration or partner settings.
+        await _firestore.runTransaction((tx) async {
+          tx.update(ref, {'enabled': screen.enabled});
+          tx.update(_firestore.doc('devices/$deviceId'), {
+            'configVersion': FieldValue.increment(1),
           });
+        });
+        await _ringConfigDoorbell(deviceId);
+        return;
+      }
+      await ref.update({
+        'name': screen.name,
+        'enabled': screen.enabled,
+        'isShared': false,
+        'assetId': screen.assetId,
+        'config': screen.config,
+        'previewData': screen.previewData,
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
+        ..._poolFields(screen),
+      });
 
       // Increment device configVersion
       await _incrementDeviceConfigVersion(deviceId);
-      await _syncSharedScreensForDevice(deviceId);
+      if (screen.isShared) {
+        await setScreenShared(deviceId, screenId, null, true);
+      }
     } catch (e) {
       throw Exception('Failed to update screen: $e');
     }
@@ -335,6 +409,14 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
           .collection('screens')
           .doc(screenId);
 
+      final local = (await screenRef.get()).data();
+      if (local?['sharedScreenId'] != null) {
+        await _shared.stop(local!['sharedScreenId'] as String);
+        if ((await screenRef.get()).exists) {
+          await deleteScreen(deviceId, screenId);
+        }
+        return;
+      }
       final batch = _firestore.batch();
       batch.delete(screenRef);
       await batch.commit();
@@ -365,24 +447,30 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
     String? pairId,
     bool isShared,
   ) async {
-    try {
-      final screenRef = _firestore
-          .collection('devices')
-          .doc(deviceId)
-          .collection('screens')
-          .doc(screenId);
-
-      await screenRef.update({
-        'isShared': isShared,
-        'pairId': FieldValue.delete(),
-        'sharedScreenId': FieldValue.delete(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-      await _incrementDeviceConfigVersion(deviceId);
-      await _syncSharedScreensForDevice(deviceId);
-    } catch (e) {
-      throw Exception('Failed to update screen sharing: $e');
+    final raw =
+        (await _firestore
+                .doc('devices/$deviceId/screens/$screenId')
+                .get(const GetOptions(source: Source.server)))
+            .data()!;
+    final id = raw['sharedScreenId'] as String?;
+    if (!isShared) {
+      if (id != null) {
+        await _shared.stop(id);
+      } else {
+        await _firestore.doc('devices/$deviceId/screens/$screenId').update({
+          'isShared': false,
+        });
+      }
+      return;
     }
+    if (id != null) return;
+    final pair = await getPairing(_auth.currentUser!.uid);
+    await _shared.publish(
+      pair,
+      deviceId,
+      screenId,
+      _screenFromFirestore(screenId, raw),
+    );
   }
 
   @override
@@ -480,6 +568,7 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
         'height': 16,
         'tags': asset.tags,
         'isDefault': false,
+        'revision': 1,
         'createdAt': Timestamp.fromDate(DateTime.now()),
         // A create writes a fresh document, so there is nothing to delete.
         ...buildAssetPixelFields(asset).values,
@@ -498,17 +587,35 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
       // replaces land together. A legacy animation edited here is rewritten in
       // the packed format as a side effect; nothing migrates in bulk.
       final fields = buildAssetPixelFields(asset);
-      await _firestore.collection('assets').doc(assetId).update({
-        'name': asset.name,
-        'tags': asset.tags,
-        'type': asset.type.name.toUpperCase(),
-        'updatedAt': Timestamp.fromDate(DateTime.now()),
-        ...fields.values,
-        for (final name in fields.obsoleteFieldNames) name: FieldValue.delete(),
+      final ref = _firestore.doc('assets/$assetId');
+      await _firestore.runTransaction((tx) async {
+        final before = (await tx.get(ref)).data()!;
+        if ((before['revision'] as int? ?? 0) != asset.revision) {
+          throw StateError('Asset changed elsewhere. Reopen it before saving.');
+        }
+        final pairId = before['sharingPairId'] as String?;
+        final grant = pairId == null
+            ? null
+            : await tx.get(_shared.grant(pairId));
+        tx.update(ref, {
+          'revision': asset.revision + 1,
+          'name': asset.name,
+          'tags': asset.tags,
+          'type': asset.type.name.toUpperCase(),
+          'updatedAt': Timestamp.fromDate(DateTime.now()),
+          ...fields.values,
+          for (final name in fields.obsoleteFieldNames)
+            name: FieldValue.delete(),
+        });
+        if (grant?.data()?['state'] == 'ACTIVE') {
+          tx.update(grant!.reference, {
+            'contentVersion': (grant.data()!['contentVersion'] as int) + 1,
+            'mutationKind': 'ASSET',
+            'mutationId': assetId,
+          });
+        }
       });
       await _bumpDevicesUsingAsset(assetId);
-      final uid = _auth.currentUser?.uid;
-      if (uid != null) await syncSharedScreens(uid);
     } catch (e) {
       throw Exception('Failed to update asset: $e');
     }
@@ -525,6 +632,11 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
         final uid = _auth.currentUser?.uid;
         if (uid != null) await syncSharedScreens(uid);
         return;
+      }
+      if ((assetData['sharedScreenIds'] as List? ?? []).isNotEmpty) {
+        throw StateError(
+          'Remove this asset from shared screens before deleting it.',
+        );
       }
       if (assetData['isDefault'] == true) {
         throw Exception('Default assets cannot be deleted');
@@ -622,7 +734,30 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
     String status,
   ) => _pairing(userId).resolveInvite(inviteId, status);
   @override
-  Future<void> unpair(String userId) => _pairing(userId).unpair();
+  Future<void> unpair(String userId) async {
+    final pair = await getPairing(userId);
+    if (pair.pairId != null) {
+      await _shared.beginClosing(pair);
+      final state =
+          (await _shared
+                  .grant(pair.pairId!)
+                  .get(const GetOptions(source: Source.server)))
+              .data()?['state'];
+      if (state != null && state != 'REVOKED') {
+        // Freeze first: publication and edits cannot race this cleanup query.
+
+        final docs = await _firestore
+            .collection('sharedScreens')
+            .where('pairId', isEqualTo: pair.pairId)
+            .get(const GetOptions(source: Source.server));
+        for (final doc in docs.docs) {
+          if (doc.data()['state'] != 'REVOKED') await _shared.stop(doc.id);
+        }
+        await _shared.revoke(pair.pairId!);
+      }
+    }
+    await _pairing(userId).unpair();
+  }
 
   Future<void> _syncSharedScreensForDevice(String deviceId) async {
     final uid = _auth.currentUser?.uid;
@@ -648,56 +783,87 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
 
   Future<void> _syncSharedCatalog(String uid, PairingModel pair) async {
     if (!pair.isPaired || pair.deviceId == null) return;
-    final device = _firestore.collection('devices').doc(pair.deviceId!);
-    const server = GetOptions(source: Source.server);
-    final before =
-        (await device.get(server)).data()?['configVersion'] as int? ?? 0;
-    final snapshot = await device
-        .collection('screens')
-        .orderBy('order')
-        .get(server);
-    final screens = snapshot.docs
-        .map((d) => _screenFromFirestore(d.id, d.data()))
-        .toList();
-    final ids = screens
-        .where((s) => s.isShared && s.supportsAssetPool)
-        .map(
-          (s) =>
-              s.defaultAssetId ??
-              s.assetId ??
-              (s.availableAssetIds.isEmpty ? null : s.availableAssetIds.first),
-        )
-        .whereType<String>()
-        .toList();
-    final docs = await Future.wait(
-      ids.toSet().map(
-        (id) => _firestore.collection('assets').doc(id).get(server),
-      ),
-    );
-    final assets = docs
-        .where((d) => d.exists)
-        .map((d) => _assetFromFirestore(d.id, d.data()!))
-        .toList();
-    final after =
-        (await device.get(server)).data()?['configVersion'] as int? ?? 0;
-    if (before != after)
-      throw StateError(
-        'Screen configuration changed during sharing. Refresh and try again.',
-      );
-    await SharedScreensService(
-      FirebasePairingStore(_database),
-      uid,
-    ).sync(pair, screens, assets, sourceVersion: after);
+    if (!await _shared.consent(pair)) return;
+    final docs = await _firestore
+        .collection('devices/${pair.deviceId}/screens')
+        .get(const GetOptions(source: Source.server));
+    for (final doc in docs.docs) {
+      if (doc.data()['isShared'] == true &&
+          doc.data()['sharedScreenId'] == null) {
+        await _shared.publish(
+          pair,
+          pair.deviceId!,
+          doc.id,
+          _screenFromFirestore(doc.id, doc.data()),
+        );
+      }
+    }
   }
 
   @override
   Stream<List<SharedScreenModel>> watchSharedScreens(
     String pairId,
     String ownerUid,
-  ) => SharedScreensService(
-    FirebasePairingStore(_database),
-    _auth.currentUser?.uid ?? '',
-  ).watch(pairId, ownerUid);
+  ) async* {
+    // Retain startup consent/migration lifecycle; previews now live in playlist.
+    await for (final doc in _shared.grant(pairId).snapshots()) {
+      if (doc.data()?['state'] == 'ACTIVE') {
+        await syncSharedScreens(_auth.currentUser!.uid);
+      }
+      yield const [];
+    }
+  }
+
+  @override
+  Stream<void> watchScreenChanges(String deviceId) {
+    late StreamController<void> controller;
+    StreamSubscription? local, pairing, shared;
+    var generation = 0;
+    controller = StreamController<void>(
+      onListen: () {
+        local = _firestore
+            .collection('devices/$deviceId/screens')
+            .snapshots()
+            .listen((_) => controller.add(null), onError: controller.addError);
+        final uid = _auth.currentUser?.uid;
+        if (uid == null) return;
+        pairing = watchPairing(uid).listen((pair) async {
+          final current = ++generation;
+          await shared?.cancel();
+          try {
+            await syncSharedScreens(uid);
+            if (current != generation ||
+                controller.isClosed ||
+                pair.pairId == null) {
+              return;
+            }
+            shared = _shared.grant(pair.pairId!).snapshots().listen((
+              doc,
+            ) async {
+              if (current != generation || controller.isClosed) return;
+              controller.add(null);
+              if (doc.data()?['state'] == 'ACTIVE') {
+                try {
+                  await syncSharedScreens(uid);
+                } catch (e) {
+                  if (!controller.isClosed) controller.addError(e);
+                }
+              }
+            }, onError: controller.addError);
+          } catch (e) {
+            if (!controller.isClosed) controller.addError(e);
+          }
+        }, onError: controller.addError);
+      },
+      onCancel: () async {
+        ++generation;
+        await local?.cancel();
+        await pairing?.cancel();
+        await shared?.cancel();
+      },
+    );
+    return controller.stream;
+  }
 
   // RTDB methods
   @override
@@ -840,6 +1006,8 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
           ? List<String>.from(data['availableAssetIds'] as List)
           : const [],
       allowManualSwitch: data['allowManualSwitch'] ?? true,
+      sharedScreenId: data['sharedScreenId'],
+      sharedVersion: data['sharedVersion'],
     );
   }
 
@@ -892,6 +1060,7 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
     return AssetModel(
       id: id,
       name: data['name'] ?? 'Unnamed Asset',
+      revision: data['revision'] as int? ?? 0,
       type: type,
       tags: data['tags'] != null ? List<String>.from(data['tags']) : [],
       pixelData: pixelData,

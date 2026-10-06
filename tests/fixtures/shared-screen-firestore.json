@@ -1,0 +1,69 @@
+{
+  "fields": {
+    "schemaVersion": {
+      "integerValue": "2"
+    },
+    "name": {
+      "stringValue": "Shared album"
+    },
+    "type": {
+      "stringValue": "IMAGE"
+    },
+    "availableAssetIds": {
+      "arrayValue": {
+        "values": [
+          {
+            "stringValue": "a0"
+          },
+          {
+            "stringValue": "a1"
+          },
+          {
+            "stringValue": "a2"
+          },
+          {
+            "stringValue": "a3"
+          },
+          {
+            "stringValue": "a4"
+          }
+        ]
+      }
+    },
+    "defaultAssetId": {
+      "stringValue": "a0"
+    },
+    "allowManualSwitch": {
+      "booleanValue": true
+    },
+    "config": {
+      "mapValue": {
+        "fields": {}
+      }
+    },
+    "contentVersion": {
+      "integerValue": "1"
+    },
+    "pairId": {
+      "stringValue": "pair"
+    },
+    "createdBy": {
+      "stringValue": "alice"
+    },
+    "state": {
+      "stringValue": "ACTIVE"
+    },
+    "screenRefs": {
+      "mapValue": {
+        "fields": {
+          "A": {
+            "stringValue": "source"
+          },
+          "B": {
+            "stringValue": "shared_ss_pair_A_source"
+          }
+        }
+      }
+    }
+  }
+}

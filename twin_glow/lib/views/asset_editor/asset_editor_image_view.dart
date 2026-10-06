@@ -88,6 +88,12 @@ class _AssetEditorImageViewState extends State<AssetEditorImageView> {
           );
         }
 
+        if (snapshot.hasError) {
+          return Scaffold(
+            appBar: AppBar(title: const Text('Edit content')),
+            body: Center(child: Text(snapshot.error.toString())),
+          );
+        }
         final asset = snapshot.data;
 
         return BlocProvider(
@@ -322,26 +328,9 @@ class _AssetEditorImageViewState extends State<AssetEditorImageView> {
     FirebaseRepository repo,
     String assetId,
   ) async {
-    try {
-      final currentUser = await repo.getCurrentUser();
-      if (currentUser == null) return null;
-
-      // Try to find in user assets first
-      final userAssets = await repo.getUserAssets(currentUser.id);
-      try {
-        return userAssets.firstWhere((a) => a.id == assetId);
-      } catch (e) {
-        // Try default assets
-        final defaultAssets = await repo.getDefaultAssets();
-        try {
-          return defaultAssets.firstWhere((a) => a.id == assetId);
-        } catch (e) {
-          return null;
-        }
-      }
-    } catch (e) {
-      return null;
-    }
+    final assets = await repo.getAssetsByIds([assetId]);
+    if (assets.isEmpty) throw StateError('Asset no longer exists');
+    return assets.single;
   }
 
   Future<void> _saveAndClose(BuildContext context) async {

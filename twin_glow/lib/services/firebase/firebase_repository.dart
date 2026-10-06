@@ -37,6 +37,8 @@ abstract class FirebaseRepository {
     bool isShared,
   );
 
+  Stream<void> watchScreenChanges(String deviceId);
+
   // Assets
   Future<List<AssetModel>> getAssetsByIds(List<String> assetIds);
   Future<List<AssetModel>> getUserAssets(String userId);

@@ -71,6 +71,9 @@ Bme680Driver bme680;
 String deviceId;
 String claimedUid;
 int currentConfigVersion = -1;
+String currentSharingPairId;
+int currentSharingVersion=-1;
+bool currentSharingActive=false, stagingValidated=false;
 // Last value seen on the RTDB doorbell (/config/{deviceId}/configVersion).
 // -1 means "not read yet"; the first successful read only records the value,
 // since boot has just loaded the config and a reload there would be redundant.
@@ -629,11 +632,14 @@ void handleConfigLoading() {
 void servicePlaylistUpdate() {
     if (!playlistUpdate) return;
     if (playlistUpdate->ready()) {
+        if(!stagingValidated) { cloudWorker.requestConfigCheck(); return; }
         playlistUpdate->cache.retainOnly(playlistUpdate->required);
         renderAsset.resetAnimation();
         playlist.setScreens(playlistUpdate->screens);
         assetCache=std::move(playlistUpdate->cache);
         currentConfigVersion=playlistUpdate->version;
+        currentSharingPairId=playlistUpdate->sharingPairId;currentSharingVersion=playlistUpdate->sharingVersion;currentSharingActive=playlistUpdate->sharingActive;
+        stagingValidated=false;
         playlistUpdate.reset();
         Serial.println(F("[Config] Staged playlist committed"));
     } else if (stagedAssetInFlight.isEmpty()) {
@@ -1034,7 +1040,12 @@ void processCloudResults() {
                     Serial.println(currentConfigVersion);
                     applyDeviceSettings(doc);
                     applyTimeZone(doc.tzPosix);
-                    if (doc.configVersion != currentConfigVersion) {
+                    if((currentSharingActive && !doc.sharingActive) || (!currentSharingPairId.isEmpty() && doc.sharingPairId!=currentSharingPairId)) { playlist.removeSharedScreens(); renderAsset.resetAnimation(); }
+                    if(playlistUpdate && playlistUpdate->ready()) {
+                        stagingValidated = doc.configVersion==playlistUpdate->version && doc.sharingVersion==playlistUpdate->sharingVersion && doc.sharingPairId==playlistUpdate->sharingPairId && doc.sharingActive==playlistUpdate->sharingActive;
+                        if(!stagingValidated)playlistUpdate.reset();
+                    }
+                    if (doc.configVersion != currentConfigVersion || doc.sharingVersion!=currentSharingVersion || doc.sharingPairId!=currentSharingPairId || doc.sharingActive!=currentSharingActive) {
                         if (!playlistUpdate && !screensFetchPending) {
                             screensFetchPending=cloudWorker.requestScreens(doc.configVersion);
                         }
@@ -1090,7 +1101,10 @@ void processCloudResults() {
             case CloudOperation::SCREENS_FETCH:
                 screensFetchPending=false;
                 if (result.success && result.screens) {
+                    playlist.retainAuthorizedSharedScreens(*result.screens);
+                    stagingValidated=false;
                     playlistUpdate.reset(new(std::nothrow)PlaylistUpdate(std::move(*result.screens),assetCache,result.revision));
+                    if(playlistUpdate && result.deviceDoc) { playlistUpdate->sharingPairId=result.deviceDoc->sharingPairId;playlistUpdate->sharingVersion=result.deviceDoc->sharingVersion;playlistUpdate->sharingActive=result.deviceDoc->sharingActive; }
                 }
                 break;
             case CloudOperation::ASSET_FETCH: {

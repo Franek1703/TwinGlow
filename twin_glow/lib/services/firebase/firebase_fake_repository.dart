@@ -10,6 +10,8 @@ import '../../core/models/shared_screen_model.dart';
 /// Fake implementation of FirebaseRepository for development
 class FirebaseFakeRepository implements FirebaseRepository {
   @override
+  Stream<void> watchScreenChanges(String deviceId) => const Stream.empty();
+  @override
   Future<void> syncSharedScreens(String userId) async {}
   @override
   Stream<List<SharedScreenModel>> watchSharedScreens(

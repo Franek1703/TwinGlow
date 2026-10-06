@@ -70,6 +70,12 @@ class ScreenEditorImageView extends StatelessWidget {
           );
         }
 
+        if (snapshot.hasError) {
+          return Scaffold(
+            appBar: AppBar(title: Text(_editorTitle)),
+            body: Center(child: Text(snapshot.error.toString())),
+          );
+        }
         final screen =
             snapshot.data ??
             ScreenModel(
@@ -143,10 +149,14 @@ class ScreenEditorImageView extends StatelessWidget {
                 child: BlocBuilder<ScreenEditorImageCubit, ScreenEditorImageState>(
                   builder: (context, state) {
                     final assetsState = context.watch<AssetsCubit>().state;
-                    final compatibleAssets = [
-                      ...assetsState.myAssets,
-                      ...assetsState.defaultAssets,
-                    ].where((asset) => asset.type == _assetType).toList();
+                    final compatibleAssets = {
+                      for (final asset in [
+                        ...state.availableAssets,
+                        ...assetsState.myAssets,
+                        ...assetsState.defaultAssets,
+                      ].where((asset) => asset.type == _assetType))
+                        asset.id: asset,
+                    }.values.toList();
                     final previewScreen = ScreenModel(
                       id: state.screen.id,
                       type: screenType,
@@ -164,6 +174,16 @@ class ScreenEditorImageView extends StatelessWidget {
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        TextFormField(
+                          initialValue: state.screen.name,
+                          decoration: const InputDecoration(
+                            labelText: 'Screen name',
+                          ),
+                          onChanged: context
+                              .read<ScreenEditorImageCubit>()
+                              .renameScreen,
+                        ),
+                        SizedBox(height: AppSpacing.md),
                         if (state.error != null) ...[
                           Text(
                             state.error!,
@@ -219,7 +239,7 @@ class ScreenEditorImageView extends StatelessWidget {
                                     SizedBox(height: 2.h),
                                     Text(
                                       state.isShared
-                                          ? 'Partner can preview the default content'
+                                          ? 'Both people can edit this screen'
                                           : 'Keep this screen private',
                                       style: AppTypography.small(context),
                                     ),
@@ -252,7 +272,7 @@ class ScreenEditorImageView extends StatelessWidget {
                                 SizedBox(width: AppSpacing.md),
                                 Expanded(
                                   child: Text(
-                                    'Your partner can preview the default content in the app. Hold ACTION on your ESP32 to send the content currently displayed to their panel.',
+                                    'The whole screen appears in both playlists. Content changes are shared; playlist order is local.',
                                     style: AppTypography.small(
                                       context,
                                     ).copyWith(color: AppColors.accentMagenta),
@@ -301,6 +321,19 @@ class ScreenEditorImageView extends StatelessWidget {
                             selectedAssetId: state.selectedAssetId,
                             poolAssetIds: state.poolAssetIds,
                             defaultAssetId: state.defaultAssetId,
+                            onEdit: state.screen.sharedScreenId == null
+                                ? null
+                                : (asset) async {
+                                    await context.push(
+                                      '/asset/edit/${asset.id}?type=${asset.type.name}',
+                                    );
+                                    if (context.mounted) {
+                                      context.read<AssetsCubit>().loadAssets();
+                                      context
+                                          .read<ScreenEditorImageCubit>()
+                                          .reloadPoolAssets();
+                                    }
+                                  },
                             onAssetSelected: (asset) {
                               context
                                   .read<ScreenEditorImageCubit>()
@@ -324,9 +357,9 @@ class ScreenEditorImageView extends StatelessWidget {
                           text: 'Save Configuration',
                           onPressed: () {
                             context.read<ScreenEditorImageCubit>().save().then((
-                              _,
+                              saved,
                             ) {
-                              context.pop();
+                              if (saved && context.mounted) context.pop();
                             });
                           },
                           fullWidth: true,
@@ -349,16 +382,11 @@ class ScreenEditorImageView extends StatelessWidget {
     String deviceId,
     String screenId,
   ) async {
-    try {
-      final screens = await repo.getScreens(deviceId);
-      try {
-        return screens.firstWhere((s) => s.id == screenId);
-      } catch (e) {
-        return null; // Screen doesn't exist yet
-      }
-    } catch (e) {
-      return null;
+    final screens = await repo.getScreens(deviceId);
+    for (final screen in screens) {
+      if (screen.id == screenId) return screen;
     }
+    return null;
   }
 
   AssetType get _assetType => screenType == ScreenType.animation

@@ -21,6 +21,7 @@ class AssetSelector extends StatelessWidget {
   final String? defaultAssetId;
   final ValueChanged<AssetModel>? onAssetToggled;
   final ValueChanged<AssetModel>? onSetDefault;
+  final ValueChanged<AssetModel>? onEdit;
 
   const AssetSelector({
     super.key,
@@ -31,6 +32,7 @@ class AssetSelector extends StatelessWidget {
     this.defaultAssetId,
     this.onAssetToggled,
     this.onSetDefault,
+    this.onEdit,
   });
 
   bool get _isMultiSelect => poolAssetIds != null;
@@ -50,10 +52,7 @@ class AssetSelector extends StatelessWidget {
                   color: AppColors.textMuted,
                 ),
                 SizedBox(height: AppSpacing.md),
-                Text(
-                  'No assets available',
-                  style: AppTypography.body(context),
-                ),
+                Text('No assets available', style: AppTypography.body(context)),
               ],
             ),
           ),
@@ -68,7 +67,7 @@ class AssetSelector extends StatelessWidget {
         crossAxisCount: 3,
         crossAxisSpacing: AppSpacing.md,
         mainAxisSpacing: AppSpacing.md,
-        childAspectRatio: 0.9,
+        childAspectRatio: onEdit == null ? 0.9 : 0.7,
       ),
       itemCount: assets.length,
       itemBuilder: (context, index) {
@@ -76,19 +75,20 @@ class AssetSelector extends StatelessWidget {
         final poolIndex = poolAssetIds?.indexOf(asset.id) ?? -1;
         final inPool = poolIndex != -1;
         final isDefault = _isMultiSelect && asset.id == defaultAssetId;
-        final isSelected =
-            _isMultiSelect ? inPool : asset.id == selectedAssetId;
+        final isSelected = _isMultiSelect
+            ? inPool
+            : asset.id == selectedAssetId;
 
         return GestureDetector(
           onTap: () => _isMultiSelect
               ? onAssetToggled?.call(asset)
               : onAssetSelected(asset),
-          onLongPress:
-              _isMultiSelect ? () => onSetDefault?.call(asset) : null,
+          onLongPress: _isMultiSelect ? () => onSetDefault?.call(asset) : null,
           child: AppCard(
             padding: EdgeInsets.all(AppSpacing.sm),
-            backgroundColor:
-                isSelected ? AppColors.accentCyan.withOpacity(0.1) : null,
+            backgroundColor: isSelected
+                ? AppColors.accentCyan.withOpacity(0.1)
+                : null,
             child: Column(
               children: [
                 Expanded(
@@ -105,8 +105,9 @@ class AssetSelector extends StatelessWidget {
                                       AppColors.bgSecondary,
                                     ],
                                   ),
-                                  borderRadius:
-                                      BorderRadius.circular(AppSpacing.radiusLg),
+                                  borderRadius: BorderRadius.circular(
+                                    AppSpacing.radiusLg,
+                                  ),
                                 ),
                                 child: Icon(
                                   asset.type == AssetType.image
@@ -153,6 +154,17 @@ class AssetSelector extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (onEdit != null)
+                  SizedBox(
+                    height: 24,
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      tooltip: 'Edit content',
+                      iconSize: 18,
+                      onPressed: () => onEdit!(asset),
+                      icon: const Icon(Icons.edit),
+                    ),
+                  ),
                 SizedBox(height: AppSpacing.sm),
                 Text(
                   asset.name,

@@ -3,6 +3,22 @@
 ScreenPlaylist::ScreenPlaylist() : currentIndex(0), screenStartMs(0) {
 }
 
+void ScreenPlaylist::retainAuthorizedSharedScreens(const std::vector<ScreenConfig>& next) {
+    std::vector<ScreenConfig> allowed;
+    for(const auto& screen:screens) {
+        bool keep=screen.sharedScreenId.isEmpty();
+        for(const auto& candidate:next)if(candidate.sharedScreenId==screen.sharedScreenId && !screen.sharedScreenId.isEmpty())keep=true;
+        if(keep)allowed.push_back(screen);
+    }
+    if(allowed.size()!=screens.size())setScreens(allowed);
+}
+
+void ScreenPlaylist::removeSharedScreens() {
+    std::vector<ScreenConfig> local;
+    for(const auto& screen:screens)if(screen.sharedScreenId.isEmpty())local.push_back(screen);
+    if(local.size()!=screens.size())setScreens(local);
+}
+
 void ScreenPlaylist::setScreens(const std::vector<ScreenConfig>& newScreens) {
     String selectedId=getCurrentScreen()?getCurrentScreen()->id:String();
     std::vector<ScreenConfig> nextScreens;

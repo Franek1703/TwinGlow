@@ -1,5 +1,6 @@
 #include "FirestoreRepo.h"
 #include "FirestorePagination.h"
+#include "SharedScreenContract.h"
 #include "FirebaseClientWrap.h"
 #include "PairingConfig.h"
 #include <ArduinoJson.h>
@@ -19,6 +20,8 @@ bool FirestoreRepo::updateDeviceCapability(bool) { return false; }
 bool FirestoreRepo::updateBrightness(uint8_t) { return false; }
 bool FirestoreRepo::claimDevice(const String&) { return false; }
 bool FirestoreRepo::getScreens(std::vector<ScreenConfig>&) { return false; }
+bool FirestoreRepo::readSharingState(const String&,DeviceDoc&) { return false; }
+void FirestoreRepo::sharingSnapshot(DeviceDoc&) const {}
 bool FirestoreRepo::getAsset(const String&, AssetData&, const String&) { return false; }
 bool FirestoreRepo::checkConfigVersion(DeviceDoc& out) { return getDeviceDoc(out); }
 #else
@@ -285,6 +288,35 @@ bool FirestoreRepo::claimDevice(const String& uid) {
     return true;
 }
 
+void FirestoreRepo::sharingSnapshot(DeviceDoc& out) const {
+    out.sharingPairId=sharingState.sharingPairId;out.sharingVersion=sharingState.sharingVersion;out.sharingActive=sharingState.sharingActive;
+}
+bool FirestoreRepo::readSharingState(const String& pairId, DeviceDoc& out) {
+    DeviceDoc next;
+    next.sharingPairId=pairId;
+    if(!pairId.isEmpty()) {
+        auto* documents=static_cast<FirebaseFirestoreType*>(wrap->getFirestore());
+        auto* client=wrap->getAsyncClient();if(!documents||!client)return false;
+        Firestore::Parent parent(projectId, "");
+        GetDocumentOptions options(DocumentMask("schemaVersion,state,contentVersion,deviceA,deviceB"));
+        String raw=documents->get(*client,parent,"sharingPairs/"+pairId,options);
+        int code=client->lastError().code();
+        if(code!=404) {
+            if(code!=0||raw.isEmpty())return false;
+            JsonDocument doc;if(deserializeJson(doc,raw)||doc.overflowed())return false;
+            JsonObject f=doc["fields"].as<JsonObject>();
+            if(f["schemaVersion"]["integerValue"].as<int>()!=1)return false;
+            String a=f["deviceA"]["stringValue"].as<String>(),b=f["deviceB"]["stringValue"].as<String>();
+            if(deviceId!=a&&deviceId!=b)return false;
+            String state=f["state"]["stringValue"].as<String>();
+            if(state!="ACTIVE"&&state!="PENDING"&&state!="CLOSING"&&state!="REVOKED")return false;
+            if(!firestoreFieldToInt(f["contentVersion"].as<JsonObject>(),next.sharingVersion)||next.sharingVersion<0)return false;
+            next.sharingActive=state=="ACTIVE";
+        }
+    }
+    sharingState=next;sharingSnapshot(out);return true;
+}
+
 bool FirestoreRepo::getScreens(std::vector<ScreenConfig>& screens) {
     if (wrap == nullptr) return false;
     FirebaseFirestoreType* documents = static_cast<FirebaseFirestoreType*>(wrap->getFirestore());
@@ -296,7 +328,7 @@ bool FirestoreRepo::getScreens(std::vector<ScreenConfig>& screens) {
     String pageToken;
     do {
     ListDocumentsOptions listOpts;
-    listOpts.pageSize(4).mask(DocumentMask("type,order,enabled,isShared,durationMs,assetId,defaultAssetId,availableAssetIds,allowManualSwitch,config"));
+    listOpts.pageSize(4).mask(DocumentMask("sharedScreenId,type,order,enabled,isShared,durationMs,assetId,defaultAssetId,availableAssetIds,allowManualSwitch,config"));
     if (!pageToken.isEmpty()) listOpts.pageToken(pageToken);
     String response = documents->list(*aClient, parent, getScreensPath(), listOpts);
     if (aClient->lastError().code() != 0 || response.isEmpty()) return false;
@@ -333,9 +365,9 @@ bool FirestoreRepo::getScreens(std::vector<ScreenConfig>& screens) {
         if (!fields["enabled"].isNull()) firestoreFieldToBool(fields["enabled"].as<JsonObject>(), sc.enabled);
         if (!fields["durationMs"].isNull()) {
             int d = 0;
-            if (firestoreFieldToInt(fields["durationMs"].as<JsonObject>(), d) && d > 0) {
+            if (firestoreFieldToInt(fields["durationMs"].as<JsonObject>(), d)) {
                 // Clamp up, so a too-small value cannot spin the playlist.
-                sc.durationMs = (d < SCREEN_MIN_DURATION_MS) ? SCREEN_MIN_DURATION_MS : d;
+                sc.durationMs = d <= 0 ? 0 : ((d < SCREEN_MIN_DURATION_MS) ? SCREEN_MIN_DURATION_MS : d);
             }
         }
         if (!fields["isShared"].isNull()) firestoreFieldToBool(fields["isShared"].as<JsonObject>(),sc.isShared);
@@ -375,6 +407,18 @@ bool FirestoreRepo::getScreens(std::vector<ScreenConfig>& screens) {
                 }
                 serializeJson(configDoc, sc.configJson);
             }
+        }
+        if (!fields["sharedScreenId"].isNull()) {
+            sc.sharedScreenId=fields["sharedScreenId"]["stringValue"].as<String>();
+            if(sc.sharedScreenId.isEmpty())return false;
+            if(!sharingState.sharingActive)continue;
+            GetDocumentOptions options(DocumentMask("schemaVersion,state,pairId,type,availableAssetIds,defaultAssetId,allowManualSwitch"));
+            String raw=documents->get(*aClient,parent,"sharedScreens/"+sc.sharedScreenId,options);
+            if(aClient->lastError().code()!=0||raw.isEmpty())return false;
+            JsonDocument sharedDoc;if(deserializeJson(sharedDoc,raw)||sharedDoc.overflowed())return false;
+            JsonObjectConst sf=sharedDoc["fields"].as<JsonObjectConst>();
+            if(sf["state"]["stringValue"].as<String>()=="REVOKED")continue;
+            if(sf["state"]["stringValue"].as<String>()!="ACTIVE"||sf["pairId"]["stringValue"].as<String>()!=sharingState.sharingPairId||!resolveSharedFields(sf,sc))return false;
         }
         if (sc.id.isEmpty() || sc.type.isEmpty()) return false;
         collected.push_back(std::move(sc));

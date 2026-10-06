@@ -276,7 +276,7 @@ void main() {
   );
 
   testWidgets(
-    'partner preview appears live and disappears immediately after unpair',
+    'legacy default preview is no longer a separate user-facing panel',
     (tester) async {
       final repository = SharedRepository();
       addTearDown(repository.pairs.close);
@@ -308,8 +308,8 @@ void main() {
         ),
       ]);
       await tester.pumpAndSettle();
-      expect(find.text('Shared with you'), findsOneWidget);
-      expect(find.text('Lolypop'), findsOneWidget);
+      expect(find.text('Shared with you'), findsNothing);
+      expect(find.text('Lolypop'), findsNothing);
       repository.pairs.add(PairingModel());
       await tester.pumpAndSettle();
       expect(find.text('Lolypop'), findsNothing);
