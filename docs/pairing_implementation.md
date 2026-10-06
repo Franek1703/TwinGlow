@@ -5,6 +5,93 @@ per user, one active pair per user, latest pending snapshot wins, held received
 override, restart returns to the local playlist. No Functions or billing upgrade.
 No production deployment or physical-device validation is implied by local tests.
 
+### Running-device configuration reload (2026-10-06 follow-up)
+
+The first physical device `tg_f4ec6bb0ef83` successfully loaded configuration
+71 at boot, then detected 72 while running (`remote=72 local=71`). The
+60-second poll worked. Staging nonetheless downloaded every referenced asset
+again. With ten cached assets (eight images and two large animations), the
+first unchanged animation fetch had only 23,944 bytes free / 10,228 largest
+block; its 8,463-byte response arrived truncated to 6,132 bytes and failed with
+`IncompleteInput`. The atomic loader preserved its working playlist, explaining
+why reorder/sharing edits never appeared despite healthy presence updates.
+Repeated attempts later starved TLS as well. Actual device credentials were
+also used for read-only production checks: configuration, screens and all ten
+assets are authorized. No cloud data/rules were modified for this diagnosis.
+
+Each cached Firestore asset now retains the **document response's `updateTime`**,
+including assets without an application `updatedAt` field. On a configuration
+reload the worker performs a small masked metadata GET for each cached asset.
+An identical revision reuses the immutable cached object; a changed or uncached
+asset is fetched in full. A changed asset therefore costs one additional document
+read; unchanged assets cost one small read and avoid full content transfers.
+Deletion/authorization/parse failures abort staging without consuming the config
+version. The snapshot format and partner's received override stay unchanged.
+
+Packed responses parse through ArduinoJson's mutable-buffer zero-copy mode,
+then decode directly from Firestore Value wrappers to owned pixel vectors.
+No intermediate flattened JSON string travels through the worker queue or gets
+parsed again. Legacy unpacked documents retain their conversion path. Internal
+pixel storage uses one aligned 32-bit word (8-bit index, 24-bit RGB), halving the
+pixel cache footprint; this RAM struct is never sent or persisted as raw bytes.
+The cache remains atomic: unchanged entries share existing objects; replacements
+stay private until the entire staged playlist validates. Selection persists
+across reorders, so a reorder changes subsequent button navigation rather than
+forcing the panel to the new first screen. Received snapshots remain held until
+dismissed and require another sender action to reflect subsequent source edits.
+
+Native ASan/UBSan checks cover Firestore packed wrappers, response-buffer
+lifetime, RGB/index limits, invalid duration/delta wrappers, cache revision reuse,
+replacement isolation and unversioned fallback, alongside prior pairing/rendering
+and failure tests. A second suite compiles the production `getAsset()` body and
+helpers verbatim against scripted network responses, checking metadata/full-read
+branching, authorization/deletion/transport/parse failures and a legacy image.
+The 26 Flutter animation/asset/paired-contract tests passed. The huge_app build
+passed (2,008,696 bytes, 71,188 bytes static RAM).
+
+The first physical upload loaded all ten assets at boot. The user reordered
+screens while running: config 72 -> 73 was detected, all ten assets were checked
+as unchanged, and the staged playlist committed without reboot. The selected
+image kept its asset id and moved index 0 -> 1. This is direct hardware evidence
+of reorder synchronization, not merely a build/test assertion.
+
+A later source image edit raised config to 74, while transport failures exposed
+another existing recovery problem in ESP_SSLClient 3.1.3: failed TLS cleanup
+clears its secure flag but can leave raw TCP open, and `stop()` then returns
+without closing it. A still-secure stop can also flush a broken session. Reset
+now closes the raw socket **before** SSL/async cleanup. Diagnostics call the TLS
+error accessor only while secure because the library otherwise dereferences a
+freed engine alias; heap/block sizes are now logged on failures. A third suite
+compiles the actual reset method against both failure/active-session stubs,
+checking closure order and idempotence. All three native suites passed.
+
+Independent reviewer **gpt-6.1-sol**, separate context
+`/root/config_refresh_review`, read the changes and surrounding flow, reran all
+three sanitizer suites, inspected the installed SSL library and rechecked the
+transport follow-up: **no actionable findings**. Its limits distinguish stubbed
+transport tests from actual SDK/network/ESP32 memory behavior.
+
+The final firmware was uploaded with verification to the first device, retaining
+NVS. It loaded configuration 75 and all ten assets at boot. A fresh source image
+edit raised the remote version to 76. Runtime staging reused several unchanged
+assets, but TCP failures interrupted it before commit, despite approximately
+47–55 KB free heap. One subsequent pair-state request and heartbeat recovered;
+later the Wi-Fi link dropped with reason 16 (`GROUP_KEY_UPDATE_TIMEOUT`) and
+reconnection repeatedly failed with reason 2 (`AUTH_EXPIRE`). Configuration 76
+remained unapplied while the previous cached image continued rendering without
+a crash. This does not establish whether the remaining problem is in power,
+the access point, or firmware/network recovery. The user reports USB power for
+the ESP32 and a 5 V supply for the LEDs; exact wiring has not been verified.
+
+Runtime source-image replacement, changed-animation replacement and recovery
+after this link failure remain physical verification items. With a stable link,
+save a fresh image edit and a separate animation edit; confirm a new remote
+version, an `Asset downloaded` message for each changed asset and a successful
+playlist commit without restart, then inspect the actual rendered content.
+Also disconnect/reconnect Wi-Fi and verify eventual convergence to the newest
+configuration while the working display remains available. No two-device
+sharing operation is implied by this one-device verification.
+
 ### Partner app previews (2026-10-06 follow-up)
 
 Live inspection found a correctly ACTIVE RTDB pair for devices
@@ -56,6 +143,30 @@ deleted/default assets, sharing off, unpair/re-pair and failed sync behave as
 above; old firmware event transport remains unchanged. Tests cover the Dart
 catalog writer/decoder, a live widget, save failures, actual Dart REST operations
 against emulator rules, and unauthorized/cross-owner/oversized writes.
+
+Follow-up verification completed: 246 Flutter tests passed (one emulator-only
+test skipped in the standalone run); 16 Firebase rules/ownership tests and one
+actual Dart REST integration passed with Auth/RTDB/Firestore emulators. Both
+native firmware and FirebaseClient SDK sanitizer regressions passed. Analysis
+has 46 existing informational findings and no errors/warnings; no new findings
+in this follow-up. The iOS simulator debug build passed.
+
+Independent reviewer **gpt-6.1-sol**, separate context, found a P1 stale-sync
+privacy race and a P2 already-deleted asset retry skipping reconciliation. Both
+were fixed and independently rechecked; the reviewer reran nine relevant Flutter
+tests and found no further actionable issues.
+
+Production RTDB rules were deployed to `twinglow-bab2e` on 2026-10-06 and fetched
+back to confirm exact equality with `firebase/database.rules.json`. All rules
+outside the added `sharedScreens` branch matched the prior deployed rules.
+Firestore rules were not changed by this follow-up. The updated app was installed
+and launched in the running iOS simulator using its existing first-account
+session. Its normal authenticated catalog sync published the existing shared
+`Lolypop` image at source configuration version 71; read-back matched the source
+image's 2,048 packed characters. No administrator data backfill was needed.
+Actual partner-account rendering still needs the updated app on that account;
+widget/emulator role tests cover it locally. No physical two-ESP32 display test
+was performed during this follow-up.
 
 ### Restart diagnosed from hardware logs on 2026-10-06
 
