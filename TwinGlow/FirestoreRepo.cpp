@@ -1,6 +1,7 @@
 #include "FirestoreRepo.h"
+#include "FirestorePagination.h"
 #include "FirebaseClientWrap.h"
-#include "Config.h"
+#include "PairingConfig.h"
 #include <ArduinoJson.h>
 
 #if !defined(ENABLE_FIRESTORE)
@@ -11,7 +12,6 @@ FirestoreRepo::FirestoreRepo(FirebaseClientWrap* wrap, const String& projId, con
 String FirestoreRepo::getDevicePath() const { return ""; }
 String FirestoreRepo::getScreensPath() const { return ""; }
 String FirestoreRepo::getAssetPath(const String&) const { return ""; }
-String FirestoreRepo::getSharedScreenPath(const String&, const String&) const { return ""; }
 String FirestoreRepo::getUserDevicePath(const String&) const { return ""; }
 bool FirestoreRepo::getDeviceDoc(DeviceDoc& out) { out = DeviceDoc(); return false; }
 bool FirestoreRepo::createDeviceDoc(const String&) { return false; }
@@ -19,7 +19,6 @@ bool FirestoreRepo::updateDeviceCapability(bool) { return false; }
 bool FirestoreRepo::updateBrightness(uint8_t) { return false; }
 bool FirestoreRepo::claimDevice(const String&) { return false; }
 bool FirestoreRepo::getScreens(std::vector<ScreenConfig>&) { return false; }
-bool FirestoreRepo::getSharedScreen(const String&, const String&, SharedScreenConfig&) { return false; }
 bool FirestoreRepo::getAsset(const String&, AssetData&) { return false; }
 bool FirestoreRepo::checkConfigVersion(DeviceDoc& out) { return getDeviceDoc(out); }
 #else
@@ -41,10 +40,6 @@ String FirestoreRepo::getScreensPath() const {
 
 String FirestoreRepo::getAssetPath(const String& assetId) const {
     return "assets/" + assetId;
-}
-
-String FirestoreRepo::getSharedScreenPath(const String& pairId, const String& sharedScreenId) const {
-    return "pairs/" + pairId + "/sharedScreens/" + sharedScreenId;
 }
 
 String FirestoreRepo::getUserDevicePath(const String& uid) const {
@@ -297,45 +292,19 @@ bool FirestoreRepo::getScreens(std::vector<ScreenConfig>& screens) {
     if (documents == nullptr || aClient == nullptr) return false;
 
     Firestore::Parent parent(projectId, "");
+    std::vector<ScreenConfig> collected;
+    String pageToken;
+    do {
     ListDocumentsOptions listOpts;
-    String listPath = getScreensPath();
-    String response = documents->list(*aClient, parent, listPath, listOpts);
-    if (aClient->lastError().code() != 0) {
-        Serial.print(F("[Firestore] getScreens list error: "));
-        Serial.println(aClient->lastError().code());
-        return false;
-    }
-
+    listOpts.pageSize(4).mask(DocumentMask("type,order,enabled,isShared,durationMs,assetId,defaultAssetId,availableAssetIds,allowManualSwitch,config"));
+    if (!pageToken.isEmpty()) listOpts.pageToken(pageToken);
+    String response = documents->list(*aClient, parent, getScreensPath(), listOpts);
+    if (aClient->lastError().code() != 0 || response.isEmpty()) return false;
     JsonDocument doc;
-    DeserializationError parseError = deserializeJson(doc, response);
-    if (parseError) {
-        // The error name separates two failures that looked identical from the
-        // outside: NoMemory is the document not fitting the heap a reload
-        // leaves, IncompleteInput is the response itself arriving truncated.
-        // Both used to print the same "JSON parse error" and neither could be
-        // told apart without a rebuild.
-        Serial.print(F("[Firestore] getScreens: JSON parse error: "));
-        Serial.print(parseError.c_str());
-        Serial.print(F(" responseLen="));
-        Serial.print(response.length());
-        Serial.print(F(" freeHeap="));
-        Serial.print(ESP.getFreeHeap());
-        Serial.print(F(" largestBlock="));
-        Serial.println(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
-        return false;
-    }
-    if (doc["documents"].isNull()) {
-        screens.clear();
-        Serial.println(F("[Firestore] getScreens: no 'documents' in response"));
-        return true;
-    }
-
-    screens.clear();
+    if (deserializeJson(doc,response) || doc.overflowed()) return false;
+    if (!doc.is<JsonObject>() || (!doc["documents"].isNull() && !doc["documents"].is<JsonArray>())) return false;
+    if (!readFirestorePageToken(doc["nextPageToken"], pageToken)) return false;
     JsonArray arr = doc["documents"].as<JsonArray>();
-    Serial.print(F("[Firestore] getScreens: path="));
-    Serial.print(listPath);
-    Serial.print(F(" rawDocs="));
-    Serial.println(arr.size());
     for (JsonVariant docVar : arr) {
         JsonObject docObj = docVar.as<JsonObject>();
         ScreenConfig sc;
@@ -344,15 +313,13 @@ bool FirestoreRepo::getScreens(std::vector<ScreenConfig>& screens) {
         sc.order = 0;
         sc.enabled = true;
         sc.durationMs = SCREEN_DEFAULT_DURATION_MS;
-        sc.pairId = "";
-        sc.sharedScreenId = "";
         sc.assetId = "";
         sc.defaultAssetId = "";
         sc.currentAssetIndex = 0;
         sc.availableAssetIds.clear();
         sc.allowManualSwitch = true;
         sc.configJson = "";
-        if (docObj["name"].isNull() || docObj["fields"].isNull()) continue;
+        if (!docObj["name"].is<const char*>() || !docObj["fields"].is<JsonObject>()) return false;
         String name = docObj["name"].as<String>();
         int lastSlash = name.lastIndexOf('/');
         if (lastSlash >= 0) sc.id = name.substring(lastSlash + 1);
@@ -371,8 +338,7 @@ bool FirestoreRepo::getScreens(std::vector<ScreenConfig>& screens) {
                 sc.durationMs = (d < SCREEN_MIN_DURATION_MS) ? SCREEN_MIN_DURATION_MS : d;
             }
         }
-        if (!fields["pairId"].isNull()) firestoreFieldToString(fields["pairId"].as<JsonObject>(), sc.pairId);
-        if (!fields["sharedScreenId"].isNull()) firestoreFieldToString(fields["sharedScreenId"].as<JsonObject>(), sc.sharedScreenId);
+        if (!fields["isShared"].isNull()) firestoreFieldToBool(fields["isShared"].as<JsonObject>(),sc.isShared);
         if (!fields["assetId"].isNull()) firestoreFieldToString(fields["assetId"].as<JsonObject>(), sc.assetId);
         // Asset pool lives on the screen document, so IMAGE/ANIMATION screens
         // can cycle several assets without depending on a pair.
@@ -410,8 +376,11 @@ bool FirestoreRepo::getScreens(std::vector<ScreenConfig>& screens) {
                 serializeJson(configDoc, sc.configJson);
             }
         }
-        screens.push_back(sc);
+        if (sc.id.isEmpty() || sc.type.isEmpty()) return false;
+        collected.push_back(std::move(sc));
     }
+    } while (!pageToken.isEmpty());
+    screens=std::move(collected);
     Serial.print(F("[Firestore] getScreens: parsed "));
     Serial.print(screens.size());
     Serial.println(F(" screens"));
@@ -422,45 +391,6 @@ bool FirestoreRepo::getScreens(std::vector<ScreenConfig>& screens) {
                 ScreenConfig tmp = screens[i];
                 screens[i] = screens[j];
                 screens[j] = tmp;
-            }
-        }
-    }
-    return true;
-}
-
-bool FirestoreRepo::getSharedScreen(const String& pairId, const String& sharedScreenId, SharedScreenConfig& config) {
-    if (wrap == nullptr) return false;
-    FirebaseFirestoreType* documents = static_cast<FirebaseFirestoreType*>(wrap->getFirestore());
-    AsyncClientClass* aClient = wrap->getAsyncClient();
-    if (documents == nullptr || aClient == nullptr) return false;
-
-    config.type = "";
-    config.defaultAssetId = "";
-    config.availableAssetIds.clear();
-    config.allowManualSwitch = false;
-    config.loop = false;
-
-    Firestore::Parent parent(projectId, "");
-    DocumentMask mask;
-    GetDocumentOptions options(mask);
-    String path = getSharedScreenPath(pairId, sharedScreenId);
-    String response = documents->get(*aClient, parent, path, options);
-    if (aClient->lastError().code() != 0) return false;
-
-    JsonDocument doc;
-    if (deserializeJson(doc, response) != DeserializationError::Ok) return false;
-    if (doc["fields"].isNull()) return false;
-
-    JsonObject fields = doc["fields"].as<JsonObject>();
-    if (!fields["type"].isNull()) firestoreFieldToString(fields["type"].as<JsonObject>(), config.type);
-    if (!fields["defaultAssetId"].isNull()) firestoreFieldToString(fields["defaultAssetId"].as<JsonObject>(), config.defaultAssetId);
-    if (!fields["allowManualSwitch"].isNull()) firestoreFieldToBool(fields["allowManualSwitch"].as<JsonObject>(), config.allowManualSwitch);
-    if (!fields["loop"].isNull()) firestoreFieldToBool(fields["loop"].as<JsonObject>(), config.loop);
-    if (!fields["availableAssetIds"].isNull() && !fields["availableAssetIds"]["arrayValue"].isNull()) {
-        JsonArray arr = fields["availableAssetIds"]["arrayValue"]["values"].as<JsonArray>();
-        for (JsonObject v : arr) {
-            if (!v["stringValue"].isNull()) {
-                config.availableAssetIds.push_back(v["stringValue"].as<String>());
             }
         }
     }
@@ -537,24 +467,7 @@ bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset) {
     asset.framesJson = "";
 
     Firestore::Parent parent(projectId, "");
-    // No DocumentMask, deliberately.
-    //
-    // FirebaseClient formats the whole request line into a buffer sized from a
-    // hardcoded 300 (RequestHandler.h: printTo(val[header], 300, "%s%s%s
-    // HTTP/1.1\r\n", ...)), so anything past ~331 characters is silently
-    // truncated by vsnprintf - taking the " HTTP/1.1\r\n" terminator with it.
-    // Google's frontend answers that malformed request line with an HTML 400,
-    // and the half-spoken connection then wedges the next synchronous get.
-    //
-    // The document path alone is ~81 characters, so a mask listing every field
-    // both encodings need came to ~388 and broke every asset fetch. Masking
-    // only saves the handful of metadata fields (name, ownerUid, tags, width,
-    // height, createdAt) - a few hundred bytes against a payload we size the
-    // JSON documents from anyway. Not worth reintroducing a length cliff that
-    // depends on how long an asset id happens to be.
-    //
-    // If you add a mask back, keep path + query + 11 under 331 characters.
-    GetDocumentOptions options;
+    GetDocumentOptions options(DocumentMask("type,encoding,pixels,pixelsPacked,basePixels,basePixelsPacked,frames,frameDeltasPacked,frameDurationsMs,frameCount,loop"));
     String path = getAssetPath(assetId);
     Serial.print(F("[Firestore] getAsset: freeHeap="));
     Serial.print(ESP.getFreeHeap());

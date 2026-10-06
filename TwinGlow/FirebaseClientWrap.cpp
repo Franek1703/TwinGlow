@@ -1,12 +1,13 @@
 #include "FirebaseClientWrap.h"
 #include <WiFi.h>
+#include "FirebaseRootCA.h"
 
 FirebaseClientWrap::FirebaseClientWrap()
     : firestore(nullptr), rtdb(nullptr), auth(nullptr), initialized(false) {
 }
 
 FirebaseClientWrap::~FirebaseClientWrap() {
-#if defined(ENABLE_LEGACY_TOKEN)
+#if defined(ENABLE_USER_AUTH)
     if (auth != nullptr) {
         delete static_cast<FirebaseAuthType*>(auth);
         auth = nullptr;
@@ -28,7 +29,8 @@ FirebaseClientWrap::~FirebaseClientWrap() {
 
 bool FirebaseClientWrap::begin() {
     if (initialized) {
-        return true;
+        app.loop();
+        return app.ready();
     }
 
 #if defined(ENABLE_DATABASE) || defined(ENABLE_FIRESTORE)
@@ -51,7 +53,7 @@ bool FirebaseClientWrap::begin() {
         Serial.println(F("[Firebase] RTDB initialized successfully"));
     }
 
-#if defined(ENABLE_LEGACY_TOKEN) && (defined(ENABLE_DATABASE) || defined(ENABLE_FIRESTORE))
+#if defined(ENABLE_USER_AUTH) && (defined(ENABLE_DATABASE) || defined(ENABLE_FIRESTORE))
     if (auth != nullptr) {
         user_auth_data& authData = static_cast<FirebaseAuthType*>(auth)->get();
         initializeApp(aClient, app, authData, 5000UL);
@@ -71,7 +73,7 @@ bool FirebaseClientWrap::begin() {
 
     initialized = true;
     Serial.println(F("[Firebase] Initialized successfully"));
-    return true;
+    return app.ready();
 }
 
 void FirebaseClientWrap::configureTransport() {
@@ -89,7 +91,7 @@ void FirebaseClientWrap::configureTransport() {
     // RX has to hold one whole TLS record, so it is the size to raise first if
     // handshakes start failing against Google's frontend.
     sslClient.setClient(&basicClient);
-    sslClient.setInsecure();
+    sslClient.setCACert(TWINGLOW_ROOT_CA);
     sslClient.setBufferSizes(FIREBASE_TLS_RX_BUFFER_BYTES, FIREBASE_TLS_TX_BUFFER_BYTES);
     // One knob here where WiFiClientSecure had a separate connect timeout;
     // the sync I/O budget is the sensible value for both.
@@ -145,12 +147,15 @@ void FirebaseClientWrap::logTransportDiagnostics(const char* context) {
 }
 
 bool FirebaseClientWrap::initializeAuth() {
-#if defined(ENABLE_LEGACY_TOKEN)
-    auth = new FirebaseAuthType(FIREBASE_DATABASE_SECRET);
+#if defined(ENABLE_USER_AUTH)
+    if(String(FIREBASE_DEVICE_EMAIL).isEmpty() || String(FIREBASE_DEVICE_PASSWORD).isEmpty()) {
+        Serial.println(F("[Firebase] Device not enrolled: install DeviceCredentials.h"));return false;
+    }
+    auth = new FirebaseAuthType(FIREBASE_API_KEY,FIREBASE_DEVICE_EMAIL,FIREBASE_DEVICE_PASSWORD);
     if (auth != nullptr) {
         return true;
     }
-    Serial.println(F("[Firebase] LegacyToken alloc failed"));
+    Serial.println(F("[Firebase] UserAuth alloc failed"));
     return false;
 #else
     return true;

@@ -1,6 +1,6 @@
 #include "FirebaseTest.h"
 #include "FirebaseClientWrap.h"
-#include "Config.h"
+#include "PairingConfig.h"
 #include "FirebaseTypes.h"
 #include <Arduino.h>
 

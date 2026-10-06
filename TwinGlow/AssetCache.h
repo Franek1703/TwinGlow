@@ -3,6 +3,8 @@
 
 #include <Arduino.h>
 #include <vector>
+#include <memory>
+#include <ArduinoJson.h>
 
 /**
  * Asset cache for storing parsed pixel data
@@ -61,9 +63,14 @@ class AssetCache {
 public:
     AssetCache();
     ~AssetCache();
+    AssetCache(const AssetCache&)=default;
+    AssetCache& operator=(const AssetCache&)=default;
+    AssetCache(AssetCache&&)=default;
+    AssetCache& operator=(AssetCache&&)=default;
 
     // Add/update asset
     bool addAsset(const CachedAsset& asset);
+    bool addAsset(CachedAsset&& asset);
     bool removeAsset(const String& assetId);
     void clear();
 
@@ -77,10 +84,13 @@ public:
     // Parse from Firestore JSON
     bool parseAsset(const String& assetId, const String& jsonStr, CachedAsset& asset);
 
+    bool parseAssetObject(const String& assetId, JsonObject root, CachedAsset& asset);
+    std::shared_ptr<CachedAsset> getSharedAsset(const String& assetId);
+
     size_t size() const { return assets.size(); }
 
 private:
-    std::vector<CachedAsset> assets;
+    std::vector<std::shared_ptr<CachedAsset>> assets;
 };
 
 #endif // ASSET_CACHE_H

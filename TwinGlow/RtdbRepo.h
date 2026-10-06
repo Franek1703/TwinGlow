@@ -1,9 +1,10 @@
 #ifndef RTDB_REPO_H
 #define RTDB_REPO_H
 
-#include "Config.h"
+#include "PairingConfig.h"
 #include <FirebaseClient.h>
 #include "FirebaseTypes.h"
+#include "PairSnapshot.h"
 #include <Arduino.h>
 
 class FirebaseClientWrap;
@@ -34,7 +35,10 @@ public:
     bool acknowledgeCommand(const String& commandId, bool success);
     
     // Send to pair event
-    bool sendToPair(const String& pairId, const String& screenId, const String& assetId);
+    bool getPairState(PairState& state);
+    bool sendToPair(const PairSend& send);
+    bool getPairSnapshot(const PairMeta& meta,PairSnapshot& snapshot);
+    bool acknowledgePair(const PairMeta& meta,bool displayed);
     
 private:
     FirebaseClientWrap* wrap;
@@ -44,7 +48,6 @@ private:
     String getTelemetryPath() const;
     String getCommandsPath() const;
     String getConfigPath() const;
-    String getPairEventsPath(const String& pairId) const;
 };
 
 #endif // RTDB_REPO_H

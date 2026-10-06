@@ -4,7 +4,7 @@
 #include <esp_task_wdt.h>
 #include <new>
 
-#include "Config.h"
+#include "PairingConfig.h"
 
 namespace {
 constexpr size_t kJobQueueLength = 6;
@@ -47,6 +47,10 @@ const char* operationName(CloudOperation operation) {
         case CloudOperation::TELEMETRY: return "telemetry";
         case CloudOperation::CONFIG_CHECK: return "config";
         case CloudOperation::REVISION_CHECK: return "revision";
+        case CloudOperation::PAIR_STATE: return "pair-state";
+        case CloudOperation::PAIR_FETCH: return "pair-fetch";
+        case CloudOperation::PAIR_ACK: return "pair-ack";
+        case CloudOperation::SCREENS_FETCH: return "screens";
         case CloudOperation::PAIR_EVENT: return "pair-event";
         case CloudOperation::ASSET_FETCH: return "asset";
         case CloudOperation::BRIGHTNESS_WRITE: return "brightness";
@@ -64,7 +68,7 @@ CloudWorker::CloudWorker()
       recoveryAttempts(0), transportFailingSinceMs(0),
       watchdogTripped(false), watchdogTrips(0), lastStuckLogMs(0),
       brightnessWritePending(false), brightnessSettleAtMs(0),
-      jobPending{false, false, false, false, false, false, false} {
+      jobPending{} {
 }
 
 bool CloudWorker::begin(FirebaseClientWrap* firebaseClient,
@@ -213,15 +217,20 @@ bool CloudWorker::requestRevisionCheck() {
     return enqueue(job);
 }
 
-bool CloudWorker::requestPairEvent(const String& pairId, const String& screenId,
-                                   const String& assetId) {
-    CloudJob job{};
-    job.operation = CloudOperation::PAIR_EVENT;
-    strlcpy(job.pairId, pairId.c_str(), sizeof(job.pairId));
-    strlcpy(job.screenId, screenId.c_str(), sizeof(job.screenId));
-    strlcpy(job.assetId, assetId.c_str(), sizeof(job.assetId));
-    return enqueue(job);
+bool CloudWorker::requestPairSend(PairSend* send){
+    if(jobPending[(size_t)CloudOperation::PAIR_EVENT])return false;
+    CloudJob job{};job.operation=CloudOperation::PAIR_EVENT;job.pairSend=send;return enqueue(job);
 }
+bool CloudWorker::requestPairState(){CloudJob job{};job.operation=CloudOperation::PAIR_STATE;return enqueue(job);}
+bool CloudWorker::requestPairFetch(PairMeta* meta){
+    if(jobPending[(size_t)CloudOperation::PAIR_FETCH])return false;
+    CloudJob job{};job.operation=CloudOperation::PAIR_FETCH;job.pairMeta=meta;return enqueue(job);
+}
+bool CloudWorker::requestPairAck(PairMeta* meta,bool displayed){
+    if(jobPending[(size_t)CloudOperation::PAIR_ACK])return false;
+    CloudJob job{};job.operation=CloudOperation::PAIR_ACK;job.pairMeta=meta;job.displayed=displayed;return enqueue(job);
+}
+bool CloudWorker::requestScreens(int version){CloudJob job{};job.operation=CloudOperation::SCREENS_FETCH;job.revision=version;return enqueue(job);}
 
 bool CloudWorker::requestBrightnessWrite(uint8_t brightness) {
     if (!started) return false;
@@ -307,10 +316,8 @@ void CloudWorker::serviceWatchdog() {
     Serial.print(watchdogTrips);
     Serial.println(F("), resetting transport"));
 
-    if (firebase != nullptr) {
-        firebase->logTransportDiagnostics("watchdog");
-        firebase->resetTransport();
-    }
+    // The worker exclusively owns the transport. Its synchronous timeout or
+    // the bounded reboot above recovers a stuck call; never race it here.
 
     // jobPending is touched only by the Arduino loop task - request*, popResult
     // and this function - so it needs no lock. Clearing it lets the 20 s
@@ -331,6 +338,7 @@ bool CloudWorker::consumeWifiCycleRequest() {
 }
 
 bool CloudWorker::requestAsset(const String& assetId) {
+    if (jobPending[(size_t)CloudOperation::ASSET_FETCH]) return false;
     CloudJob job{};
     job.operation = CloudOperation::ASSET_FETCH;
     strlcpy(job.assetId, assetId.c_str(), sizeof(job.assetId));
@@ -351,12 +359,14 @@ void CloudWorker::taskEntry(void* context) {
 void CloudWorker::run() {
     for (;;) {
         CloudJob job{};
-        if (xQueueReceive(jobQueue, &job, portMAX_DELAY) != pdTRUE) continue;
+        firebase->loop();
+        if (xQueueReceive(jobQueue, &job, pdMS_TO_TICKS(50)) != pdTRUE) continue;
 
         CloudResult result{};
         result.operation = job.operation;
         result.deviceDoc = nullptr;
         result.assetData = nullptr;
+        result.pairSend=job.pairSend;result.pairMeta=job.pairMeta;result.displayed=job.displayed;result.revision=job.revision;
         if (job.operation == CloudOperation::ASSET_FETCH) {
             strlcpy(result.resourceId, job.assetId, sizeof(result.resourceId));
         }
@@ -364,8 +374,11 @@ void CloudWorker::run() {
         // A queued job can reach the worker after a previous job started a
         // cooldown, or while CONFIG_LOADING has paused network work.
         bool cooldownActive = isBackoffActive();
+        // FirebaseApp::ready() processes auth and can yield/network. Only this
+        // worker owns it; never call it with interrupts disabled under a mux.
+        bool authReady = firebase->ready();
+        bool canAttempt = !paused && !cooldownActive && authReady;
         portENTER_CRITICAL(&stateMux);
-        bool canAttempt = !paused && !cooldownActive;
         if (canAttempt) {
             operationActive = true;
             operationStartedMs = millis();
@@ -397,6 +410,7 @@ void CloudWorker::run() {
         if (xQueueSend(resultQueue, &result, portMAX_DELAY) != pdTRUE) {
             if (result.deviceDoc != nullptr) delete result.deviceDoc;
             if (result.assetData != nullptr) delete result.assetData;
+            delete result.pairState;delete result.pairSnapshot;delete result.pairSend;delete result.pairMeta;delete result.screens;
         }
     }
 }
@@ -437,9 +451,18 @@ void CloudWorker::execute(const CloudJob& job, CloudResult& result) {
             break;
 
         case CloudOperation::PAIR_EVENT:
-            result.success = rtdb != nullptr &&
-                rtdb->sendToPair(job.pairId, job.screenId, job.assetId);
-            break;
+            result.success = rtdb && job.pairSend && rtdb->sendToPair(*job.pairSend);break;
+        case CloudOperation::PAIR_STATE:
+            result.pairState=new(std::nothrow) PairState();
+            result.success=rtdb && result.pairState && rtdb->getPairState(*result.pairState);break;
+        case CloudOperation::PAIR_FETCH:
+            result.pairSnapshot=new(std::nothrow) PairSnapshot();
+            result.success=rtdb && job.pairMeta && result.pairSnapshot && rtdb->getPairSnapshot(*job.pairMeta,*result.pairSnapshot);break;
+        case CloudOperation::PAIR_ACK:
+            result.success=rtdb && job.pairMeta && rtdb->acknowledgePair(*job.pairMeta,job.displayed);break;
+        case CloudOperation::SCREENS_FETCH:
+            result.screens=new(std::nothrow) std::vector<ScreenConfig>();
+            result.success=firestore && result.screens && firestore->getScreens(*result.screens);break;
 
         case CloudOperation::BRIGHTNESS_WRITE: {
             // Read here rather than from the job, so a burst of button presses

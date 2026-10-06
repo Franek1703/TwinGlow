@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 #include <vector>
-#include "FirestoreRepo.h"
+#include "FirestoreModels.h"
 
 /**
  * Screen playlist manager

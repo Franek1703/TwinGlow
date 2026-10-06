@@ -2,7 +2,7 @@
 #define TIME_SYNC_H
 
 #include <Arduino.h>
-#include "Config.h"
+#include "PairingConfig.h"
 #include <FirebaseClient.h>
 
 /**

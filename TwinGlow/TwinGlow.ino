@@ -8,7 +8,7 @@
 // Let FirebaseClient use external PSRAM (define before any Firebase include)
 #define ENABLE_PSRAM
 
-#include "Config.h"
+#include "PairingConfig.h"
 #include "SleepSchedule.h"
 #include "NvsStore.h"
 #include "StateMachine.h"
@@ -31,6 +31,8 @@
 #include "ButtonActions.h"
 #include "Bme680Driver.h"
 #include "FirebaseTest.h"
+#include "PairingController.h"
+#include "PlaylistUpdate.h"
 
 // Fallback for a Config.h that predates this flag (it is listed in
 // .gitignore, so local copies can drift from the tracked one).
@@ -57,6 +59,8 @@ MatrixDriver matrix;
 RenderClock renderClock(&matrix);
 RenderSensor renderSensor(&matrix);
 RenderAsset renderAsset(&matrix);
+RenderAsset receivedRenderer(&matrix);
+PairingController pairing(&nvs, &cloudWorker, &receivedRenderer);
 AssetCache assetCache;
 ScreenPlaylist playlist;
 Buttons buttons;
@@ -84,7 +88,9 @@ unsigned long lastSleepCheckMs = 0;
 float sensorTemp = 0, sensorHumidity = 0, sensorPressure = 0, sensorGas = 0;
 int sensorMetricIndex = 0;
 unsigned long lastSensorReadMs = 0;
-bool configReloadPending = false;
+std::unique_ptr<PlaylistUpdate> playlistUpdate;
+bool screensFetchPending=false;
+String stagedAssetInFlight;
 String pendingRuntimeAssetId;
 String lastFailedRuntimeAssetId;
 unsigned long lastRuntimeAssetAttemptMs = 0;
@@ -179,6 +185,8 @@ void setup() {
 }
 
 void loop() {
+    // Until the worker starts, boot owns token processing.
+    if (firebaseClient.isInitialized() && !cloudWorker.isStarted()) firebaseClient.loop();
     // Update buttons
     buttons.update();
     
@@ -199,7 +207,7 @@ void loop() {
     if (cloudWorker.consumeWifiCycleRequest()) {
         wifiManager.requestReconnect();
     }
-    servicePendingConfigReload();
+    servicePlaylistUpdate();
     
     // State machine
     switch (fsm.getState()) {
@@ -421,11 +429,6 @@ bool updateSleepState() {
             Serial.println(sleepSettings.brightness);
             if (sleepSettings.brightness > 0) {
                 matrix.setBrightness(sleepSettings.brightness);
-            } else {
-                // Blanked once, here, rather than every pass: nothing redraws
-                // the panel while asleep, so one clear holds until wake.
-                matrix.clear();
-                matrix.show();
             }
         } else {
             Serial.println(F("[Sleep] Leaving sleep window"));
@@ -433,10 +436,16 @@ bool updateSleepState() {
             // Nothing advanced while the panel was blank, so the frame timer is
             // stale. Restart at frame 0 instead of jumping on the first pass.
             renderAsset.resetAnimation();
+            receivedRenderer.resetAnimation();
         }
     }
-
-    return sleepActive && sleepSettings.brightness == 0;
+    // A settings edit can switch dim to blank without leaving the window.
+    static bool wasBlank=false;
+    bool dark=sleepActive && sleepSettings.brightness==0;
+    if (dark && !wasBlank) {matrix.clear();matrix.show();}
+    if (!dark && wasBlank) {renderAsset.resetAnimation();receivedRenderer.resetAnimation();}
+    wasBlank=dark;
+    return dark;
 }
 
 void handleTimeSync() {
@@ -596,268 +605,39 @@ static void addReferencedAsset(std::vector<String>& ids, const String& assetId) 
 }
 
 void handleConfigLoading() {
-    // Runs once per entry into CONFIG_LOADING. The 60s config poll re-enters
-    // this state whenever configVersion changes, so the guard must be tied to
-    // state entry - a permanent `static bool` would make every reload after the
-    // first a no-op and strand the device here forever.
     if (!fsm.justEntered()) return;
-
-    if (firestoreRepo == nullptr) {
-        Serial.println(F("[Config] firestoreRepo is null, skipping"));
-        // Still transition to RUNNING even without config
-        configReloadPending = false;
-        cloudWorker.resume();
-        fsm.transition(DeviceState::RUNNING);
-        return;
+    if (!cloudWorker.isStarted() && firestoreRepo != nullptr) {
+        cloudWorker.begin(&firebaseClient, firestoreRepo, rtdbRepo);
     }
-
-    // The worker's stack is one contiguous 12 KB block. Reserve it here, before
-    // a single asset is cached: by the time the playlist is built the largest
-    // free block is down to about 8 KB and xTaskCreatePinnedToCore fails
-    // outright. Nothing treats that failure as fatal, so the device used to
-    // carry on into RUNNING with every periodic cloud operation disabled - no
-    // presence, no config poll, no reload when the app bumps configVersion -
-    // while rendering looked perfectly healthy.
-    static bool workerStarted = false;
-    if (!workerStarted) {
-        workerStarted = true;
-        if (cloudWorker.begin(&firebaseClient, firestoreRepo, rtdbRepo)) {
-            // The reads below run on this task and share one FirebaseClient
-            // with the worker, so keep it idle until they are finished. The
-            // resume() at the end of this function releases it.
-            cloudWorker.pause();
-        } else {
-            Serial.println(F("[CloudWorker] Disabled; periodic cloud I/O will be skipped"));
-        }
+    pairing.begin(deviceId);
+    if (buttonActions == nullptr) {
+        buttonActions = new ButtonActions(&buttons, &playlist, &matrix, &nvs,
+                                         rtdbRepo, &cloudWorker, &pairing, &assetCache);
     }
-
-    // Reclaim the TLS session before the heavy reads below. Measured on
-    // hardware: with a session open the heap holds ~31 KB free with a 9.7 KB
-    // largest block, and the line immediately after a reset reads 74 KB free
-    // with a 34.8 KB largest block - mbedTLS is holding ~40 KB, far more than
-    // the asset cache this code used to trim. An 8.8 KB animation document has
-    // to exist as a response String, a parsed JsonDocument and a serialised
-    // payload at the same time, which does not fit in 9.7 KB; it truncated
-    // silently instead, which is the IncompleteInput and InvalidInput parse
-    // failures the reload logs show.
-    //
-    // Reload only. Boot reaches this state with ~57 KB contiguous and has never
-    // needed it, and the reset costs a fresh handshake on the next call.
-    if (configReloadPending) {
-        Serial.print(F("[Config] Releasing TLS session before reload; largestBlock="));
-        Serial.println(ESP.getMaxAllocHeap());
-        firebaseClient.resetTransport();
-        Serial.print(F("[Config] After release; largestBlock="));
-        Serial.println(ESP.getMaxAllocHeap());
+    static bool scheduled=false;
+    if (!scheduled) {
+        scheduled=true;
+        scheduler.schedulePresenceUpdate(updatePresence);
+        if (bme680Present) scheduler.scheduleTelemetryUpdate(updateTelemetry);
+        scheduler.scheduleConfigPoll(checkConfigVersion);
+        scheduler.scheduleNtpSync(syncTime);
     }
+    cloudWorker.requestConfigCheck();
+    fsm.transition(DeviceState::RUNNING);
+}
 
-    {
-        // Read config version
-        DeviceDoc deviceDoc;
-        if (firestoreRepo->checkConfigVersion(deviceDoc)) {
-            int configVersion = deviceDoc.configVersion;
-            // Outside the version guard: a timezone change is applied even when
-            // configVersion happens to be unchanged, and costs nothing since the
-            // doc was fetched either way. Brightness and the sleep window ride
-            // along for the same reason.
-            applyTimeZone(deviceDoc.tzPosix);
-            applyDeviceSettings(deviceDoc);
-            if (configVersion != currentConfigVersion) {
-                Serial.print(F("[Config] Loading config version: "));
-                Serial.println(configVersion);
-
-                std::vector<ScreenConfig> screens;
-                bool screensLoaded = firestoreRepo->getScreens(screens);
-                if (!screensLoaded && assetCache.size() > 0) {
-                    // getScreens() holds the whole response and the parsed
-                    // document at once. At boot that runs with about 59 KB of
-                    // contiguous heap; a reload runs with about 15 KB, because
-                    // the previous playlist's assets are still cached - and
-                    // every one of them is about to be refetched below anyway.
-                    // Releasing them is the only heap this path controls.
-                    //
-                    // Deliberately a retry rather than an unconditional clear:
-                    // the common case keeps its assets, so a reload that fails
-                    // for some other reason still leaves a rendering playlist.
-                    Serial.println(F("[Config] getScreens failed, retrying with the asset cache released"));
-                    assetCache.clear();
-                    screensLoaded = firestoreRepo->getScreens(screens);
-                }
-                if (screensLoaded) {
-                    Serial.print(F("[Config] Firestore returned "));
-                    Serial.print(screens.size());
-                    Serial.println(F(" screens"));
-                    // Every asset any screen points at, gathered first so each
-                    // one is fetched exactly once even when screens share it.
-                    //
-                    // Animations are collected separately so they can be fetched
-                    // ahead of the images. They are the large documents - 4-10KB
-                    // against 1-3KB - and each one needs a contiguous block to
-                    // buffer. That block shrinks as assets accumulate: a
-                    // five-screen playlist starts around 36KB and is down to
-                    // 12KB by the sixth fetch, which is where a large animation
-                    // starts failing. Fetching the big ones while the heap is
-                    // still whole is most of the difference.
-                    std::vector<String> referencedAssetIds;
-                    std::vector<String> imageAssetIds;
-                    for (size_t i = 0; i < screens.size(); i++) {
-                        ScreenConfig& sc = screens[i];
-                        Serial.print(F("[Config] Screen["));
-                        Serial.print(i);
-                        Serial.print(F("] id="));
-                        Serial.print(sc.id);
-                        Serial.print(F(" type="));
-                        Serial.print(sc.type);
-                        Serial.print(F(" order="));
-                        Serial.print(sc.order);
-                        Serial.print(F(" enabled="));
-                        Serial.print(sc.enabled ? 1 : 0);
-                        Serial.print(F(" durationMs="));
-                        Serial.print(sc.durationMs);
-                        Serial.print(F(" assetId="));
-                        Serial.print(sc.assetId.length() > 0 ? sc.assetId.c_str() : "(empty)");
-                        Serial.print(F(" pairId="));
-                        Serial.print(sc.pairId.length() > 0 ? sc.pairId.c_str() : "(empty)");
-                        Serial.print(F(" sharedScreenId="));
-                        Serial.print(sc.sharedScreenId.length() > 0 ? sc.sharedScreenId.c_str() : "(empty)");
-                        Serial.print(F(" poolSize="));
-                        Serial.print(sc.availableAssetIds.size());
-                        Serial.print(F(" defaultAssetId="));
-                        Serial.println(sc.defaultAssetId.length() > 0 ? sc.defaultAssetId.c_str() : "(empty)");
-                        // setScreens() drops disabled screens, so their assets can
-                        // never be rendered. Caching them anyway cost four of the
-                        // eight documents fetched for a five-screen playlist and
-                        // left the heap too fragmented for the worker's stack. A
-                        // screen turning back on bumps configVersion, which
-                        // reloads and fetches it then.
-                        if (!sc.enabled) continue;
-                        // The screen document owns its asset pool. Only fall back
-                        // to the pair's shared document when the screen carries
-                        // no pool of its own.
-                        if (sc.availableAssetIds.empty() && sc.pairId.length() > 0 && sc.sharedScreenId.length() > 0) {
-                            SharedScreenConfig sharedConfig;
-                            if (firestoreRepo->getSharedScreen(sc.pairId, sc.sharedScreenId, sharedConfig)) {
-                                sc.defaultAssetId = sharedConfig.defaultAssetId;
-                                sc.availableAssetIds = sharedConfig.availableAssetIds;
-                                sc.allowManualSwitch = sharedConfig.allowManualSwitch;
-                            }
-                        }
-                        // Start on the default asset, not blindly on the first
-                        // entry of the pool.
-                        sc.currentAssetIndex = 0;
-                        if (sc.defaultAssetId.length() > 0) {
-                            sc.assetId = sc.defaultAssetId;
-                            for (size_t a = 0; a < sc.availableAssetIds.size(); a++) {
-                                if (sc.availableAssetIds[a] == sc.defaultAssetId) {
-                                    sc.currentAssetIndex = (int)a;
-                                    break;
-                                }
-                            }
-                        } else if (sc.assetId.length() == 0 && !sc.availableAssetIds.empty()) {
-                            sc.assetId = sc.availableAssetIds[0];
-                        }
-                        // Normalize type for comparison
-                        String scTypeUpper = sc.type;
-                        scTypeUpper.toUpperCase();
-                        // A pool with no default must still be cached, so this
-                        // cannot gate on assetId alone.
-                        if (scTypeUpper == "IMAGE" || scTypeUpper == "ANIMATION") {
-                            // An asset shared between an animation screen and an
-                            // image screen lands in whichever list reaches it
-                            // first, and the merge below drops the duplicate.
-                            std::vector<String>& target =
-                                scTypeUpper == "ANIMATION" ? referencedAssetIds : imageAssetIds;
-                            if (sc.assetId.length() > 0) {
-                                addReferencedAsset(target, sc.assetId);
-                            }
-                            for (size_t a = 0; a < sc.availableAssetIds.size(); a++) {
-                                addReferencedAsset(target, sc.availableAssetIds[a]);
-                            }
-                        }
-                    }
-
-                    // Images append behind the animations. addReferencedAsset
-                    // still dedupes, so one referenced by both types is fetched
-                    // once, in its earlier animation slot.
-                    for (const String& aid : imageAssetIds) {
-                        addReferencedAsset(referencedAssetIds, aid);
-                    }
-                    imageAssetIds.clear();
-
-                    // Refetch every referenced asset, cached or not. Skipping
-                    // the ones already held meant an asset edited in the app
-                    // kept rendering its old pixels until the device rebooted.
-                    for (const String& aid : referencedAssetIds) {
-                        Serial.print(F("[Config] Loading asset: "));
-                        Serial.println(aid);
-                        AssetData assetData;
-                        if (firestoreRepo->getAsset(aid, assetData) && assetData.pixelsJson.length() > 0) {
-                            CachedAsset cached;
-                            if (assetCache.parseAsset(aid, assetData.pixelsJson, cached)) {
-                                // Swap in only once parsing succeeded, so a
-                                // half-read document cannot replace a good copy.
-                                assetCache.addAsset(cached);
-                                Serial.println(F("[Config] Asset cached successfully"));
-                            } else {
-                                // Keep whatever is already cached: a transient
-                                // bad read should not blank a working screen.
-                                Serial.println(F("[Config] Asset parse failed, keeping cached copy"));
-                            }
-                        } else {
-                            Serial.print(F("[Config] Asset load failed or empty: pixelsJsonLen="));
-                            Serial.println(assetData.pixelsJson.length());
-                        }
-                    }
-                    // Assets no longer referenced by any screen just occupy RAM.
-                    assetCache.retainOnly(referencedAssetIds);
-                    // The playlist is about to change under the renderer, so an
-                    // animation must not carry its frame index across.
-                    renderAsset.resetAnimation();
-
-                    playlist.setScreens(screens);
-                    // Only mark this version as consumed once it actually loaded.
-                    // Leaving it unchanged on failure lets the next poll retry
-                    // instead of silently dropping the update.
-                    currentConfigVersion = configVersion;
-                    } else {
-                        Serial.println(F("[Config] getScreens() returned false, keeping cached playlist"));
-                    }
-            } else {
-                Serial.print(F("[Config] Config version unchanged: "));
-                Serial.println(configVersion);
-            }
-        } else {
-            Serial.println(F("[Config] Failed to check config version"));
-        }
-        
-        // Initialize button actions
-        if (buttonActions == nullptr) {
-            buttonActions = new ButtonActions(
-                &buttons, &playlist, &matrix, &nvs, rtdbRepo, &cloudWorker);
-        }
-        
-        // Schedule periodic tasks. Once per boot - re-registering on every
-        // config reload would reset each task's interval timer.
-        static bool tasksScheduled = false;
-        if (!tasksScheduled) {
-            tasksScheduled = true;
-            // cloudWorker.begin() deliberately does not run here: by this point
-            // the cached assets have left no block large enough for its stack.
-            scheduler.schedulePresenceUpdate(updatePresence);
-            if (bme680Present) {
-                scheduler.scheduleTelemetryUpdate(updateTelemetry);
-            }
-            scheduler.scheduleConfigPoll(checkConfigVersion);
-#if ENABLE_RTDB_DOORBELL
-            scheduler.scheduleRevisionPoll(checkConfigRevision);
-#endif
-            scheduler.scheduleNtpSync(syncTime);
-        }
-
-        configReloadPending = false;
-        cloudWorker.resume();
-        Serial.println(F("[Config] Transitioning to RUNNING"));
-        fsm.transition(DeviceState::RUNNING);
+void servicePlaylistUpdate() {
+    if (!playlistUpdate) return;
+    if (playlistUpdate->ready()) {
+        playlistUpdate->cache.retainOnly(playlistUpdate->required);
+        renderAsset.resetAnimation();
+        playlist.setScreens(playlistUpdate->screens);
+        assetCache=std::move(playlistUpdate->cache);
+        currentConfigVersion=playlistUpdate->version;
+        playlistUpdate.reset();
+        Serial.println(F("[Config] Staged playlist committed"));
+    } else if (stagedAssetInFlight.isEmpty() && cloudWorker.requestAsset(playlistUpdate->next())) {
+        stagedAssetInFlight=playlistUpdate->next();
     }
 }
 
@@ -894,7 +674,17 @@ void handleRunning() {
     // window asks for a blank panel we return before the render body, not just
     // before show(): letting RenderAsset keep advancing frames behind a dark
     // panel would make an animation jump on wake.
-    if (updateSleepState()) return;
+    bool dark=updateSleepState();
+    if (sleepActive && sleepSettings.brightness>0 && matrix.getBrightness()!=sleepSettings.brightness) matrix.setBrightness(sleepSettings.brightness);
+    pairing.tick(dark);
+    if (dark) return;
+    if (pairing.hasOverride()) {
+        static unsigned long lastReceivedFrame=0;
+        if (millis()-lastReceivedFrame>=FRAME_INTERVAL_ANIMATION_MS) {
+            lastReceivedFrame=millis();pairing.render();
+        }
+        return;
+    }
 
     // Update sensor readings
     if (bme680Present && millis() - lastSensorReadMs > 2000) {
@@ -1074,7 +864,7 @@ void handleRunning() {
             CachedAsset* asset = assetId.length() > 0 ? assetCache.getAsset(assetId) : nullptr;
             // A cache miss must not turn rendering into a network call. Queue
             // it for CloudWorker so a failed TLS handshake cannot freeze input.
-            if (asset == nullptr && assetId.length() > 0 && firestoreRepo != nullptr) {
+            if (!playlistUpdate && asset == nullptr && assetId.length() > 0 && firestoreRepo != nullptr) {
                 // Don't retry too frequently (wait at least 10 seconds between attempts)
                 if (pendingRuntimeAssetId.length() == 0 &&
                     (assetId != lastFailedRuntimeAssetId ||
@@ -1199,13 +989,13 @@ void checkConfigRevision() {
 void processCloudResults() {
     CloudResult result{};
     while (cloudWorker.popResult(result)) {
-        if (!result.attempted) {
-            if (result.deviceDoc != nullptr) delete result.deviceDoc;
-            if (result.assetData != nullptr) delete result.assetData;
-            if (result.operation == CloudOperation::ASSET_FETCH) pendingRuntimeAssetId = "";
-            continue;
+        bool wasOverride=pairing.hasOverride();
+        pairing.process(result);
+        if (wasOverride && !pairing.hasOverride()) playlist.resetRotationTimer();
+        if (result.operation==CloudOperation::PAIR_STATE && result.success && result.pairState && result.pairState->revision != lastSeenRevision) {
+            lastSeenRevision=result.pairState->revision;
+            cloudWorker.requestConfigCheck();
         }
-
         switch (result.operation) {
             case CloudOperation::PRESENCE:
                 // Logged on success too. A healthy presence tick and one that
@@ -1241,11 +1031,9 @@ void processCloudResults() {
                     applyDeviceSettings(doc);
                     applyTimeZone(doc.tzPosix);
                     if (doc.configVersion != currentConfigVersion) {
-                        Serial.println(F("[Config] Version changed, scheduling reload"));
-                        // Stop new background operations, then let the loop wait
-                        // non-blockingly for any already-running one to finish.
-                        cloudWorker.pause();
-                        configReloadPending = true;
+                        if (!playlistUpdate && !screensFetchPending) {
+                            screensFetchPending=cloudWorker.requestScreens(doc.configVersion);
+                        }
                     }
                 } else {
                     Serial.println(F("[Config] Background version check failed"));
@@ -1295,28 +1083,31 @@ void processCloudResults() {
                 }
                 break;
 
+            case CloudOperation::SCREENS_FETCH:
+                screensFetchPending=false;
+                if (result.success && result.screens) {
+                    playlistUpdate.reset(new(std::nothrow)PlaylistUpdate(std::move(*result.screens),assetCache,result.revision));
+                }
+                break;
             case CloudOperation::ASSET_FETCH: {
-                String assetId = result.resourceId;
-                if (result.success && result.assetData != nullptr &&
-                    result.assetData->pixelsJson.length() > 0) {
-                    CachedAsset cached;
-                    if (assetCache.parseAsset(assetId, result.assetData->pixelsJson, cached)) {
-                        assetCache.addAsset(cached);
-                        // addAsset can reallocate the cache's vector, so any
-                        // CachedAsset* the renderer still holds is stale.
-                        renderAsset.resetAnimation();
-                        lastFailedRuntimeAssetId = "";
-                        Serial.print(F("[Render] Background asset cached: "));
-                        Serial.println(assetId);
-                    } else {
-                        lastFailedRuntimeAssetId = assetId;
+                String id=result.resourceId;
+                if (!stagedAssetInFlight.isEmpty() && id==stagedAssetInFlight) {
+                    bool valid=result.success && result.assetData && playlistUpdate &&
+                               playlistUpdate->accept(id,result.assetData->pixelsJson);
+                    stagedAssetInFlight="";
+                    if (!valid) {
+                        playlistUpdate.reset();
+                        Serial.println(F("[Config] Download failed; preserved working playlist and cache"));
                     }
                 } else {
-                    lastFailedRuntimeAssetId = assetId;
-                    Serial.print(F("[Render] Background asset load failed: "));
-                    Serial.println(assetId);
+                    if (result.success && result.assetData) {
+                        CachedAsset asset;
+                        if (assetCache.parseAsset(id,result.assetData->pixelsJson,asset)) {
+                            renderAsset.resetAnimation();assetCache.addAsset(std::move(asset));lastFailedRuntimeAssetId="";
+                        } else lastFailedRuntimeAssetId=id;
+                    } else lastFailedRuntimeAssetId=id;
+                    pendingRuntimeAssetId="";
                 }
-                pendingRuntimeAssetId = "";
                 break;
             }
 
@@ -1324,29 +1115,18 @@ void processCloudResults() {
                 break;
         }
 
-        if (result.deviceDoc != nullptr) {
-            delete result.deviceDoc;
-            result.deviceDoc = nullptr;
-        }
-        if (result.assetData != nullptr) {
-            delete result.assetData;
-            result.assetData = nullptr;
-        }
-    }
-}
-
-void servicePendingConfigReload() {
-    if (!configReloadPending || cloudWorker.isBusy()) return;
-
-    DeviceState state = fsm.getState();
-    if (state == DeviceState::RUNNING || state == DeviceState::OFFLINE_RUNNING) {
-        Serial.println(F("[Config] Worker idle, starting reload"));
-        fsm.transition(DeviceState::CONFIG_LOADING);
+        delete result.deviceDoc;
+        delete result.assetData;
+        delete result.pairState;
+        delete result.pairSnapshot;
+        delete result.pairSend;
+        delete result.pairMeta;
+        delete result.screens;
     }
 }
 
 void syncTime() {
     if (WiFi.isConnected() && timeSync.shouldSync()) {
-        timeSync.sync(firebaseClient.getApp());
+        timeSync.sync(nullptr);
     }
 }

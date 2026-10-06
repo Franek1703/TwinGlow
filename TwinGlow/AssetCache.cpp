@@ -20,7 +20,7 @@ static bool parsePackedPixels(const char* packed, std::vector<Pixel>& out,
         Serial.println(F("[AssetCache] packed pixel string is empty"));
         return false;
     }
-    if (len % 8 != 0) {
+    if (len > 2048 || len % 8 != 0) {
         Serial.print(F("[AssetCache] packed length not a multiple of 8: "));
         Serial.println(len);
         return false;
@@ -70,6 +70,7 @@ static bool parsePackedAnimation(JsonObject doc, CachedAsset& asset) {
         return false;
     }
 
+    if (!doc["basePixelsPacked"].is<const char*>() || !doc["frameDurationsMs"].is<JsonArray>() || !doc["frameDeltasPacked"].is<JsonArray>()) return false;
     JsonArray durations = doc["frameDurationsMs"];
     JsonArray deltas = doc["frameDeltasPacked"];
 
@@ -107,6 +108,7 @@ static bool parsePackedAnimation(JsonObject doc, CachedAsset& asset) {
     }
 
     for (size_t i = 0; i < frameCount; i++) {
+        if (!durations[i].is<int>()) return false;
         int duration = durations[i].as<int>();
         if (duration < (int)ANIM_MIN_DURATION_MS ||
             duration > (int)ANIM_MAX_DURATION_MS) {
@@ -121,7 +123,7 @@ static bool parsePackedAnimation(JsonObject doc, CachedAsset& asset) {
         // The base may legitimately be empty when frame 0 is blank and later
         // deltas light the panel up.
         if (!parsePackedPixels(packed, frame.delta, true)) return false;
-        asset.frames.push_back(frame);
+        asset.frames.push_back(std::move(frame));
     }
 
     return true;
@@ -194,7 +196,7 @@ static bool parseLegacyAnimation(JsonObject doc, CachedAsset& asset) {
             }
         }
 
-        asset.frames.push_back(frame);
+        asset.frames.push_back(std::move(frame));
         memcpy(previous, current, sizeof(current));
         first = false;
     }
@@ -210,61 +212,26 @@ AssetCache::~AssetCache() {
 }
 
 bool AssetCache::addAsset(const CachedAsset& asset) {
-    // Remove existing if present
-    removeAsset(asset.id);
-
-    // Add new asset
-    assets.push_back(asset);
-
-    Serial.print(F("[AssetCache] Added asset: "));
-    Serial.println(asset.id);
-    return true;
+    CachedAsset copy=asset;return addAsset(std::move(copy));
 }
-
-bool AssetCache::removeAsset(const String& assetId) {
-    for (auto it = assets.begin(); it != assets.end(); ++it) {
-        if (it->id == assetId) {
-            assets.erase(it);
-            Serial.print(F("[AssetCache] Removed asset: "));
-            Serial.println(assetId);
-            return true;
-        }
-    }
-    return false;
+bool AssetCache::addAsset(CachedAsset&& asset) {
+    auto value=std::make_shared<CachedAsset>(std::move(asset));
+    for(auto& existing:assets) if(existing->id==value->id){existing=std::move(value);return true;}
+    assets.push_back(std::move(value));return true;
 }
-
-void AssetCache::clear() {
-    assets.clear();
-    Serial.println(F("[AssetCache] Cleared"));
+bool AssetCache::removeAsset(const String& id) {
+    for(auto it=assets.begin();it!=assets.end();++it)if((*it)->id==id){assets.erase(it);return true;}return false;
 }
-
-size_t AssetCache::retainOnly(const std::vector<String>& keepIds) {
-    size_t removed = 0;
-    for (auto it = assets.begin(); it != assets.end();) {
-        bool keep = false;
-        for (const String& id : keepIds) {
-            if (it->id == id) { keep = true; break; }
-        }
-        if (keep) {
-            ++it;
-        } else {
-            Serial.print(F("[AssetCache] Dropping unreferenced asset: "));
-            Serial.println(it->id);
-            it = assets.erase(it);
-            removed++;
-        }
-    }
-    return removed;
+void AssetCache::clear(){assets.clear();}
+size_t AssetCache::retainOnly(const std::vector<String>& ids){
+    size_t removed=0;for(auto it=assets.begin();it!=assets.end();){bool keep=false;
+      for(const auto& id:ids)if((*it)->id==id){keep=true;break;}
+      if(keep)++it;else{it=assets.erase(it);++removed;}}return removed;
 }
-
-CachedAsset* AssetCache::getAsset(const String& assetId) {
-    for (auto& asset : assets) {
-        if (asset.id == assetId) {
-            return &asset;
-        }
-    }
-    return nullptr;
+std::shared_ptr<CachedAsset> AssetCache::getSharedAsset(const String& id){
+    for(const auto& a:assets)if(a->id==id)return a;return {};
 }
+CachedAsset* AssetCache::getAsset(const String& id){return getSharedAsset(id).get();}
 
 bool AssetCache::parseAsset(const String& assetId, const String& jsonStr, CachedAsset& asset) {
     asset.id = assetId;
@@ -285,12 +252,17 @@ bool AssetCache::parseAsset(const String& assetId, const String& jsonStr, Cached
         return false;
     }
 
-    JsonObject root = doc.as<JsonObject>();
+    return parseAssetObject(assetId,doc.as<JsonObject>(),asset);
+}
+bool AssetCache::parseAssetObject(const String& assetId,JsonObject root,CachedAsset& asset){
+    asset=CachedAsset();asset.id=assetId;
 
     // Parse type
     if (!root["type"].isNull()) {
         asset.type = root["type"].as<String>();
     }
+
+    asset.type.toUpperCase();
 
     // Parse encoding
     if (!root["encoding"].isNull()) {
@@ -303,7 +275,7 @@ bool AssetCache::parseAsset(const String& assetId, const String& jsonStr, Cached
             Serial.println(F("[AssetCache] SPARSE_PACKED_V1 asset has no pixelsPacked field"));
             return false;
         }
-        if (!parsePackedPixels(root["pixelsPacked"].as<const char*>(), asset.pixels)) {
+        if (!root["pixelsPacked"].is<const char*>() || strlen(root["pixelsPacked"].as<const char*>())>2048 || !parsePackedPixels(root["pixelsPacked"].as<const char*>(), asset.pixels,true)) {
             return false;
         }
     } else if (asset.encoding == "SPARSE_I16_RGB888") {
@@ -346,11 +318,10 @@ bool AssetCache::parseAsset(const String& assetId, const String& jsonStr, Cached
             Serial.println(assetId);
             return false;
         }
-    } else if (asset.pixels.empty()) {
-        Serial.print(F("[AssetCache] Image parsed to zero pixels: "));
-        Serial.println(assetId);
-        return false;
     }
-
+    // Legacy ANIMATION records can contain a still image; publish what is displayed.
+    if (!asset.isAnimation() && asset.type=="ANIMATION") asset.type="IMAGE";
+    if ((asset.encoding.startsWith("DELTA_") && asset.type!="ANIMATION") ||
+        (!asset.encoding.startsWith("DELTA_") && asset.type!="IMAGE")) return false;
     return true;
 }

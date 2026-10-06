@@ -1,14 +1,14 @@
 /*
  * FirebaseClient Library Type Definitions (mobizt/FirebaseClient)
  *
- * Requires Config.h to be included first (defines ENABLE_DATABASE, ENABLE_FIRESTORE, ENABLE_LEGACY_TOKEN).
+ * Requires Config.h to be included first (defines ENABLE_DATABASE, ENABLE_FIRESTORE, ENABLE_USER_AUTH).
  * Library uses namespace firebase_ns.
  */
 
 #ifndef FIREBASE_TYPES_H
 #define FIREBASE_TYPES_H
 
-#include "Config.h"
+#include "PairingConfig.h"
 #include <FirebaseClient.h>
 
 #if defined(ENABLE_DATABASE)
@@ -25,9 +25,9 @@ typedef Firestore::Documents FirebaseFirestoreType;
 class FirebaseFirestoreType;
 #endif
 
-#if defined(ENABLE_LEGACY_TOKEN)
-/* LegacyToken is in namespace firebase_ns (core/Auth/Token/LegacyToken.h) */
-typedef firebase_ns::LegacyToken FirebaseAuthType;
+#if defined(ENABLE_USER_AUTH)
+/* UserAuth refreshes an individually scoped Firebase ID token. */
+typedef firebase_ns::UserAuth FirebaseAuthType;
 #else
 class FirebaseAuthType;
 #endif

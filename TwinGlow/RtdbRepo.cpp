@@ -12,13 +12,15 @@ String RtdbRepo::getPresencePath() const { return ""; }
 String RtdbRepo::getTelemetryPath() const { return ""; }
 String RtdbRepo::getCommandsPath() const { return ""; }
 String RtdbRepo::getConfigPath() const { return ""; }
-String RtdbRepo::getPairEventsPath(const String& pairId) const { (void)pairId; return ""; }
 bool RtdbRepo::updatePresence(bool) { return false; }
 bool RtdbRepo::pushTelemetry(float, float, float, float) { return false; }
 bool RtdbRepo::getConfigRevision(int&) { return false; }
 bool RtdbRepo::checkCommands() { return false; }
 bool RtdbRepo::acknowledgeCommand(const String&, bool) { return false; }
-bool RtdbRepo::sendToPair(const String&, const String&, const String&) { return false; }
+bool RtdbRepo::getPairState(PairState&) {return false;}
+bool RtdbRepo::sendToPair(const PairSend&) {return false;}
+bool RtdbRepo::getPairSnapshot(const PairMeta&,PairSnapshot&){return false;}
+bool RtdbRepo::acknowledgePair(const PairMeta&,bool){return false;}
 #else
 
 RtdbRepo::RtdbRepo(FirebaseClientWrap* wrap, const String& devId)
@@ -43,10 +45,6 @@ String RtdbRepo::getTelemetryPath() const {
 
 String RtdbRepo::getCommandsPath() const {
     return "/commands/" + deviceId;
-}
-
-String RtdbRepo::getPairEventsPath(const String& pairId) const {
-    return "/pairs/" + pairId + "/events";
 }
 
 String RtdbRepo::getConfigPath() const {
@@ -189,21 +187,38 @@ bool RtdbRepo::acknowledgeCommand(const String& commandId, bool success) {
     return ok && aClient->lastError().code() == 0;
 }
 
-bool RtdbRepo::sendToPair(const String& pairId, const String& screenId, const String& assetId) {
-    if (wrap == nullptr || pairId.length() == 0) return false;
-    FirebaseRTDBType* rtdb = static_cast<FirebaseRTDBType*>(wrap->getRtdb());
-    AsyncClientClass* aClient = wrap->getAsyncClient();
-    if (rtdb == nullptr || aClient == nullptr) return false;
-    JsonDocument doc;
-    doc["screenId"] = screenId;
-    doc["assetId"] = assetId;
-    doc["ts"] = millis();
-    String jsonStr;
-    serializeJson(doc, jsonStr);
-    String path = getPairEventsPath(pairId);
-    String name = rtdb->push(*aClient, path, jsonStr.c_str());
-    bool ok = name.length() > 0 && aClient->lastError().code() == 0;
-    return ok;
+bool RtdbRepo::getPairState(PairState& state){
+    auto* db=static_cast<FirebaseRTDBType*>(wrap->getRtdb());auto* client=wrap->getAsyncClient();if(!db||!client)return false;
+    String raw=db->get<String>(*client,"/config/"+deviceId);if(client->lastError().code()!=0||raw.isEmpty())return false;
+    JsonDocument doc;if(deserializeJson(doc,raw))return false;
+    state=PairState();state.revision=doc["configVersion"]| -1;
+    state.pairId=doc["pair"]["pairId"]|"";state.partnerDeviceId=doc["pair"]["partnerDeviceId"]|"";
+    if(!doc["incoming"].isNull())readPairMeta(doc["incoming"].as<JsonObjectConst>(),state.incoming);
+    return true;
+}
+bool RtdbRepo::sendToPair(const PairSend& send){
+    if(!send.meta.valid())return false;
+    auto* db=static_cast<FirebaseRTDBType*>(wrap->getRtdb());auto* client=wrap->getAsyncClient();if(!db||!client)return false;
+    String path="/pairing/mailboxes/"+send.meta.pairId+"/"+deviceId;
+    // Resolve an uncertain previous PUT before retrying; never advance its time.
+    String existing=db->get<String>(*client,path+"/meta");if(client->lastError().code()!=0)return false;
+    JsonDocument old;if(deserializeJson(old,existing))return false;
+    if(old["eventId"].as<String>()==send.meta.eventId)return true;
+    if((old["sequence"]|uint64_t(0))>=send.meta.sequence)return true; // superseded
+    String raw;if(!encodePairPublication(send,raw))return false;
+    return db->update<object_t>(*client,"/",object_t(raw))&&client->lastError().code()==0;
+}
+bool RtdbRepo::getPairSnapshot(const PairMeta& meta,PairSnapshot& snapshot){
+    auto* db=static_cast<FirebaseRTDBType*>(wrap->getRtdb());auto* client=wrap->getAsyncClient();if(!db||!client)return false;
+    String raw=db->get<String>(*client,"/pairing/mailboxes/"+meta.pairId+"/"+meta.senderDeviceId);
+    if(client->lastError().code()!=0||raw.isEmpty()||raw=="null")return false;
+    return decodePairSnapshot(raw,snapshot);
+}
+bool RtdbRepo::acknowledgePair(const PairMeta& m,bool displayed){
+    auto* db=static_cast<FirebaseRTDBType*>(wrap->getRtdb());auto* client=wrap->getAsyncClient();if(!db||!client)return false;
+    JsonDocument doc;doc["eventId"]=m.eventId;doc["sequence"]=m.sequence;doc["status"]=displayed?"displayed":"rejected";doc["at"][".sv"]="timestamp";
+    String raw;if(serializeJson(doc,raw)!=measureJson(doc))return false;
+    return db->set<object_t>(*client,"/pairing/acks/"+m.pairId+"/"+deviceId,object_t(raw))&&client->lastError().code()==0;
 }
 
 #endif // ENABLE_DATABASE

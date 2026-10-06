@@ -1,7 +1,7 @@
 #ifndef FIREBASE_CLIENT_WRAP_H
 #define FIREBASE_CLIENT_WRAP_H
 
-#include "Config.h"
+#include "PairingConfig.h"
 #include <FirebaseClient.h>
 #include "FirebaseTypes.h"
 #include <Arduino.h>
@@ -13,7 +13,7 @@
 
 /**
  * Firebase client wrapper (mobizt FirebaseClient)
- * Handles auth (LegacyToken), RTDB, Firestore, and AsyncClient for ESP32.
+ * Handles per-device UserAuth, RTDB, Firestore, and AsyncClient for ESP32.
  */
 class FirebaseClientWrap {
 public:
@@ -49,7 +49,8 @@ public:
     AsyncClientClass* getAsyncClient() { return &aClient; }
 #endif
 
-    const char* getDatabaseSecret() const { return FIREBASE_DATABASE_SECRET; }
+    void loop() { app.loop(); }
+    bool ready() { return app.ready(); }
     const char* getDatabaseUrl() const { return FIREBASE_DATABASE_URL; }
 
 private:
