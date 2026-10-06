@@ -23,3 +23,13 @@ Path(sys.argv[1]).write_text('\n'.join(sections))
 PY
 c++ -std=c++17 -fsanitize=address,undefined -g -Itools/native-pairing -ITwinGlow -I"$json_root" -I"$task_test_dir" -include tools/native-pairing/Config.h tools/native-pairing/firestore-test.cpp TwinGlow/AssetCache.cpp -o "$task_test_dir/test"
 "$task_test_dir/test"
+python3 - "$task_test_dir/firebase-reset-transport.inc" <<'PY'
+import sys
+from pathlib import Path
+source = Path('TwinGlow/FirebaseClientWrap.cpp').read_text()
+start = source.index('void FirebaseClientWrap::resetTransport()')
+end = source.index('int FirebaseClientWrap::getLastErrorCode()', start)
+Path(sys.argv[1]).write_text(source[start:end])
+PY
+c++ -std=c++17 -fsanitize=address,undefined -g -Itools/native-pairing -I"$task_test_dir" tools/native-pairing/transport-test.cpp -o "$task_test_dir/transport"
+"$task_test_dir/transport"

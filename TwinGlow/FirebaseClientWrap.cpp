@@ -105,6 +105,11 @@ void FirebaseClientWrap::configureTransport() {
 
 void FirebaseClientWrap::resetTransport() {
 #if defined(ENABLE_DATABASE) || defined(ENABLE_FIRESTORE)
+    // ESP_SSLClient::stop() returns early when a failed handshake has cleared
+    // its secure flag, leaving the underlying socket open. When still secure,
+    // stop() may flush the broken session. Close TCP first in both cases so
+    // recovery cannot reuse or wait on that half-spoken connection.
+    basicClient.stop();
     aClient.stopAsync(true);
     sslClient.stop();
     configureTransport();
@@ -123,7 +128,10 @@ int FirebaseClientWrap::getLastErrorCode() const {
 void FirebaseClientWrap::logTransportDiagnostics(const char* context) {
 #if defined(ENABLE_DATABASE) || defined(ENABLE_FIRESTORE)
     char tlsMessage[128] = {0};
-    int tlsCode = sslClient.getLastSSLError(tlsMessage, sizeof(tlsMessage));
+    // ESP_SSLClient 3.1.3 leaves its engine alias dangling after freeing a
+    // failed session. Its error accessor dereferences that alias unconditionally.
+    int tlsCode = sslClient.isSecure()
+        ? sslClient.getLastSSLError(tlsMessage, sizeof(tlsMessage)) : 0;
 
     Serial.print(F("[Firebase] Transport diagnostics ("));
     Serial.print(context != nullptr ? context : "unknown");
@@ -137,6 +145,8 @@ void FirebaseClientWrap::logTransportDiagnostics(const char* context) {
     Serial.print(WiFi.gatewayIP());
     Serial.print(F(" dns="));
     Serial.print(WiFi.dnsIP());
+    Serial.print(F(" heap=")); Serial.print(ESP.getFreeHeap());
+    Serial.print(F(" largestBlock=")); Serial.print(ESP.getMaxAllocHeap());
     Serial.print(F(" tlsCode="));
     Serial.print(tlsCode);
     Serial.print(F(" tlsMsg="));
