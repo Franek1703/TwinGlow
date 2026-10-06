@@ -82,35 +82,68 @@ void main() {
     expect(find.text('Pressure'), findsNothing);
   });
 
-  testWidgets('clock preview stays minute-only for legacy configurations', (
-    tester,
-  ) async {
-    final screen = ScreenModel(
-      id: 'clock',
-      type: ScreenType.clock,
-      config: const {'showSeconds': true},
-    );
-
-    await tester.pumpWidget(_harness(ScreenPreview(screen: screen)));
-
-    expect(find.text(':'), findsOneWidget);
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
-
-  test('clock configuration no longer persists the seconds option', () async {
-    final cubit = ScreenEditorClockCubit(
-      FirebaseFakeRepository(),
-      'device1',
-      ScreenModel(
+  for (final showSeconds in [true, false, null]) {
+    testWidgets('clock preview respects showSeconds=$showSeconds', (
+      tester,
+    ) async {
+      final screen = ScreenModel(
         id: 'clock',
         type: ScreenType.clock,
-        config: const {'showSeconds': true},
-      ),
-    );
+        config: {'showSeconds': ?showSeconds},
+      );
 
-    expect(cubit.getConfig().containsKey('showSeconds'), isFalse);
-    await cubit.close();
-  });
+      await tester.pumpWidget(_harness(ScreenPreview(screen: screen)));
+
+      expect(find.text(':'), findsNWidgets((showSeconds ?? true) ? 2 : 1));
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
+  for (final initialShowSeconds in [true, false, null]) {
+    test(
+      'clock editor loads and saves showSeconds=$initialShowSeconds',
+      () async {
+        final repository = FirebaseFakeRepository();
+        final screen = ScreenModel(
+          id: 'clock',
+          type: ScreenType.clock,
+          config: initialShowSeconds == null
+              ? null
+              : {'showSeconds': initialShowSeconds},
+        );
+        if (screen.config != null) {
+          await repository.createScreen('device1', screen);
+        }
+        final cubit = ScreenEditorClockCubit(repository, 'device1', screen);
+        addTearDown(cubit.close);
+
+        final expectedInitialValue = initialShowSeconds ?? true;
+        expect(cubit.state.showSeconds, expectedInitialValue);
+        await cubit.save();
+        expect(cubit.state.error, isNull);
+        final savedScreen = (await repository.getScreens(
+          'device1',
+        )).firstWhere((screen) => screen.id == cubit.state.screen.id);
+        expect(savedScreen.config?['showSeconds'], expectedInitialValue);
+
+        final reopenedCubit = ScreenEditorClockCubit(
+          repository,
+          'device1',
+          savedScreen,
+        );
+        addTearDown(reopenedCubit.close);
+        reopenedCubit.toggleSeconds();
+        reopenedCubit.updateDigitColor(Colors.red);
+        await reopenedCubit.save();
+        expect(reopenedCubit.state.error, isNull);
+        final updatedScreen = (await repository.getScreens(
+          'device1',
+        )).firstWhere((screen) => screen.id == savedScreen.id);
+        expect(updatedScreen.config?['showSeconds'], !expectedInitialValue);
+      },
+    );
+  }
 }
 
 Widget _harness(Widget child) {

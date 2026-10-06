@@ -137,9 +137,13 @@ class ScreenEditorClockView extends StatelessWidget {
                                       ),
                                     ),
                                     child: Center(
-                                      child: _ClockPreview(
-                                        digitColor: state.digitColor,
-                                        colonColor: state.colonColor,
+                                      child: FittedBox(
+                                        fit: BoxFit.scaleDown,
+                                        child: _ClockPreview(
+                                          digitColor: state.digitColor,
+                                          colonColor: state.colonColor,
+                                          showSeconds: state.showSeconds,
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -147,6 +151,42 @@ class ScreenEditorClockView extends StatelessWidget {
                               ),
                             ),
                             SizedBox(height: AppSpacing.xl),
+                            // Settings
+                            Text('Settings', style: AppTypography.h2(context)),
+                            SizedBox(height: AppSpacing.lg),
+                            // Show Seconds Toggle
+                            AppCard(
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Show Seconds',
+                                        style: AppTypography.h4(context),
+                                      ),
+                                      SizedBox(height: 2.h),
+                                      Text(
+                                        'Display seconds in clock',
+                                        style: AppTypography.small(context),
+                                      ),
+                                    ],
+                                  ),
+                                  _ToggleSwitch(
+                                    enabled: state.showSeconds,
+                                    onChanged: (value) {
+                                      context
+                                          .read<ScreenEditorClockCubit>()
+                                          .toggleSeconds();
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
+                            SizedBox(height: AppSpacing.lg),
                             // Color Configuration
                             Text('Colors', style: AppTypography.h3(context)),
                             SizedBox(height: AppSpacing.md),
@@ -227,10 +267,12 @@ class ScreenEditorClockView extends StatelessWidget {
 class _ClockPreview extends StatelessWidget {
   final Color digitColor;
   final Color colonColor;
+  final bool showSeconds;
 
   const _ClockPreview({
     required this.digitColor,
     required this.colonColor,
+    required this.showSeconds,
   });
 
   @override
@@ -238,8 +280,10 @@ class _ClockPreview extends StatelessWidget {
     final now = DateTime.now();
     final hour = now.hour.toString().padLeft(2, '0');
     final minute = now.minute.toString().padLeft(2, '0');
+    final second = now.second.toString().padLeft(2, '0');
 
     return Row(
+      mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         _DigitDisplay(text: hour, color: digitColor),
@@ -247,6 +291,12 @@ class _ClockPreview extends StatelessWidget {
         _ColonDisplay(color: colonColor),
         SizedBox(width: 8.w),
         _DigitDisplay(text: minute, color: digitColor),
+        if (showSeconds) ...[
+          SizedBox(width: 8.w),
+          _ColonDisplay(color: colonColor),
+          SizedBox(width: 8.w),
+          _DigitDisplay(text: second, color: digitColor),
+        ],
       ],
     );
   }
@@ -285,6 +335,57 @@ class _ColonDisplay extends StatelessWidget {
         fontSize: 48.sp,
         fontWeight: FontWeight.bold,
         color: color,
+      ),
+    );
+  }
+}
+
+class _ToggleSwitch extends StatelessWidget {
+  final bool enabled;
+  final ValueChanged<bool> onChanged;
+
+  const _ToggleSwitch({required this.enabled, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => onChanged(!enabled),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        width: 48.w,
+        height: 28.h,
+        decoration: BoxDecoration(
+          gradient: enabled ? AppColors.primaryGradient : null,
+          color: enabled ? null : AppColors.bgElevated,
+          borderRadius: BorderRadius.circular(9999),
+          border: enabled
+              ? null
+              : Border.all(color: AppColors.borderColor, width: 1),
+        ),
+        child: Stack(
+          children: [
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 300),
+              left: enabled ? 20.w : 4.w,
+              top: 4.h,
+              child: Container(
+                width: 20.w,
+                height: 20.w,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.2),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

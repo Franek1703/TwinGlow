@@ -8,6 +8,7 @@ class ScreenEditorClockState {
   final Color digitColor;
   final Color colonColor;
   final Color backgroundColor;
+  final bool showSeconds;
   final bool isLoading;
   final String? error;
 
@@ -16,6 +17,7 @@ class ScreenEditorClockState {
     this.digitColor = const Color(0xFF00D9FF),
     this.colonColor = const Color(0xFF00D9FF),
     this.backgroundColor = Colors.black,
+    this.showSeconds = true,
     this.isLoading = false,
     this.error,
   });
@@ -25,6 +27,7 @@ class ScreenEditorClockState {
     Color? digitColor,
     Color? colonColor,
     Color? backgroundColor,
+    bool? showSeconds,
     bool? isLoading,
     String? error,
   }) {
@@ -33,6 +36,7 @@ class ScreenEditorClockState {
       digitColor: digitColor ?? this.digitColor,
       colonColor: colonColor ?? this.colonColor,
       backgroundColor: backgroundColor ?? this.backgroundColor,
+      showSeconds: showSeconds ?? this.showSeconds,
       isLoading: isLoading ?? this.isLoading,
       error: error ?? this.error,
     );
@@ -44,16 +48,38 @@ class ScreenEditorClockCubit extends Cubit<ScreenEditorClockState> {
   final String deviceId;
   final bool isNewScreen;
 
-  ScreenEditorClockCubit(this.firebaseRepository, this.deviceId, ScreenModel screen)
-      : isNewScreen = screen.config == null,
-        super(ScreenEditorClockState(
+  ScreenEditorClockCubit(
+    this.firebaseRepository,
+    this.deviceId,
+    ScreenModel screen,
+  ) : isNewScreen = screen.config == null,
+      super(
+        ScreenEditorClockState(
           screen: screen,
-          digitColor: _getColorFromConfig(screen.config, 'digitColor', const Color(0xFF00D9FF)),
-          colonColor: _getColorFromConfig(screen.config, 'colonColor', const Color(0xFF00D9FF)),
-          backgroundColor: _getColorFromConfig(screen.config, 'backgroundColor', Colors.black),
-        ));
+          digitColor: _getColorFromConfig(
+            screen.config,
+            'digitColor',
+            const Color(0xFF00D9FF),
+          ),
+          colonColor: _getColorFromConfig(
+            screen.config,
+            'colonColor',
+            const Color(0xFF00D9FF),
+          ),
+          backgroundColor: _getColorFromConfig(
+            screen.config,
+            'backgroundColor',
+            Colors.black,
+          ),
+          showSeconds: screen.config?['showSeconds'] ?? true,
+        ),
+      );
 
-  static Color _getColorFromConfig(Map<String, dynamic>? config, String key, Color defaultValue) {
+  static Color _getColorFromConfig(
+    Map<String, dynamic>? config,
+    String key,
+    Color defaultValue,
+  ) {
     if (config == null || config[key] == null) return defaultValue;
     final value = config[key];
     if (value is int) return Color(value);
@@ -79,6 +105,10 @@ class ScreenEditorClockCubit extends Cubit<ScreenEditorClockState> {
     emit(state.copyWith(backgroundColor: color));
   }
 
+  void toggleSeconds() {
+    emit(state.copyWith(showSeconds: !state.showSeconds));
+  }
+
   Future<void> save() async {
     emit(state.copyWith(isLoading: true));
     try {
@@ -91,7 +121,11 @@ class ScreenEditorClockCubit extends Cubit<ScreenEditorClockState> {
       if (isNewScreen) {
         await firebaseRepository.createScreen(deviceId, updatedScreen);
       } else {
-        await firebaseRepository.updateScreen(deviceId, state.screen.id, updatedScreen);
+        await firebaseRepository.updateScreen(
+          deviceId,
+          state.screen.id,
+          updatedScreen,
+        );
       }
 
       emit(state.copyWith(isLoading: false, screen: updatedScreen));
@@ -105,6 +139,7 @@ class ScreenEditorClockCubit extends Cubit<ScreenEditorClockState> {
       'digitColor': state.digitColor.value,
       'colonColor': state.colonColor.value,
       'backgroundColor': state.backgroundColor.value,
+      'showSeconds': state.showSeconds,
     };
   }
 }
