@@ -43,17 +43,19 @@ class ScreenEditorImageState {
     bool? isLoading,
     String? error,
     bool clearDefaultAssetId = false,
+    bool clearError = false,
   }) {
     return ScreenEditorImageState(
       screen: screen ?? this.screen,
       selectedAssetId: selectedAssetId ?? this.selectedAssetId,
       poolAssetIds: poolAssetIds ?? this.poolAssetIds,
-      defaultAssetId:
-          clearDefaultAssetId ? null : (defaultAssetId ?? this.defaultAssetId),
+      defaultAssetId: clearDefaultAssetId
+          ? null
+          : (defaultAssetId ?? this.defaultAssetId),
       isShared: isShared ?? this.isShared,
       availableAssets: availableAssets ?? this.availableAssets,
       isLoading: isLoading ?? this.isLoading,
-      error: error ?? this.error,
+      error: clearError ? null : (error ?? this.error),
     );
   }
 }
@@ -63,7 +65,6 @@ class ScreenEditorImageCubit extends Cubit<ScreenEditorImageState> {
   final String deviceId;
   final String userId;
   final bool isNewScreen;
-  final bool _initialIsShared;
 
   ScreenEditorImageCubit(
     this.firebaseRepository,
@@ -71,20 +72,22 @@ class ScreenEditorImageCubit extends Cubit<ScreenEditorImageState> {
     ScreenModel screen,
     List<AssetModel> availableAssets, {
     this.userId = '',
-  })  : isNewScreen = screen.assetId == null &&
-            screen.availableAssetIds.isEmpty &&
-            !screen.isShared,
-        _initialIsShared = screen.isShared,
-        super(ScreenEditorImageState(
-          screen: screen,
-          // A screen saved before the pool existed carries a single assetId;
-          // treat it as a one-image pool so nothing is lost on the next save.
-          poolAssetIds: _initialPool(screen),
-          defaultAssetId: screen.defaultAssetId ?? screen.assetId,
-          selectedAssetId: screen.defaultAssetId ?? screen.assetId,
-          isShared: screen.isShared,
-          availableAssets: availableAssets,
-        ));
+  }) : isNewScreen =
+           screen.assetId == null &&
+           screen.availableAssetIds.isEmpty &&
+           !screen.isShared,
+       super(
+         ScreenEditorImageState(
+           screen: screen,
+           // A screen saved before the pool existed carries a single assetId;
+           // treat it as a one-image pool so nothing is lost on the next save.
+           poolAssetIds: _initialPool(screen),
+           defaultAssetId: screen.defaultAssetId ?? screen.assetId,
+           selectedAssetId: screen.defaultAssetId ?? screen.assetId,
+           isShared: screen.isShared,
+           availableAssets: availableAssets,
+         ),
+       );
 
   static List<String> _initialPool(ScreenModel screen) {
     if (screen.availableAssetIds.isNotEmpty) {
@@ -107,12 +110,14 @@ class ScreenEditorImageCubit extends Cubit<ScreenEditorImageState> {
       // Removing the default promotes the next member so the screen always has
       // something to show first.
       if (state.defaultAssetId == assetId) {
-        emit(state.copyWith(
-          poolAssetIds: pool,
-          defaultAssetId: pool.isNotEmpty ? pool.first : null,
-          clearDefaultAssetId: pool.isEmpty,
-          selectedAssetId: pool.isNotEmpty ? pool.first : null,
-        ));
+        emit(
+          state.copyWith(
+            poolAssetIds: pool,
+            defaultAssetId: pool.isNotEmpty ? pool.first : null,
+            clearDefaultAssetId: pool.isEmpty,
+            selectedAssetId: pool.isNotEmpty ? pool.first : null,
+          ),
+        );
         return;
       }
       emit(state.copyWith(poolAssetIds: pool, selectedAssetId: assetId));
@@ -120,31 +125,36 @@ class ScreenEditorImageCubit extends Cubit<ScreenEditorImageState> {
     }
 
     pool.add(assetId);
-    emit(state.copyWith(
-      poolAssetIds: pool,
-      // First asset added becomes the default.
-      defaultAssetId: state.defaultAssetId ?? assetId,
-      selectedAssetId: assetId,
-    ));
+    emit(
+      state.copyWith(
+        poolAssetIds: pool,
+        // First asset added becomes the default.
+        defaultAssetId: state.defaultAssetId ?? assetId,
+        selectedAssetId: assetId,
+      ),
+    );
   }
 
   /// Mark which asset the screen shows first. Adds it to the pool if needed.
   void setDefaultAsset(String assetId) {
     final pool = List<String>.from(state.poolAssetIds);
     if (!pool.contains(assetId)) pool.add(assetId);
-    emit(state.copyWith(
-      poolAssetIds: pool,
-      defaultAssetId: assetId,
-      selectedAssetId: assetId,
-    ));
+    emit(
+      state.copyWith(
+        poolAssetIds: pool,
+        defaultAssetId: assetId,
+        selectedAssetId: assetId,
+      ),
+    );
   }
 
   void toggleSharing() {
     emit(state.copyWith(isShared: !state.isShared));
   }
 
-  Future<void> save() async {
-    emit(state.copyWith(isLoading: true));
+  Future<bool> save() async {
+    if (state.isLoading) return false;
+    emit(state.copyWith(isLoading: true, clearError: true));
     try {
       final pool = state.poolAssetIds;
       final defaultAssetId =
@@ -173,34 +183,17 @@ class ScreenEditorImageCubit extends Cubit<ScreenEditorImageState> {
         await firebaseRepository.createScreen(deviceId, updatedScreen);
       } else {
         await firebaseRepository.updateScreen(
-            deviceId, state.screen.id, updatedScreen);
+          deviceId,
+          state.screen.id,
+          updatedScreen,
+        );
       }
 
-      await _syncSharingPointer(updatedScreen);
-
       emit(state.copyWith(isLoading: false, screen: updatedScreen));
+      return true;
     } catch (e) {
       emit(state.copyWith(isLoading: false, error: e.toString()));
-    }
-  }
-
-  /// Maintains the /pairs/{pairId}/sharedScreens pointer when the sharing
-  /// toggle changes. The screen document itself is already saved at this point,
-  /// so a failure here must not surface as a failed save.
-  Future<void> _syncSharingPointer(ScreenModel screen) async {
-    if (state.isShared == _initialIsShared) return;
-    if (userId.isEmpty) return;
-    try {
-      final pairing = await firebaseRepository.getPairing(userId);
-      await firebaseRepository.setScreenShared(
-        deviceId,
-        screen.id,
-        pairing.pairId,
-        state.isShared,
-      );
-    } catch (_) {
-      // No pair yet, or pairing is unreachable. isShared is already persisted
-      // on the screen document; the pointer is created once a pair exists.
+      return false;
     }
   }
 }

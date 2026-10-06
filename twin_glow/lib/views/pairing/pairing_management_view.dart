@@ -6,6 +6,7 @@ import '../../core/models/pairing_model.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_card.dart';
 import '../../core/widgets/app_input.dart';
+import '../../core/widgets/shared_screens_panel.dart';
 import '../../features/auth/cubit/auth_cubit.dart';
 import '../../features/pairing/cubit/pairing_cubit.dart';
 import '../../services/firebase/firebase_repository.dart';
@@ -94,6 +95,11 @@ class _PairingManagementViewState extends State<PairingManagementView> {
                     ],
                   ),
                 ),
+                if (state.pairing.isPaired)
+                  SharedScreensPanel(
+                    repository: cubit.firebaseRepository,
+                    userId: uid,
+                  ),
                 if (!state.pairing.isPaired) ...[
                   const SizedBox(height: 20),
                   _selector(state.devices, selected, state.isBusy),

@@ -5,6 +5,8 @@ import 'package:firebase_database/firebase_database.dart';
 import 'firebase_repository.dart';
 import 'pairing_service.dart';
 import 'firebase_pairing_store.dart';
+import 'shared_screens_service.dart';
+import 'shared_catalog_queue.dart';
 import 'device_access.dart';
 import '../../core/models/device_model.dart';
 import '../../core/models/screen_model.dart';
@@ -14,9 +16,11 @@ import '../../core/codecs/animation_codec.dart';
 import 'asset_document.dart';
 import '../../core/models/user_model.dart';
 import '../../core/models/pairing_model.dart';
+import '../../core/models/shared_screen_model.dart';
 import '../../core/utils/device_presence.dart';
 
 class FirebaseRepositoryImpl implements FirebaseRepository {
+  static final _sharedCatalogQueue = SharedCatalogQueue();
   final FirebaseAuth _auth;
   final FirebaseFirestore _firestore;
   final FirebaseDatabase _database;
@@ -284,6 +288,7 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
       // Increment device configVersion
       await _incrementDeviceConfigVersion(deviceId);
 
+      await _syncSharedScreensForDevice(deviceId);
       return screen;
     } catch (e) {
       throw Exception('Failed to create screen: $e');
@@ -315,6 +320,7 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
 
       // Increment device configVersion
       await _incrementDeviceConfigVersion(deviceId);
+      await _syncSharedScreensForDevice(deviceId);
     } catch (e) {
       throw Exception('Failed to update screen: $e');
     }
@@ -335,6 +341,7 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
 
       // Increment device configVersion
       await _incrementDeviceConfigVersion(deviceId);
+      await _syncSharedScreensForDevice(deviceId);
     } catch (e) {
       throw Exception('Failed to delete screen: $e');
     }
@@ -372,6 +379,7 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
         'updatedAt': FieldValue.serverTimestamp(),
       });
       await _incrementDeviceConfigVersion(deviceId);
+      await _syncSharedScreensForDevice(deviceId);
     } catch (e) {
       throw Exception('Failed to update screen sharing: $e');
     }
@@ -499,6 +507,8 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
         for (final name in fields.obsoleteFieldNames) name: FieldValue.delete(),
       });
       await _bumpDevicesUsingAsset(assetId);
+      final uid = _auth.currentUser?.uid;
+      if (uid != null) await syncSharedScreens(uid);
     } catch (e) {
       throw Exception('Failed to update asset: $e');
     }
@@ -512,6 +522,8 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
       final assetData = assetSnapshot.data();
 
       if (!assetSnapshot.exists || assetData == null) {
+        final uid = _auth.currentUser?.uid;
+        if (uid != null) await syncSharedScreens(uid);
         return;
       }
       if (assetData['isDefault'] == true) {
@@ -561,6 +573,7 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
       // The Firestore version is authoritative. This best-effort doorbell just
       // asks online devices to read it sooner than their periodic poll.
       await Future.wait(affectedDeviceIds.map(_ringConfigDoorbell));
+      await syncSharedScreens(currentUserId);
     } catch (e) {
       throw Exception('Failed to delete asset: $e');
     }
@@ -610,6 +623,81 @@ class FirebaseRepositoryImpl implements FirebaseRepository {
   ) => _pairing(userId).resolveInvite(inviteId, status);
   @override
   Future<void> unpair(String userId) => _pairing(userId).unpair();
+
+  Future<void> _syncSharedScreensForDevice(String deviceId) async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return;
+    await _queueSharedCatalog(uid, deviceId: deviceId);
+  }
+
+  @override
+  Future<void> syncSharedScreens(String userId) async {
+    await _queueSharedCatalog(userId);
+  }
+
+  Future<void> _queueSharedCatalog(String uid, {String? deviceId}) =>
+      _sharedCatalogQueue.run(
+        '${_database.app.name}/${_database.databaseURL}/$uid',
+        () async {
+          final pair = await getPairing(uid);
+          if (deviceId == null || pair.deviceId == deviceId) {
+            await _syncSharedCatalog(uid, pair);
+          }
+        },
+      );
+
+  Future<void> _syncSharedCatalog(String uid, PairingModel pair) async {
+    if (!pair.isPaired || pair.deviceId == null) return;
+    final device = _firestore.collection('devices').doc(pair.deviceId!);
+    const server = GetOptions(source: Source.server);
+    final before =
+        (await device.get(server)).data()?['configVersion'] as int? ?? 0;
+    final snapshot = await device
+        .collection('screens')
+        .orderBy('order')
+        .get(server);
+    final screens = snapshot.docs
+        .map((d) => _screenFromFirestore(d.id, d.data()))
+        .toList();
+    final ids = screens
+        .where((s) => s.isShared && s.supportsAssetPool)
+        .map(
+          (s) =>
+              s.defaultAssetId ??
+              s.assetId ??
+              (s.availableAssetIds.isEmpty ? null : s.availableAssetIds.first),
+        )
+        .whereType<String>()
+        .toList();
+    final docs = await Future.wait(
+      ids.toSet().map(
+        (id) => _firestore.collection('assets').doc(id).get(server),
+      ),
+    );
+    final assets = docs
+        .where((d) => d.exists)
+        .map((d) => _assetFromFirestore(d.id, d.data()!))
+        .toList();
+    final after =
+        (await device.get(server)).data()?['configVersion'] as int? ?? 0;
+    if (before != after)
+      throw StateError(
+        'Screen configuration changed during sharing. Refresh and try again.',
+      );
+    await SharedScreensService(
+      FirebasePairingStore(_database),
+      uid,
+    ).sync(pair, screens, assets, sourceVersion: after);
+  }
+
+  @override
+  Stream<List<SharedScreenModel>> watchSharedScreens(
+    String pairId,
+    String ownerUid,
+  ) => SharedScreensService(
+    FirebasePairingStore(_database),
+    _auth.currentUser?.uid ?? '',
+  ).watch(pairId, ownerUid);
 
   // RTDB methods
   @override

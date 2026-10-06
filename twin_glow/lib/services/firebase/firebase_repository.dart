@@ -3,6 +3,7 @@ import '../../core/models/screen_model.dart';
 import '../../core/models/asset_model.dart';
 import '../../core/models/user_model.dart';
 import '../../core/models/pairing_model.dart';
+import '../../core/models/shared_screen_model.dart';
 
 /// Interface for Firebase operations
 /// TODO: Implement real Firebase integration
@@ -72,6 +73,11 @@ abstract class FirebaseRepository {
     String status,
   );
   Future<void> unpair(String userId);
+  Future<void> syncSharedScreens(String userId);
+  Stream<List<SharedScreenModel>> watchSharedScreens(
+    String pairId,
+    String ownerUid,
+  );
 
   // Realtime Database (RTDB) methods
   Stream<Map<String, dynamic>> watchDevicePresence(String deviceId);

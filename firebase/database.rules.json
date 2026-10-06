@@ -210,6 +210,85 @@
           }
         }
       },
+      "sharedScreens": {
+        "$pairId": {
+          ".write": "!newData.exists() && (auth != null && auth.token.twinGlowDeviceId == null && (root.child('pairing/pairs').child($pairId).child('userA').val() == auth.uid || root.child('pairing/pairs').child($pairId).child('userB').val() == auth.uid)) && (newData.parent().parent().parent().child('pairing/pairs').child($pairId).child('state').val() == 'ENDED')",
+          "$ownerUid": {
+            ".read": "(root.child('pairing/pairs').child($pairId).child('state').val() == 'ACTIVE') && (auth != null && auth.token.twinGlowDeviceId == null && (root.child('pairing/pairs').child($pairId).child('userA').val() == auth.uid || root.child('pairing/pairs').child($pairId).child('userB').val() == auth.uid))",
+            ".write": "newData.exists() && (root.child('pairing/pairs').child($pairId).child('state').val() == 'ACTIVE') && (auth != null && auth.token.twinGlowDeviceId == null && (root.child('pairing/pairs').child($pairId).child('userA').val() == auth.uid || root.child('pairing/pairs').child($pairId).child('userB').val() == auth.uid)) && auth.uid == $ownerUid && (auth != null && auth.token.twinGlowDeviceId == null && root.child('deviceAccess').child((root.child('pairing/pairs').child($pairId).child('userA').val() == $ownerUid ? root.child('pairing/pairs').child($pairId).child('deviceA').val() : root.child('pairing/pairs').child($pairId).child('deviceB').val())).child('ownerUid').val() == auth.uid && root.child('deviceAccess').child((root.child('pairing/pairs').child($pairId).child('userA').val() == $ownerUid ? root.child('pairing/pairs').child($pairId).child('deviceA').val() : root.child('pairing/pairs').child($pairId).child('deviceB').val())).child('enabled').val() == true)",
+            ".validate": "newData.hasChildren(['sourceVersion','updatedAt']) && newData.child('updatedAt').val() == now && (!data.exists() || newData.child('sourceVersion').val() > data.child('sourceVersion').val())",
+            "sourceVersion": {
+              ".validate": "newData.isNumber() && newData.val() % 1 == 0 && newData.val() >= 0 && newData.val() <= 2147483647"
+            },
+            "updatedAt": {
+              ".validate": "newData.isNumber() && newData.val() % 1 == 0 && newData.val() >= 1 && newData.val() <= 9007199254740991"
+            },
+            "screens": {
+              "$screenId": {
+                ".validate": "newData.hasChildren(['schemaVersion','deviceId','screenId','name','assetId','assetName','content']) && newData.child('schemaVersion').val() == 1 && newData.child('screenId').val() == $screenId && newData.child('deviceId').val() == (root.child('pairing/pairs').child($pairId).child('userA').val() == $ownerUid ? root.child('pairing/pairs').child($pairId).child('deviceA').val() : root.child('pairing/pairs').child($pairId).child('deviceB').val())",
+                "schemaVersion": {
+                  ".validate": "newData.isNumber() && newData.val() % 1 == 0 && newData.val() >= 1 && newData.val() <= 1"
+                },
+                "deviceId": {
+                  ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 95 && !newData.val().matches(/[.#$\\[\\]\\/]/)"
+                },
+                "screenId": {
+                  ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 95 && !newData.val().matches(/[.#$\\[\\]\\/]/)"
+                },
+                "name": {
+                  ".validate": "newData.isString() && newData.val().length <= 512"
+                },
+                "assetId": {
+                  ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 95 && !newData.val().matches(/[.#$\\[\\]\\/]/)"
+                },
+                "assetName": {
+                  ".validate": "newData.isString() && newData.val().length <= 512"
+                },
+                "content": {
+                  ".validate": "(newData.child('type').val() == 'IMAGE' && newData.child('encoding').val() == 'SPARSE_PACKED_V1' && newData.hasChildren(['pixelsPacked']) && !newData.child('basePixelsPacked').exists() && !newData.child('frameDeltasPacked').exists() && !newData.child('frameDurationsMs').exists() && !newData.child('frameCount').exists() && !newData.child('loop').exists()) || (newData.child('type').val() == 'ANIMATION' && newData.child('encoding').val() == 'DELTA_SPARSE_PACKED_V1' && newData.hasChildren(['basePixelsPacked','frameDurationsMs','frameDeltasPacked','frameCount','loop']) && !newData.child('pixelsPacked').exists() && (newData.child('frameDurationsMs/0').exists() == (newData.child('frameCount').val() > 0)) && (newData.child('frameDurationsMs/1').exists() == (newData.child('frameCount').val() > 1)) && (newData.child('frameDurationsMs/2').exists() == (newData.child('frameCount').val() > 2)) && (newData.child('frameDurationsMs/3').exists() == (newData.child('frameCount').val() > 3)) && (newData.child('frameDurationsMs/4').exists() == (newData.child('frameCount').val() > 4)) && (newData.child('frameDurationsMs/5').exists() == (newData.child('frameCount').val() > 5)) && (newData.child('frameDurationsMs/6').exists() == (newData.child('frameCount').val() > 6)) && (newData.child('frameDurationsMs/7').exists() == (newData.child('frameCount').val() > 7)) && (newData.child('frameDurationsMs/8').exists() == (newData.child('frameCount').val() > 8)) && (newData.child('frameDurationsMs/9').exists() == (newData.child('frameCount').val() > 9)) && (newData.child('frameDurationsMs/10').exists() == (newData.child('frameCount').val() > 10)) && (newData.child('frameDurationsMs/11').exists() == (newData.child('frameCount').val() > 11)) && (newData.child('frameDurationsMs/12').exists() == (newData.child('frameCount').val() > 12)) && (newData.child('frameDurationsMs/13').exists() == (newData.child('frameCount').val() > 13)) && (newData.child('frameDurationsMs/14').exists() == (newData.child('frameCount').val() > 14)) && (newData.child('frameDurationsMs/15').exists() == (newData.child('frameCount').val() > 15)) && (newData.child('frameDeltasPacked/0').exists() == (newData.child('frameCount').val() > 1)) && (newData.child('frameDeltasPacked/1').exists() == (newData.child('frameCount').val() > 2)) && (newData.child('frameDeltasPacked/2').exists() == (newData.child('frameCount').val() > 3)) && (newData.child('frameDeltasPacked/3').exists() == (newData.child('frameCount').val() > 4)) && (newData.child('frameDeltasPacked/4').exists() == (newData.child('frameCount').val() > 5)) && (newData.child('frameDeltasPacked/5').exists() == (newData.child('frameCount').val() > 6)) && (newData.child('frameDeltasPacked/6').exists() == (newData.child('frameCount').val() > 7)) && (newData.child('frameDeltasPacked/7').exists() == (newData.child('frameCount').val() > 8)) && (newData.child('frameDeltasPacked/8').exists() == (newData.child('frameCount').val() > 9)) && (newData.child('frameDeltasPacked/9').exists() == (newData.child('frameCount').val() > 10)) && (newData.child('frameDeltasPacked/10').exists() == (newData.child('frameCount').val() > 11)) && (newData.child('frameDeltasPacked/11').exists() == (newData.child('frameCount').val() > 12)) && (newData.child('frameDeltasPacked/12').exists() == (newData.child('frameCount').val() > 13)) && (newData.child('frameDeltasPacked/13').exists() == (newData.child('frameCount').val() > 14)) && (newData.child('frameDeltasPacked/14').exists() == (newData.child('frameCount').val() > 15)) && (newData.child('basePixelsPacked').val().length + (newData.child('frameDeltasPacked/0').exists() ? newData.child('frameDeltasPacked/0').val().length : 0) + (newData.child('frameDeltasPacked/1').exists() ? newData.child('frameDeltasPacked/1').val().length : 0) + (newData.child('frameDeltasPacked/2').exists() ? newData.child('frameDeltasPacked/2').val().length : 0) + (newData.child('frameDeltasPacked/3').exists() ? newData.child('frameDeltasPacked/3').val().length : 0) + (newData.child('frameDeltasPacked/4').exists() ? newData.child('frameDeltasPacked/4').val().length : 0) + (newData.child('frameDeltasPacked/5').exists() ? newData.child('frameDeltasPacked/5').val().length : 0) + (newData.child('frameDeltasPacked/6').exists() ? newData.child('frameDeltasPacked/6').val().length : 0) + (newData.child('frameDeltasPacked/7').exists() ? newData.child('frameDeltasPacked/7').val().length : 0) + (newData.child('frameDeltasPacked/8').exists() ? newData.child('frameDeltasPacked/8').val().length : 0) + (newData.child('frameDeltasPacked/9').exists() ? newData.child('frameDeltasPacked/9').val().length : 0) + (newData.child('frameDeltasPacked/10').exists() ? newData.child('frameDeltasPacked/10').val().length : 0) + (newData.child('frameDeltasPacked/11').exists() ? newData.child('frameDeltasPacked/11').val().length : 0) + (newData.child('frameDeltasPacked/12').exists() ? newData.child('frameDeltasPacked/12').val().length : 0) + (newData.child('frameDeltasPacked/13').exists() ? newData.child('frameDeltasPacked/13').val().length : 0) + (newData.child('frameDeltasPacked/14').exists() ? newData.child('frameDeltasPacked/14').val().length : 0)) <= 8192)",
+                  "type": {
+                    ".validate": "newData.val() == 'IMAGE' || newData.val() == 'ANIMATION'"
+                  },
+                  "encoding": {
+                    ".validate": "newData.isString() && newData.val().length <= 32"
+                  },
+                  "pixelsPacked": {
+                    ".validate": "newData.isString() && newData.val().length <= 2048 && newData.val().length % 8 == 0 && newData.val().matches(/^[0-9a-fA-F]*$/)"
+                  },
+                  "basePixelsPacked": {
+                    ".validate": "newData.isString() && newData.val().length <= 2048 && newData.val().length % 8 == 0 && newData.val().matches(/^[0-9a-fA-F]*$/)"
+                  },
+                  "frameCount": {
+                    ".validate": "newData.isNumber() && newData.val() % 1 == 0 && newData.val() >= 2 && newData.val() <= 16"
+                  },
+                  "loop": {
+                    ".validate": "newData.val() == true"
+                  },
+                  "frameDurationsMs": {
+                    "$index": {
+                      ".validate": "$index.matches(/^(0|[1-9]|1[0-5])$/) && newData.isNumber() && newData.val() % 1 == 0 && newData.val() >= 50 && newData.val() <= 5000"
+                    }
+                  },
+                  "frameDeltasPacked": {
+                    "$index": {
+                      ".validate": "$index.matches(/^(0|[1-9]|1[0-4])$/) && newData.isString() && newData.val().length <= 2048 && newData.val().length % 8 == 0 && newData.val().matches(/^[0-9a-fA-F]*$/)"
+                    }
+                  },
+                  "$other": {
+                    ".validate": false
+                  }
+                },
+                "$other": {
+                  ".validate": false
+                }
+              }
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        }
+      },
       "mailboxes": {
         "$pairId": {
           ".write": "!newData.exists() && (auth != null && auth.token.twinGlowDeviceId == null && (root.child('pairing/pairs').child($pairId).child('userA').val() == auth.uid || root.child('pairing/pairs').child($pairId).child('userB').val() == auth.uid)) && (newData.parent().parent().parent().child('pairing/pairs').child($pairId).child('state').val() == 'ENDED')",

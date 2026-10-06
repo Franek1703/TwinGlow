@@ -5,9 +5,17 @@ import '../../core/models/screen_asset_references.dart';
 import '../../core/models/asset_model.dart';
 import '../../core/models/user_model.dart';
 import '../../core/models/pairing_model.dart';
+import '../../core/models/shared_screen_model.dart';
 
 /// Fake implementation of FirebaseRepository for development
 class FirebaseFakeRepository implements FirebaseRepository {
+  @override
+  Future<void> syncSharedScreens(String userId) async {}
+  @override
+  Stream<List<SharedScreenModel>> watchSharedScreens(
+    String pairId,
+    String ownerUid,
+  ) => Stream.value(const []);
   // Mock data storage
   UserModel? _currentUser;
   final List<DeviceModel> _devices = [];

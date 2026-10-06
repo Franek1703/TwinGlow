@@ -132,6 +132,21 @@ const rules={rules:{'.read':false,'.write':false,
       '.validate':`${pairShape} && ((!data.exists() && ${active('newData')} && ${activation}) || (data.exists() && ${ended('newData')} && ${deactivation}))`,
       schemaVersion:integer(1,1),userA:key,userB:key,deviceA:key,deviceB:key,userAEmail:text(254),userBEmail:text(254),inviteId:key,state:text(6),createdAt:integer(1,9007199254740991),endedAt:integer(1,9007199254740991),
     })},
+    // Human-published app previews are not device send events. The owner can
+    // publish only for their selected enrolled device; partners can only read.
+    sharedScreens:{'$pairId':{
+      '.write':`!newData.exists() && ${clearing(3,'$pairId')}`,
+      '$ownerUid':closed({
+        '.read':`${active(mPair)} && ${member(mPair)}`,
+        '.write':`newData.exists() && ${active(mPair)} && ${member(mPair)} && auth.uid == $ownerUid && ${owner(`(${val(mPair,'userA')} == $ownerUid ? ${val(mPair,'deviceA')} : ${val(mPair,'deviceB')})`)}`,
+        '.validate':`newData.hasChildren(['sourceVersion','updatedAt']) && ${val('newData','updatedAt')} == now && (!data.exists() || ${val('newData','sourceVersion')} > ${val('data','sourceVersion')})`,
+        sourceVersion:integer(0,2147483647),updatedAt:integer(1,9007199254740991),
+        screens:{'$screenId':closed({
+          '.validate':`newData.hasChildren(['schemaVersion','deviceId','screenId','name','assetId','assetName','content']) && ${val('newData','schemaVersion')} == 1 && ${val('newData','screenId')} == $screenId && ${val('newData','deviceId')} == (${val(mPair,'userA')} == $ownerUid ? ${val(mPair,'deviceA')} : ${val(mPair,'deviceB')})`,
+          schemaVersion:integer(1,1),deviceId:key,screenId:key,name:text(512),assetId:key,assetName:text(512),content,
+        })},
+      }),
+    }},
     mailboxes:{'$pairId':{'.write':`!newData.exists() && ${clearing(3,'$pairId')}`,'$senderDeviceId':closed({
       '.read':`${active(mPair)} && ${pairedReader(mPair)}`,
       '.write':`(newData.exists() && ${device('$senderDeviceId')} && ${active(mPair)} && ${pairDevice(mPair,'$senderDeviceId')}) || (data.exists() && !newData.exists() && ${clearing(4,'$pairId')})`,

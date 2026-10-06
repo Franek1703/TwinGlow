@@ -93,6 +93,41 @@ test('snapshot publication works both ways; old sequence and forged sender fail'
   await assertFails(update(ref(deviceDb('A')),partial));
   await assertFails(get(ref(env.unauthenticatedContext().database(),'pairing/mailboxes/pair/A')));
 });
+test('app previews are owner-written, partner-readable and revoked on unpair',async()=>{
+  await paired();
+  const preview={schemaVersion:1,deviceId:'A',screenId:'screen',name:'Image Screen',assetId:'image',assetName:'Lolypop',content:{type:'IMAGE',encoding:'SPARSE_PACKED_V1',pixelsPacked:'00ff0000'}};
+  const catalog=(sourceVersion,screen=preview)=>({sourceVersion,updatedAt:serverTimestamp(),screens:screen?{screen}:{}});
+  const path='pairing/sharedScreens/pair/alice';
+  await assertSucceeds(set(ref(db('alice'),path),catalog(1)));
+  assert.equal((await assertSucceeds(get(ref(db('bob'),path)))).child('screens/screen/assetName').val(),'Lolypop');
+  await assertFails(set(ref(db('bob'),path),catalog(2)));
+  await assertFails(get(ref(db('eve'),'pairing/sharedScreens/pair/alice')));
+  await assertFails(get(ref(deviceDb('B'),'pairing/sharedScreens/pair/alice')));
+  await assertFails(get(ref(env.unauthenticatedContext().database(),'pairing/sharedScreens/pair/alice')));
+  for(const patch of [{deviceId:'B'},{screenId:'other'},{extra:'x'},{content:{...preview.content,pixelsPacked:'ff'.repeat(2048)}}]) {
+    await assertFails(set(ref(db('alice'),path),catalog(2,{...preview,...patch})));
+  }
+  await assertSucceeds(set(ref(db('alice'),path),catalog(2,{...preview,content:{type:'ANIMATION',encoding:'DELTA_SPARSE_PACKED_V1',basePixelsPacked:'00ff0000',frameDeltasPacked:['00000000'],frameDurationsMs:[100,250],frameCount:2,loop:true}})));
+  await assertSucceeds(set(ref(db('alice'),path),catalog(4,null)));
+  await assertFails(set(ref(db('alice'),path),catalog(3)));
+  await assertFails(set(ref(db('alice'),path),catalog(4)));
+  await assertFails(set(ref(db('alice'),path),null));
+  await assertSucceeds(set(ref(db('alice'),path),catalog(5)));
+  const end={...endPair(),'pairing/sharedScreens/pair':null};
+  await assertSucceeds(update(ref(db('bob')),end));
+  await assertFails(get(ref(db('bob'),'pairing/sharedScreens/pair/alice')));
+  await assertFails(set(ref(db('alice'),path),catalog(6)));
+  await env.withSecurityRulesDisabled(async c=>assert.equal((await get(ref(c.database(),'pairing/sharedScreens/pair'))).exists(),false));
+});
+test('legacy unpair revokes reads even when it leaves the app preview catalog',async()=>{
+  await paired();
+  const path='pairing/sharedScreens/pair/alice';
+  await assertSucceeds(set(ref(db('alice'),path),{sourceVersion:1,updatedAt:serverTimestamp(),screens:{screen:{schemaVersion:1,deviceId:'A',screenId:'screen',name:'Image',assetId:'image',assetName:'Private',content:{type:'IMAGE',encoding:'SPARSE_PACKED_V1',pixelsPacked:'00ff0000'}}}}));
+  await assertSucceeds(update(ref(db('bob')),endPair()));
+  await assertFails(get(ref(db('alice'),path)));
+  await assertFails(get(ref(db('bob'),path)));
+  await env.withSecurityRulesDisabled(async c=>assert.equal((await get(ref(c.database(),path))).exists(),true));
+});
 test('only the receiver can acknowledge the current event; unpair revokes all access',async()=>{
   await paired();await update(ref(deviceDb('A')),publication());
   const ack={eventId:'event1',sequence:1,status:'displayed',at:serverTimestamp()};

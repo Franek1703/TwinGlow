@@ -4,6 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:twin_glow/services/firebase/device_access.dart';
 import 'package:twin_glow/services/firebase/pairing_service.dart';
+import 'package:twin_glow/services/firebase/shared_screens_service.dart';
+import 'package:twin_glow/core/models/asset_model.dart';
+import 'package:twin_glow/core/models/screen_model.dart';
 
 class RestPairingStore implements PairingStore {
   final String token;
@@ -158,7 +161,36 @@ void main() {
       expect(ap.pairId, bp.pairId);
       expect(ap.partnerDeviceId, 'B');
       expect(bp.partnerDeviceId, 'A');
+      final shared = SharedScreensService(as, au);
+      final pixelData = AnimationFrameModel.emptyGrid()..[0][0] = 0xffff0000;
+      await shared.sync(
+        ap,
+        [
+          ScreenModel(
+            id: 'shared',
+            type: ScreenType.image,
+            isShared: true,
+            assetId: 'image',
+          ),
+        ],
+        [
+          AssetModel(
+            id: 'image',
+            name: 'Lolypop',
+            type: AssetType.image,
+            pixelData: pixelData,
+          ),
+        ],
+        sourceVersion: 1,
+      );
+      final received = await SharedScreensService(
+        bs,
+        bu,
+      ).watch(ap.pairId!, au).first;
+      expect(received.single.asset.name, 'Lolypop');
+      expect(received.single.asset.pixelData![0][0], 0xffff0000);
       await a.unpair();
+      expect(await admin.read('pairing/sharedScreens/${ap.pairId}'), null);
       expect((await b.getPairing()).isPaired, false);
       expect((await admin.read('config/B/pair')), null);
       await b.sendInvite('alice$suffix@example.com', 'B');

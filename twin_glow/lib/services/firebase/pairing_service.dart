@@ -228,6 +228,7 @@ class PairingService {
       'config/${p.partnerDeviceId}/incoming': null,
       'pairing/mailboxes/$id': null,
       'pairing/acks/$id': null,
+      'pairing/sharedScreens/$id': null,
     });
   }
 }
