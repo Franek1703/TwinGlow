@@ -278,6 +278,17 @@ test('Firestore sharing requires bilateral consent and cannot forge partner acce
   await assertSucceeds(updateDoc(doc(fsHuman('bob'),'sharingPairs/pair'),{acceptedB:true,state:'ACTIVE'}));
   await assertFails(updateDoc(doc(fsDevice('A'),'sharingPairs/pair'),{contentVersion:1}));
 });
+
+test('an already-consenting participant can check the active grant in a read-only transaction',async()=>{
+  await sharingReady();
+  for(const uid of ['alice','bob']) {
+    const fs=fsHuman(uid);
+    await assertSucceeds(runTransaction(fs,async tx=>{
+      const grant=await tx.get(doc(fs,'sharingPairs/pair'));
+      assert.equal(grant.data().state,'ACTIVE');
+    }));
+  }
+});
 test('full album publication creates narrow references and both devices can fetch original assets',async()=>{
   await sharingReady(); await assertSucceeds(publishAlbum());
   for(const id of album.availableAssetIds){
@@ -431,8 +442,8 @@ test('ten distinct-source foreign assets can be published and replaced within ru
   await assertSucceeds(replace.commit());
 });
 
-for(const templates of [0,4])test(`production migration transaction with creator userB long IDs templates=${templates}`,async()=>{
-  const uid='Mafae7L0dxMvgxfVxjxmv0q1hbP2',peer='LHylA5snHuWPOXCJQYGlV9TYJg53',device='tg_f4ec6bb0ef83',partner='tg_a398a36269f7',pairId='-P3GXKqounihuSfvsWgM',local='screen_1788191873393';
+for(const [templates,animation] of [[0,false],[4,false],[0,true]])test(`production migration transaction with long IDs templates=${templates} animation=${animation}`,async()=>{
+  const uid=animation?'LHylA5snHuWPOXCJQYGlV9TYJg53':'Mafae7L0dxMvgxfVxjxmv0q1hbP2',peer=animation?'Mafae7L0dxMvgxfVxjxmv0q1hbP2':'LHylA5snHuWPOXCJQYGlV9TYJg53',device='tg_f4ec6bb0ef83',partner='tg_a398a36269f7',pairId='-P3GXKqounihuSfvsWgM',local='screen_1788191873393';
   const sid=`ss_${pairId}_${device}_${local}`,remote=`shared_${sid}`;
   const ids=['asset_1788191864475','asset_1790946111492','asset_1790946148384','asset_1790976054854','asset_1790946209700'];
   const copied=ids.map((id,i)=>i==0||templates==0?id:'copy_'+createHash('sha256').update(JSON.stringify([sid,id])).digest('hex'));
@@ -440,16 +451,16 @@ for(const templates of [0,4])test(`production migration transaction with creator
   await env.withSecurityRulesDisabled(async c=>{
     await setDoc(doc(c.firestore(),`deviceAccess/${device}`),{authUid:'auth-own',ownerUid:uid,enabled:true});
     await setDoc(doc(c.firestore(),`deviceAccess/${partner}`),{authUid:'auth-peer',ownerUid:peer,enabled:true});
-    await setDoc(doc(c.firestore(),`sharingPairs/${pairId}`),{schemaVersion:1,userA:peer,userB:uid,deviceA:partner,deviceB:device,acceptedA:true,acceptedB:true,state:'ACTIVE',contentVersion:0});
+    await setDoc(doc(c.firestore(),`sharingPairs/${pairId}`),{schemaVersion:1,userA:animation?uid:peer,userB:animation?peer:uid,deviceA:animation?device:partner,deviceB:animation?partner:device,acceptedA:true,acceptedB:true,state:'ACTIVE',contentVersion:3,mutationKind:'SCREEN',mutationId:'previous'});
     await setDoc(doc(c.firestore(),`playlistState/${device}`),{nextOrder:4,pairId});await setDoc(doc(c.firestore(),`playlistState/${partner}`),{nextOrder:1,pairId});
     await setDoc(doc(c.firestore(),`devices/${device}`),{configVersion:1});
-    await setDoc(doc(c.firestore(),`devices/${device}/screens/${local}`),{order:0,enabled:true,type:'image',config:null,defaultAssetId:ids[0],availableAssetIds:ids,legacyMetadata:{version:7,note:'preserved until successful conversion'}});
+    await setDoc(doc(c.firestore(),`devices/${device}/screens/${local}`),{order:0,enabled:true,type:animation?'animation':'image',config:null,defaultAssetId:ids[0],availableAssetIds:ids,legacyMetadata:{version:7,note:'preserved until successful conversion'}});
     for(let i=0;i<ids.length;i++){
-      await setDoc(doc(c.firestore(),`assets/${ids[i]}`),{ownerUid:uid,isDefault:i>0&&templates>0,type:'IMAGE',pixelsPacked:'00ff0000'});
+      await setDoc(doc(c.firestore(),`assets/${ids[i]}`),{ownerUid:uid,isDefault:i>0&&templates>0,type:animation?'ANIMATION':'IMAGE',pixelsPacked:'00ff0000'});
       if(i>0&&templates>0)await setDoc(doc(c.firestore(),`assets/${copied[i]}`),{ownerUid:uid,isDefault:false,type:'IMAGE',pixelsPacked:'00ff0000'});
     }
   });
-  const meta={...album,pairId,createdBy:uid,availableAssetIds:ids,defaultAssetId:ids[0],screenRefs:{[device]:local,[partner]:remote}};
+  const meta={...album,type:animation?'ANIMATION':'IMAGE',pairId,createdBy:uid,availableAssetIds:ids,defaultAssetId:ids[0],screenRefs:{[device]:local,[partner]:remote}};
   await setDoc(doc(fs,`sharedScreens/${sid}`),meta);
   await assertSucceeds(runTransaction(fs,async tx=>{
     await tx.get(doc(fs,`sharedScreens/${sid}`));await tx.get(doc(fs,`sharingPairs/${pairId}`));
@@ -457,7 +468,7 @@ for(const templates of [0,4])test(`production migration transaction with creator
     for(const id of [...new Set([...ids,...copied])])await tx.get(doc(fs,`assets/${id}`));
     for(const id of copied)tx.update(doc(fs,`assets/${id}`),{sharedScreenIds:[sid],sharingPairId:pairId,sharingMutationScreenId:sid});
     tx.update(doc(fs,`sharedScreens/${sid}`),{availableAssetIds:copied,state:'ACTIVE',contentVersion:1});
-    tx.update(doc(fs,`sharingPairs/${pairId}`),{contentVersion:1,mutationKind:'SCREEN',mutationId:sid});
+    tx.update(doc(fs,`sharingPairs/${pairId}`),{contentVersion:4,mutationKind:'SCREEN',mutationId:sid});
     const reference={sharedScreenId:sid,order:0,enabled:true,durationMs:10000};
     for(const key of Object.keys(source.data()))if(!(key in reference))reference[key]=deleteField();
     tx.update(doc(fs,`devices/${device}/screens/${local}`),reference);

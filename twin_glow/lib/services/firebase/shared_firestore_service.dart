@@ -271,11 +271,14 @@ class SharedFirestoreService {
     ).map((id) => copied[id] ?? id).toList();
     data['defaultAssetId'] =
         copied[data['defaultAssetId']] ?? data['defaultAssetId'];
-    await db.runTransaction((tx) async {
+    var operation = 'reading the shared screen';
+    final publication = db.runTransaction((tx) async {
+      operation = 'reading the shared screen';
       final ref = shared(id);
       final snapshot = await tx.get(ref);
       final old = snapshot.data()!;
       final pairId = old['pairId'] as String;
+      operation = 'reading partner consent';
       final access = await tx.get(grant(pairId));
       final g = access.data()!;
       if (g['state'] != 'ACTIVE' || old['state'] == 'REVOKED') {
@@ -290,15 +293,18 @@ class SharedFirestoreService {
       final initial = old['state'] == 'STAGING';
       final device = g[g['userA'] == uid ? 'deviceA' : 'deviceB'] as String;
       final peer = g[g['userA'] == uid ? 'deviceB' : 'deviceA'] as String;
+      operation = 'reading the source screen';
       final local = initial
           ? await tx.get(screen(device, refs[device] as String))
           : null;
+      operation = 'reading the partner playlist position';
       final counter = initial
           ? await tx.get(db.doc('playlistState/$peer'))
           : null;
       final all = {...pool(old), ...pool(data)};
       final assets = <String, Map<String, dynamic>>{};
       for (final assetId in all) {
+        operation = 'reading animation or image asset $assetId';
         final a = await tx.get(db.doc('assets/$assetId'));
         if (!a.exists) throw StateError('Asset $assetId no longer exists');
         assets[assetId] = a.data()!;
@@ -327,6 +333,7 @@ class SharedFirestoreService {
           throw StateError('Asset is shared through another pair');
         }
       }
+      operation = 'committing the shared screen and playlist references';
       for (final assetId in all) {
         final asset = assets[assetId]!;
         if (asset['isDefault'] == true) continue;
@@ -394,6 +401,17 @@ class SharedFirestoreService {
           'configVersion': FieldValue.increment(1),
         });
       }
+    });
+    await publication.onError<FirebaseException>((error, stackTrace) {
+      Error.throwWithStackTrace(
+        FirebaseException(
+          plugin: error.plugin,
+          code: error.code,
+          message:
+              'Sharing failed while $operation. ${error.message ?? error.code}',
+        ),
+        stackTrace,
+      );
     });
   }
 
