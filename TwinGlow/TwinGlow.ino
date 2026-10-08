@@ -87,6 +87,8 @@ int lastCloudBrightness = -1;
 // Sleep window, loaded from NVS at boot and refreshed from the device doc.
 SleepSettings sleepSettings;
 bool sleepActive = false;
+// Temporary display adjustment for this sleep window; never persisted or synced.
+int sleepBrightnessOverride = -1;
 unsigned long lastSleepCheckMs = 0;
 float sensorTemp = 0, sensorHumidity = 0, sensorPressure = 0, sensorGas = 0;
 int sensorMetricIndex = 0;
@@ -187,6 +189,12 @@ void loop() {
     // Update buttons
     buttons.update();
     
+    // Resolve sleep boundaries before buttons choose awake or sleep brightness.
+    if (fsm.getState() == DeviceState::RUNNING ||
+        fsm.getState() == DeviceState::OFFLINE_RUNNING) {
+        updateSleepState();
+    }
+
     // Handle button actions if initialized
     if (buttonActions != nullptr) {
         buttonActions->update();
@@ -386,6 +394,7 @@ void applyDeviceSettings(const DeviceDoc& doc) {
             doc.sleep.endMinute != sleepSettings.endMinute ||
             doc.sleep.brightness != sleepSettings.brightness) {
             sleepSettings = doc.sleep;
+            sleepBrightnessOverride = -1;
             nvs.setSleepSettings(sleepSettings);
             // Re-evaluate on the next pass rather than waiting out the interval,
             // so a schedule edit is visible straight away.
@@ -394,55 +403,72 @@ void applyDeviceSettings(const DeviceDoc& doc) {
     }
 }
 
-// Drops the panel to the sleep brightness inside the window and restores the
-// owner's brightness outside it. A sleep brightness of 0 blanks the display,
-// which setBrightness() cannot express - it clamps 0 up to 1.
-//
+// The override belongs only to the current sleep period. Keep logical zero
+// separate from MatrixDriver, which clamps setBrightness(0) to 1.
+uint8_t effectiveSleepBrightness() {
+    return sleepBrightnessOverride >= 0
+        ? (uint8_t)sleepBrightnessOverride : sleepSettings.brightness;
+}
+
+// Schedule checks are timed, but brightness and blank/unblank transitions must
+// run every pass so a button press takes effect immediately.
 // Returns true when the caller should skip rendering entirely.
 bool updateSleepState() {
     unsigned long now = millis();
-    if (lastSleepCheckMs != 0 && (now - lastSleepCheckMs) < SLEEP_CHECK_INTERVAL_MS) {
-        return sleepActive && sleepSettings.brightness == 0;
-    }
-    lastSleepCheckMs = now;
+    if (lastSleepCheckMs == 0 || (now - lastSleepCheckMs) >= SLEEP_CHECK_INTERVAL_MS) {
+        lastSleepCheckMs = now;
 
-    // An unsynced clock must never blank the panel: time(nullptr) returns a
-    // pre-2001 epoch before the first NTP sync, and reading a window out of that
-    // would dim the device for reasons the owner cannot see.
-    bool shouldSleep = false;
-    if (sleepSettings.enabled && TimeSync::isTimeValid()) {
-        time_t nowEpoch = time(nullptr);
-        struct tm tmNow;
-        localtime_r(&nowEpoch, &tmNow);
-        int nowMinute = tmNow.tm_hour * 60 + tmNow.tm_min;
-        shouldSleep = isWithinSleepWindow(
-            sleepSettings.startMinute, sleepSettings.endMinute, nowMinute);
-    }
+        // An unsynced clock must never blank the panel.
+        bool shouldSleep = false;
+        if (sleepSettings.enabled && TimeSync::isTimeValid()) {
+            time_t nowEpoch = time(nullptr);
+            struct tm tmNow;
+            localtime_r(&nowEpoch, &tmNow);
+            int nowMinute = tmNow.tm_hour * 60 + tmNow.tm_min;
+            shouldSleep = isWithinSleepWindow(
+                sleepSettings.startMinute, sleepSettings.endMinute, nowMinute);
+        }
 
-    if (shouldSleep != sleepActive) {
-        sleepActive = shouldSleep;
-        if (sleepActive) {
-            Serial.print(F("[Sleep] Entering sleep window, brightness "));
-            Serial.println(sleepSettings.brightness);
-            if (sleepSettings.brightness > 0) {
-                matrix.setBrightness(sleepSettings.brightness);
+        if (shouldSleep != sleepActive) {
+            sleepActive = shouldSleep;
+            sleepBrightnessOverride = -1;
+            if (sleepActive) {
+                Serial.print(F("[Sleep] Entering sleep window, brightness "));
+                Serial.println(sleepSettings.brightness);
+            } else {
+                Serial.println(F("[Sleep] Leaving sleep window"));
+                matrix.setBrightness(nvs.getBrightness());
+                renderAsset.resetAnimation();
+                receivedRenderer.resetAnimation();
             }
-        } else {
-            Serial.println(F("[Sleep] Leaving sleep window"));
-            matrix.setBrightness(nvs.getBrightness());
-            // Nothing advanced while the panel was blank, so the frame timer is
-            // stale. Restart at frame 0 instead of jumping on the first pass.
-            renderAsset.resetAnimation();
-            receivedRenderer.resetAnimation();
         }
     }
-    // A settings edit can switch dim to blank without leaving the window.
-    static bool wasBlank=false;
-    bool dark=sleepActive && sleepSettings.brightness==0;
-    if (dark && !wasBlank) {matrix.clear();matrix.show();}
-    if (!dark && wasBlank) {renderAsset.resetAnimation();receivedRenderer.resetAnimation();}
-    wasBlank=dark;
+
+    uint8_t brightness = effectiveSleepBrightness();
+    if (sleepActive && brightness > 0 && matrix.getBrightness() != brightness) {
+        matrix.setBrightness(brightness);
+    }
+    static bool wasBlank = false;
+    bool dark = sleepActive && brightness == 0;
+    if (dark && !wasBlank) {
+        matrix.clear();
+        matrix.show();
+    }
+    if (!dark && wasBlank) {
+        renderAsset.resetAnimation();
+        receivedRenderer.resetAnimation();
+    }
+    wasBlank = dark;
     return dark;
+}
+
+bool handleSleepBrightnessChange(bool increase) {
+    if (!sleepActive) return false;
+    int brightness = effectiveSleepBrightness();
+    sleepBrightnessOverride = increase ? min(255, brightness + 16)
+                                       : max(0, brightness - 16);
+    updateSleepState();
+    return true;
 }
 
 void handleTimeSync() {
@@ -610,6 +636,7 @@ void handleConfigLoading() {
     if (buttonActions == nullptr) {
         buttonActions = new ButtonActions(&buttons, &playlist, &matrix, &nvs,
                                          rtdbRepo, &cloudWorker, &pairing, &assetCache);
+        buttonActions->onBrightnessChange = handleSleepBrightnessChange;
     }
     static bool scheduled=false;
     if (!scheduled) {
@@ -679,7 +706,6 @@ void handleRunning() {
     // before show(): letting RenderAsset keep advancing frames behind a dark
     // panel would make an animation jump on wake.
     bool dark=updateSleepState();
-    if (sleepActive && sleepSettings.brightness>0 && matrix.getBrightness()!=sleepSettings.brightness) matrix.setBrightness(sleepSettings.brightness);
     pairing.tick(dark);
     if (dark) return;
     if (pairing.hasOverride()) {

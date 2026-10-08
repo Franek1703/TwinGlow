@@ -33,3 +33,18 @@ Path(sys.argv[1]).write_text(source[start:end])
 PY
 c++ -std=c++17 -fsanitize=address,undefined -g -Itools/native-pairing -I"$task_test_dir" tools/native-pairing/transport-test.cpp -o "$task_test_dir/transport"
 "$task_test_dir/transport"
+python3 - "$task_test_dir" <<'PY'
+import sys
+from pathlib import Path
+output = Path(sys.argv[1])
+source = Path('TwinGlow/TwinGlow.ino').read_text()
+start = source.index('void applyDeviceSettings(const DeviceDoc& doc) {')
+end = source.index('\nvoid handleTimeSync()', start)
+(output / 'sleep-runtime.inc').write_text(source[start:end])
+source = Path('TwinGlow/ButtonActions.cpp').read_text()
+start = source.index('void ButtonActions::handleBrightnessChange(bool increase) {')
+end = source.index('\nvoid ButtonActions::handleSendToPair()', start)
+(output / 'brightness-button.inc').write_text(source[start:end])
+PY
+c++ -std=c++17 -fsanitize=address,undefined -g -Itools/native-pairing -ITwinGlow -I"$task_test_dir" tools/native-pairing/sleep-test.cpp TwinGlow/SleepSchedule.cpp -o "$task_test_dir/sleep"
+"$task_test_dir/sleep"

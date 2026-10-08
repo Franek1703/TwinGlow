@@ -376,8 +376,12 @@ reconciled in both directions:
   change, and re-queues if the panel moved again while the write was in flight. A failed
   write is not retried: NVS already holds the value, so only the app's slider is stale.
 
-Inside the sleep window the schedule owns the panel: a button press there is re-overridden on
-the next sleep check (~15 s).
+Inside the sleep window, +/- adjusts the displayed sleep brightness in steps of 16 for the
+current sleep period only. These presses do not write NVS or Firebase. + lights a blank panel;
+reducing brightness to 0 blanks it and pauses rendering. The temporary adjustment is cleared
+on sleep exit, a sleep-settings edit, or restart. Unchanged configuration polls preserve it.
+Sleep exit restores the saved awake brightness; the next sleep window uses the configured
+sleep brightness. App changes to awake brightness during sleep are saved for sleep exit.
 
 ### 6.2 Context actions (● Action)
 

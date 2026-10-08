@@ -367,9 +367,11 @@ access. Local membership ownership cannot be forged by BLE UID or human writes.
 - Override is held until short ACTION, PREV/NEXT, a newer valid send, or observed
   unpair. ACTION dismisses without advancing the saved pool selection; PREV/NEXT
   dismisses and navigates the local playlist. Automatic rotation pauses during
-  the override. Brightness buttons still change the owner's saved brightness.
+  the override. Brightness buttons change the owner's saved brightness while awake;
+  during sleep they temporarily adjust display brightness for the current window only.
 - Blank sleep defers incoming content and does not mark it handled; sends while
-  blanked are disabled. Dim sleep can show received content at sleep brightness.
+  blanked are disabled. Dim sleep can show received content at the effective sleep brightness, including
+  a temporary button adjustment. + unblanks sleep and resumes incoming handling.
   Wake restarts animation at frame zero. Configuration syncing runs while asleep.
 - Config reloads and downloads run on CloudWorker. Screen lists are paged four
   at a time, excluding preview pixels. Staged caches share unchanged live objects;

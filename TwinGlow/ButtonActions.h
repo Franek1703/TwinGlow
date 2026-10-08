@@ -23,6 +23,9 @@ public:
     
     void update(); // Call in loop() to handle button events
     
+    // Return true to consume a brightness press without saving normal brightness.
+    bool (*onBrightnessChange)(bool increase) = nullptr;
+
     // Factory reset callback
     void (*onFactoryReset)();
     

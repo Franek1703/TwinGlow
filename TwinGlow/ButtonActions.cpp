@@ -86,6 +86,8 @@ void ButtonActions::handleContextActions() {
 }
 
 void ButtonActions::handleBrightnessChange(bool increase) {
+    if (onBrightnessChange != nullptr && onBrightnessChange(increase)) return;
+
     uint8_t current = nvs->getBrightness();
     uint8_t step = 16; // Adjust step size as needed
     
