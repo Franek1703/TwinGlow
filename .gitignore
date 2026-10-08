@@ -1,2 +1,4 @@
 TwinGlow/Config.h
 TwinGlow/FirebaseSecrets.h
+TwinGlow/DeviceCredentials.h
+.private/

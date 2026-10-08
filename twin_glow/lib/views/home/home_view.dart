@@ -8,6 +8,7 @@ import '../../config/app_typography.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/device_header.dart';
 import '../../core/widgets/screen_playlist_sliver.dart';
+import '../../core/widgets/shared_screens_panel.dart';
 import '../../core/models/device_model.dart';
 import '../../features/auth/cubit/auth_cubit.dart';
 import '../../features/device/cubit/devices_cubit.dart';
@@ -24,7 +25,7 @@ class HomeView extends StatelessWidget {
     return BlocBuilder<AuthCubit, AuthState>(
       builder: (context, authState) {
         final userId = authState.user?.id ?? '';
-        
+
         if (userId.isEmpty) {
           return Scaffold(
             backgroundColor: AppColors.bgPrimary,
@@ -55,6 +56,7 @@ class HomeView extends StatelessWidget {
         }
 
         return BlocProvider(
+          key: ValueKey(userId),
           create: (_) => DevicesCubit(firebaseRepo, userId),
           child: BlocBuilder<DevicesCubit, DevicesState>(
             builder: (context, devicesState) {
@@ -91,9 +93,7 @@ class HomeView extends StatelessWidget {
                         AppButton(
                           text: loadFailed ? 'Retry' : 'Add Device',
                           onPressed: loadFailed
-                              ? () => context
-                                  .read<DevicesCubit>()
-                                  .loadDevices()
+                              ? () => context.read<DevicesCubit>().loadDevices()
                               : () => context.push('/provision'),
                         ),
                       ],
@@ -106,7 +106,11 @@ class HomeView extends StatelessWidget {
                 key: ValueKey(activeDevice.id),
                 create: (_) =>
                     ScreensPlaylistCubit(firebaseRepo, activeDevice.id),
-                child: _HomeContent(device: activeDevice),
+                child: _HomeContent(
+                  device: activeDevice,
+                  repository: firebaseRepo,
+                  userId: userId,
+                ),
               );
             },
           ),
@@ -118,8 +122,14 @@ class HomeView extends StatelessWidget {
 
 class _HomeContent extends StatelessWidget {
   final DeviceModel device;
+  final FirebaseRepositoryImpl repository;
+  final String userId;
 
-  const _HomeContent({required this.device});
+  const _HomeContent({
+    required this.device,
+    required this.repository,
+    required this.userId,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -230,14 +240,14 @@ class _HomeContent extends StatelessWidget {
                             }
                           },
                           onToggle: (screen) {
-                            context
-                                .read<ScreensPlaylistCubit>()
-                                .toggleScreen(screen.id);
+                            context.read<ScreensPlaylistCubit>().toggleScreen(
+                              screen.id,
+                            );
                           },
                           onDelete: (screen) {
-                            context
-                                .read<ScreensPlaylistCubit>()
-                                .deleteScreen(screen.id);
+                            context.read<ScreensPlaylistCubit>().deleteScreen(
+                              screen.id,
+                            );
                           },
                         ),
                       SliverToBoxAdapter(
@@ -264,6 +274,11 @@ class _HomeContent extends StatelessWidget {
                                 size: 20.sp,
                                 color: AppColors.textPrimary,
                               ),
+                            ),
+                            SharedScreensPanel(
+                              repository: repository,
+                              userId: userId,
+                              deviceId: device.id,
                             ),
                             SizedBox(height: 100.h), // Space for bottom nav
                           ],

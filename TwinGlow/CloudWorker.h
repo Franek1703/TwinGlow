@@ -10,33 +10,8 @@
 #include "FirestoreRepo.h"
 #include "RtdbRepo.h"
 
-enum class CloudOperation : uint8_t {
-    PRESENCE = 0,
-    TELEMETRY = 1,
-    CONFIG_CHECK = 2,
-    REVISION_CHECK = 3,
-    PAIR_EVENT = 4,
-    ASSET_FETCH = 5,
-    BRIGHTNESS_WRITE = 6,
-    COUNT = 7
-};
-
-// Queue payloads contain only trivially copyable data. DeviceDoc owns Arduino
-// Strings, so successful config reads cross the queue as a heap pointer and
-// are deleted by the main loop after processing.
-struct CloudResult {
-    CloudOperation operation;
-    bool attempted;
-    bool success;
-    int errorCode;
-    DeviceDoc* deviceDoc;
-    AssetData* assetData;
-    int revision;
-    // Value actually written by BRIGHTNESS_WRITE, so the main loop can tell
-    // whether the panel moved again while the write was in flight.
-    int brightness;
-    char resourceId[96];
-};
+#include "CloudMessages.h"
+#include "PairTransport.h"
 
 /**
  * Runs periodic Firebase I/O on the other ESP32 core.
@@ -46,7 +21,7 @@ struct CloudResult {
  * blocks. Keeping those calls here prevents a failed handshake from stopping
  * rendering and button scanning in Arduino loop().
  */
-class CloudWorker {
+class CloudWorker : public PairTransport {
 public:
     CloudWorker();
 
@@ -57,8 +32,12 @@ public:
     bool requestTelemetry(float temperature, float humidity, float pressure, float gas);
     bool requestConfigCheck();
     bool requestRevisionCheck();
-    bool requestPairEvent(const String& pairId, const String& screenId, const String& assetId);
-    bool requestAsset(const String& assetId);
+    bool requestPairSend(PairSend* send);
+    bool requestPairState();
+    bool requestPairFetch(PairMeta* meta);
+    bool requestPairAck(PairMeta* meta,bool displayed);
+    bool requestScreens(int version);
+    bool requestAsset(const String& assetId, const String& knownRevision = String());
     // Coalescing is deliberate here: a held button produces a burst of changes,
     // and only the value the panel ends on is worth a write. This records the
     // value and restarts a settle window rather than queueing immediately; the
@@ -93,9 +72,12 @@ private:
         float humidity;
         float pressure;
         float gas;
-        char pairId[96];
-        char screenId[96];
+        PairSend* pairSend;
+        PairMeta* pairMeta;
+        bool displayed;
+        int revision;
         char assetId[96];
+        char assetRevision[40];
     };
 
     FirebaseClientWrap* firebase;

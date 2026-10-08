@@ -17,7 +17,7 @@ void RenderClock::render(const String& format, const String& layout,
     time_t now = time(nullptr);
     if (now < 1000000000) {
         // Invalid time - show error pattern
-        matrix->fill(matrix->color(255, 0, 0)); // Red
+        matrix->fillStatus(matrix->color(255, 0, 0)); // Red
         matrix->show();
         return;
     }
@@ -28,7 +28,7 @@ void RenderClock::render(const String& format, const String& layout,
     // which silently discarded whatever render() had computed.
     struct tm tmBuf;
     if (localtime_r(&now, &tmBuf) == nullptr) {
-        matrix->fill(matrix->color(255, 0, 0)); // Red
+        matrix->fillStatus(matrix->color(255, 0, 0)); // Red
         matrix->show();
         return;
     }

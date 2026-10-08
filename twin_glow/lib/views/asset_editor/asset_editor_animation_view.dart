@@ -504,22 +504,9 @@ class _AssetEditorAnimationViewState extends State<AssetEditorAnimationView> {
     FirebaseRepository repo,
     String assetId,
   ) async {
-    try {
-      final currentUser = await repo.getCurrentUser();
-      if (currentUser == null) return null;
-
-      final userAssets = await repo.getUserAssets(currentUser.id);
-      for (final asset in userAssets) {
-        if (asset.id == assetId) return asset;
-      }
-      final defaultAssets = await repo.getDefaultAssets();
-      for (final asset in defaultAssets) {
-        if (asset.id == assetId) return asset;
-      }
-      return null;
-    } catch (e) {
-      return null;
-    }
+    final assets = await repo.getAssetsByIds([assetId]);
+    if (assets.isEmpty) throw StateError('Asset no longer exists');
+    return assets.single;
   }
 
   Future<void> _saveAndClose(BuildContext context) async {

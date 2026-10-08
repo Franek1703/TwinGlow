@@ -1092,3 +1092,295 @@
 [debug] [2026-09-01T14:23:05.773Z] > authorizing via signed-in user (fran.zarebski@gmail.com)
 [debug] [2026-09-01T14:23:05.774Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
 [debug] [2026-09-01T14:23:05.774Z] > authorizing via signed-in user (fran.zarebski@gmail.com)
+[debug] [2026-10-01T10:11:11.728Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-10-01T10:11:11.728Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-10-01T10:11:11.729Z] > authorizing via signed-in user (fran.zarebski@gmail.com)
+[debug] [2026-10-01T10:11:11.729Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-10-01T10:11:11.729Z] > authorizing via signed-in user (fran.zarebski@gmail.com)
+[debug] [2026-10-01T10:11:11.737Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.737Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.737Z] > refreshing access token with scopes: []
+[debug] [2026-10-01T10:11:11.737Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-10-01T10:11:11.737Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:11.738Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.738Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.738Z] > refreshing access token with scopes: []
+[debug] [2026-10-01T10:11:11.738Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-10-01T10:11:11.738Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:11.741Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.741Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.741Z] > refreshing access token with scopes: []
+[debug] [2026-10-01T10:11:11.741Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-10-01T10:11:11.741Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:11.742Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.742Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.742Z] > refreshing access token with scopes: []
+[debug] [2026-10-01T10:11:11.742Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-10-01T10:11:11.742Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:11.742Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.742Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.742Z] > refreshing access token with scopes: []
+[debug] [2026-10-01T10:11:11.742Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-10-01T10:11:11.742Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:11.743Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.743Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.743Z] > refreshing access token with scopes: []
+[debug] [2026-10-01T10:11:11.743Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-10-01T10:11:11.743Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:11.743Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.743Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.743Z] > refreshing access token with scopes: []
+[debug] [2026-10-01T10:11:11.743Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-10-01T10:11:11.743Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:11.744Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.744Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.744Z] > refreshing access token with scopes: []
+[debug] [2026-10-01T10:11:11.744Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-10-01T10:11:11.744Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:11.744Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-10-01T10:11:11.744Z] > authorizing via signed-in user (fran.zarebski@gmail.com)
+[debug] [2026-10-01T10:11:11.744Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.744Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.744Z] > refreshing access token with scopes: []
+[debug] [2026-10-01T10:11:11.744Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-10-01T10:11:11.744Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:11.744Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.744Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.744Z] > refreshing access token with scopes: []
+[debug] [2026-10-01T10:11:11.745Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-10-01T10:11:11.745Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:11.745Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.745Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.745Z] > refreshing access token with scopes: []
+[debug] [2026-10-01T10:11:11.745Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-10-01T10:11:11.745Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:11.745Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.745Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.745Z] > refreshing access token with scopes: []
+[debug] [2026-10-01T10:11:11.745Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-10-01T10:11:11.745Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:11.729Z] > authorizing via signed-in user (fran.zarebski@gmail.com)
+[debug] [2026-10-01T10:11:11.729Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-10-01T10:11:11.729Z] > authorizing via signed-in user (fran.zarebski@gmail.com)
+[debug] [2026-10-01T10:11:11.737Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.737Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.737Z] > refreshing access token with scopes: []
+[debug] [2026-10-01T10:11:11.738Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-10-01T10:11:11.738Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:11.739Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.739Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.739Z] > refreshing access token with scopes: []
+[debug] [2026-10-01T10:11:11.739Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-10-01T10:11:11.739Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:11.742Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.742Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.742Z] > refreshing access token with scopes: []
+[debug] [2026-10-01T10:11:11.742Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-10-01T10:11:11.742Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:11.742Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.742Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.742Z] > refreshing access token with scopes: []
+[debug] [2026-10-01T10:11:11.742Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-10-01T10:11:11.742Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:11.743Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.743Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.743Z] > refreshing access token with scopes: []
+[debug] [2026-10-01T10:11:11.743Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-10-01T10:11:11.743Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:11.743Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.743Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.743Z] > refreshing access token with scopes: []
+[debug] [2026-10-01T10:11:11.743Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-10-01T10:11:11.743Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:11.744Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.744Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.744Z] > refreshing access token with scopes: []
+[debug] [2026-10-01T10:11:11.744Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-10-01T10:11:11.744Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:11.744Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.744Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.744Z] > refreshing access token with scopes: []
+[debug] [2026-10-01T10:11:11.744Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-10-01T10:11:11.744Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:11.745Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-10-01T10:11:11.745Z] > authorizing via signed-in user (fran.zarebski@gmail.com)
+[debug] [2026-10-01T10:11:11.745Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.745Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.745Z] > refreshing access token with scopes: []
+[debug] [2026-10-01T10:11:11.745Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-10-01T10:11:11.745Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:11.745Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.745Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.745Z] > refreshing access token with scopes: []
+[debug] [2026-10-01T10:11:11.745Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-10-01T10:11:11.745Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:11.746Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.746Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.746Z] > refreshing access token with scopes: []
+[debug] [2026-10-01T10:11:11.746Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-10-01T10:11:11.746Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:11.746Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.746Z] Checked if tokens are valid: false, expires at: 1788288873880
+[debug] [2026-10-01T10:11:11.746Z] > refreshing access token with scopes: []
+[debug] [2026-10-01T10:11:11.746Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-10-01T10:11:11.746Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:11.950Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-10-01T10:11:11.954Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-10-01T10:11:11.951Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:11.989Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/cloudfunctions.googleapis.com [none]
+[debug] [2026-10-01T10:11:11.989Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/cloudfunctions.googleapis.com x-goog-quota-user=projects/twinglow-bab2e
+[debug] [2026-10-01T10:11:11.954Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:11.993Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/cloudfunctions.googleapis.com [none]
+[debug] [2026-10-01T10:11:11.993Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/cloudfunctions.googleapis.com x-goog-quota-user=projects/twinglow-bab2e
+[debug] [2026-10-01T10:11:11.991Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-10-01T10:11:11.991Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:12.004Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseio.com [none]
+[debug] [2026-10-01T10:11:12.004Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseio.com x-goog-quota-user=projects/twinglow-bab2e
+[debug] [2026-10-01T10:11:11.995Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-10-01T10:11:11.995Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:12.008Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebasedataconnect.googleapis.com [none]
+[debug] [2026-10-01T10:11:12.008Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/twinglow-bab2e
+[debug] [2026-10-01T10:11:12.009Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-10-01T10:11:12.009Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:12.024Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebasedataconnect.googleapis.com [none]
+[debug] [2026-10-01T10:11:12.024Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/twinglow-bab2e
+[debug] [2026-10-01T10:11:12.006Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-10-01T10:11:12.006Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:12.019Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebasedataconnect.googleapis.com [none]
+[debug] [2026-10-01T10:11:12.019Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/twinglow-bab2e
+[debug] [2026-10-01T10:11:12.020Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-10-01T10:11:12.020Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:12.034Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/cloudfunctions.googleapis.com [none]
+[debug] [2026-10-01T10:11:12.034Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/cloudfunctions.googleapis.com x-goog-quota-user=projects/twinglow-bab2e
+[debug] [2026-10-01T10:11:12.025Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-10-01T10:11:12.025Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:12.038Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseio.com [none]
+[debug] [2026-10-01T10:11:12.038Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseio.com x-goog-quota-user=projects/twinglow-bab2e
+[debug] [2026-10-01T10:11:12.035Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-10-01T10:11:12.035Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:12.049Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseapphosting.googleapis.com [none]
+[debug] [2026-10-01T10:11:12.049Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/twinglow-bab2e
+[debug] [2026-10-01T10:11:12.038Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-10-01T10:11:12.038Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:12.053Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebasedataconnect.googleapis.com [none]
+[debug] [2026-10-01T10:11:12.053Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/twinglow-bab2e
+[debug] [2026-10-01T10:11:12.049Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-10-01T10:11:12.049Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:12.064Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseapphosting.googleapis.com [none]
+[debug] [2026-10-01T10:11:12.065Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/twinglow-bab2e
+[debug] [2026-10-01T10:11:12.054Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-10-01T10:11:12.054Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:12.068Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/cloudfunctions.googleapis.com [none]
+[debug] [2026-10-01T10:11:12.068Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/cloudfunctions.googleapis.com x-goog-quota-user=projects/twinglow-bab2e
+[debug] [2026-10-01T10:11:12.066Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-10-01T10:11:12.066Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:12.080Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/cloudfunctions.googleapis.com [none]
+[debug] [2026-10-01T10:11:12.080Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/cloudfunctions.googleapis.com x-goog-quota-user=projects/twinglow-bab2e
+[debug] [2026-10-01T10:11:12.069Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-10-01T10:11:12.069Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:12.083Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseapphosting.googleapis.com [none]
+[debug] [2026-10-01T10:11:12.083Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/twinglow-bab2e
+[debug] [2026-10-01T10:11:12.080Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-10-01T10:11:12.080Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:12.096Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseio.com [none]
+[debug] [2026-10-01T10:11:12.096Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseio.com x-goog-quota-user=projects/twinglow-bab2e
+[debug] [2026-10-01T10:11:12.096Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-10-01T10:11:12.096Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:12.111Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebasedataconnect.googleapis.com [none]
+[debug] [2026-10-01T10:11:12.111Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/twinglow-bab2e
+[debug] [2026-10-01T10:11:12.115Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-10-01T10:11:12.084Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-10-01T10:11:12.084Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:12.099Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseapphosting.googleapis.com [none]
+[debug] [2026-10-01T10:11:12.099Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/twinglow-bab2e
+[debug] [2026-10-01T10:11:12.100Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-10-01T10:11:12.100Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:12.114Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/cloudfunctions.googleapis.com [none]
+[debug] [2026-10-01T10:11:12.114Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/cloudfunctions.googleapis.com x-goog-quota-user=projects/twinglow-bab2e
+[debug] [2026-10-01T10:11:12.115Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:12.126Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseio.com [none]
+[debug] [2026-10-01T10:11:12.126Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseio.com x-goog-quota-user=projects/twinglow-bab2e
+[debug] [2026-10-01T10:11:12.118Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-10-01T10:11:12.118Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:12.130Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseapphosting.googleapis.com [none]
+[debug] [2026-10-01T10:11:12.130Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/twinglow-bab2e
+[debug] [2026-10-01T10:11:12.131Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-10-01T10:11:12.131Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:12.145Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseio.com [none]
+[debug] [2026-10-01T10:11:12.145Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseio.com x-goog-quota-user=projects/twinglow-bab2e
+[debug] [2026-10-01T10:11:12.127Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-10-01T10:11:12.127Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:12.141Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseapphosting.googleapis.com [none]
+[debug] [2026-10-01T10:11:12.141Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseapphosting.googleapis.com x-goog-quota-user=projects/twinglow-bab2e
+[debug] [2026-10-01T10:11:12.141Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-10-01T10:11:12.141Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:12.155Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebasedataconnect.googleapis.com [none]
+[debug] [2026-10-01T10:11:12.155Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebasedataconnect.googleapis.com x-goog-quota-user=projects/twinglow-bab2e
+[debug] [2026-10-01T10:11:12.146Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-10-01T10:11:12.146Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-10-01T10:11:12.158Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseio.com [none]
+[debug] [2026-10-01T10:11:12.158Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseio.com x-goog-quota-user=projects/twinglow-bab2e
+[debug] [2026-10-01T10:11:12.946Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseio.com 403
+[debug] [2026-10-01T10:11:12.946Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseio.com [omitted]
+[debug] [2026-10-01T10:11:12.994Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseio.com 403
+[debug] [2026-10-01T10:11:12.994Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseio.com [omitted]
+[debug] [2026-10-01T10:11:13.012Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseio.com 403
+[debug] [2026-10-01T10:11:13.012Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseio.com [omitted]
+[debug] [2026-10-01T10:11:13.012Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseio.com 403
+[debug] [2026-10-01T10:11:13.012Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseio.com [omitted]
+[debug] [2026-10-01T10:11:13.029Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseapphosting.googleapis.com 200
+[debug] [2026-10-01T10:11:13.029Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2026-10-01T10:11:13.029Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/cloudfunctions.googleapis.com 200
+[debug] [2026-10-01T10:11:13.029Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/cloudfunctions.googleapis.com [omitted]
+[debug] [2026-10-01T10:11:13.029Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebasedataconnect.googleapis.com 200
+[debug] [2026-10-01T10:11:13.029Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2026-10-01T10:11:13.029Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseapphosting.googleapis.com 200
+[debug] [2026-10-01T10:11:13.030Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/cloudfunctions.googleapis.com 200
+[debug] [2026-10-01T10:11:13.030Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/cloudfunctions.googleapis.com [omitted]
+[debug] [2026-10-01T10:11:13.029Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2026-10-01T10:11:13.031Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseapphosting.googleapis.com 200
+[debug] [2026-10-01T10:11:13.031Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2026-10-01T10:11:13.031Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/cloudfunctions.googleapis.com 200
+[debug] [2026-10-01T10:11:13.031Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/cloudfunctions.googleapis.com [omitted]
+[debug] [2026-10-01T10:11:13.033Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseapphosting.googleapis.com 200
+[debug] [2026-10-01T10:11:13.034Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2026-10-01T10:11:13.040Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebasedataconnect.googleapis.com 200
+[debug] [2026-10-01T10:11:13.040Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2026-10-01T10:11:13.062Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-10-01T10:11:13.062Z] > authorizing via signed-in user (fran.zarebski@gmail.com)
+[debug] [2026-10-01T10:11:13.063Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-10-01T10:11:13.063Z] > authorizing via signed-in user (fran.zarebski@gmail.com)
+[debug] [2026-10-01T10:11:13.732Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseio.com 403
+[debug] [2026-10-01T10:11:13.732Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseio.com [omitted]
+[debug] [2026-10-01T10:11:13.769Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseio.com 403
+[debug] [2026-10-01T10:11:13.769Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseio.com [omitted]
+[debug] [2026-10-01T10:11:13.847Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/cloudfunctions.googleapis.com 200
+[debug] [2026-10-01T10:11:13.847Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/cloudfunctions.googleapis.com [omitted]
+[debug] [2026-10-01T10:11:13.852Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/cloudfunctions.googleapis.com 200
+[debug] [2026-10-01T10:11:13.852Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/cloudfunctions.googleapis.com [omitted]
+[debug] [2026-10-01T10:11:13.852Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebasedataconnect.googleapis.com 200
+[debug] [2026-10-01T10:11:13.852Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2026-10-01T10:11:13.853Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebasedataconnect.googleapis.com 200
+[debug] [2026-10-01T10:11:13.853Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2026-10-01T10:11:13.861Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebasedataconnect.googleapis.com 200
+[debug] [2026-10-01T10:11:13.861Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebasedataconnect.googleapis.com [omitted]
+[debug] [2026-10-01T10:11:13.871Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseapphosting.googleapis.com 200
+[debug] [2026-10-01T10:11:13.871Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2026-10-01T10:11:13.887Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-10-01T10:11:13.887Z] > authorizing via signed-in user (fran.zarebski@gmail.com)
+[debug] [2026-10-01T10:11:13.887Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-10-01T10:11:13.887Z] > authorizing via signed-in user (fran.zarebski@gmail.com)
+[debug] [2026-10-01T10:11:13.890Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/cloudfunctions.googleapis.com 200
+[debug] [2026-10-01T10:11:13.890Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/cloudfunctions.googleapis.com [omitted]
+[debug] [2026-10-01T10:11:13.984Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseapphosting.googleapis.com 200
+[debug] [2026-10-01T10:11:13.984Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebaseapphosting.googleapis.com [omitted]
+[debug] [2026-10-01T10:11:13.985Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-10-01T10:11:13.985Z] > authorizing via signed-in user (fran.zarebski@gmail.com)
+[debug] [2026-10-01T10:11:13.986Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-10-01T10:11:13.986Z] > authorizing via signed-in user (fran.zarebski@gmail.com)
+[debug] [2026-10-01T10:11:13.987Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-10-01T10:11:13.987Z] > authorizing via signed-in user (fran.zarebski@gmail.com)
+[debug] [2026-10-01T10:11:13.988Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-10-01T10:11:13.988Z] > authorizing via signed-in user (fran.zarebski@gmail.com)
+[debug] [2026-10-01T10:11:13.989Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebasedataconnect.googleapis.com 200
+[debug] [2026-10-01T10:11:13.990Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/twinglow-bab2e/services/firebasedataconnect.googleapis.com [omitted]

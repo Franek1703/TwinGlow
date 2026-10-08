@@ -3,17 +3,37 @@
 ScreenPlaylist::ScreenPlaylist() : currentIndex(0), screenStartMs(0) {
 }
 
-void ScreenPlaylist::setScreens(const std::vector<ScreenConfig>& newScreens) {
-    // Screens disabled in the app are dropped here rather than skipped during
-    // rotation, so the playlist only ever holds screens that should be shown.
-    screens.clear();
-    for (size_t i = 0; i < newScreens.size(); i++) {
-        if (newScreens[i].enabled) {
-            screens.push_back(newScreens[i]);
-        }
+void ScreenPlaylist::retainAuthorizedSharedScreens(const std::vector<ScreenConfig>& next) {
+    std::vector<ScreenConfig> allowed;
+    for(const auto& screen:screens) {
+        bool keep=screen.sharedScreenId.isEmpty();
+        for(const auto& candidate:next)if(candidate.sharedScreenId==screen.sharedScreenId && !screen.sharedScreenId.isEmpty())keep=true;
+        if(keep)allowed.push_back(screen);
     }
-    currentIndex = 0;
-    screenStartMs = millis();
+    if(allowed.size()!=screens.size())setScreens(allowed);
+}
+
+void ScreenPlaylist::removeSharedScreens() {
+    std::vector<ScreenConfig> local;
+    for(const auto& screen:screens)if(screen.sharedScreenId.isEmpty())local.push_back(screen);
+    if(local.size()!=screens.size())setScreens(local);
+}
+
+void ScreenPlaylist::setScreens(const std::vector<ScreenConfig>& newScreens) {
+    String selectedId=getCurrentScreen()?getCurrentScreen()->id:String();
+    std::vector<ScreenConfig> nextScreens;
+    for(auto screen:newScreens){
+        if(!screen.enabled)continue;
+        for(const auto& old:screens)if(old.id==screen.id){
+            String oldAsset=old.assetId;
+            if(old.currentAssetIndex>=0 && (size_t)old.currentAssetIndex<old.availableAssetIds.size())oldAsset=old.availableAssetIds[old.currentAssetIndex];
+            for(size_t a=0;a<screen.availableAssetIds.size();++a)if(screen.availableAssetIds[a]==oldAsset)screen.currentAssetIndex=a;
+        }
+        nextScreens.push_back(std::move(screen));
+    }
+    screens=std::move(nextScreens);currentIndex=0;
+    for(size_t i=0;i<screens.size();++i)if(screens[i].id==selectedId){currentIndex=i;break;}
+    screenStartMs=millis();
 
     Serial.print(F("[Playlist] Loaded "));
     Serial.print(screens.size());

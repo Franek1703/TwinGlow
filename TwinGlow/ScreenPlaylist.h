@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 #include <vector>
-#include "FirestoreRepo.h"
+#include "FirestoreModels.h"
 
 /**
  * Screen playlist manager
@@ -14,6 +14,8 @@ public:
     ScreenPlaylist();
     
     // Load screens
+    void removeSharedScreens();
+    void retainAuthorizedSharedScreens(const std::vector<ScreenConfig>& next);
     void setScreens(const std::vector<ScreenConfig>& screens);
     
     // Navigation

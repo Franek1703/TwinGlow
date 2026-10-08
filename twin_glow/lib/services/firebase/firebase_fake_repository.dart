@@ -5,9 +5,19 @@ import '../../core/models/screen_asset_references.dart';
 import '../../core/models/asset_model.dart';
 import '../../core/models/user_model.dart';
 import '../../core/models/pairing_model.dart';
+import '../../core/models/shared_screen_model.dart';
 
 /// Fake implementation of FirebaseRepository for development
 class FirebaseFakeRepository implements FirebaseRepository {
+  @override
+  Stream<void> watchScreenChanges(String deviceId) => const Stream.empty();
+  @override
+  Future<void> syncSharedScreens(String userId) async {}
+  @override
+  Stream<List<SharedScreenModel>> watchSharedScreens(
+    String pairId,
+    String ownerUid,
+  ) => Stream.value(const []);
   // Mock data storage
   UserModel? _currentUser;
   final List<DeviceModel> _devices = [];
@@ -279,7 +289,10 @@ class FirebaseFakeRepository implements FirebaseRepository {
 
   @override
   Future<void> updateScreen(
-      String deviceId, String screenId, ScreenModel screen) async {
+    String deviceId,
+    String screenId,
+    ScreenModel screen,
+  ) async {
     await Future.delayed(const Duration(milliseconds: 300));
     final screens = _screens[deviceId];
     if (screens != null) {
@@ -332,9 +345,10 @@ class FirebaseFakeRepository implements FirebaseRepository {
   Future<List<AssetModel>> getAssetsByIds(List<String> assetIds) async {
     await Future.delayed(const Duration(milliseconds: 300));
     final ids = assetIds.toSet();
-    return [..._userAssets, ..._defaultAssets]
-        .where((asset) => ids.contains(asset.id))
-        .toList();
+    return [
+      ..._userAssets,
+      ..._defaultAssets,
+    ].where((asset) => ids.contains(asset.id)).toList();
   }
 
   @override
@@ -398,6 +412,28 @@ class FirebaseFakeRepository implements FirebaseRepository {
     }
   }
 
+  @override
+  Stream<PairingModel> watchPairing(String userId) =>
+      Stream.value(_pairing ?? PairingModel());
+  @override
+  Stream<List<PairingInvite>> watchPairingInvites(
+    String userId, {
+    required bool incoming,
+  }) => Stream.value([]);
+  @override
+  Future<List<DeviceModel>> getPairableDevices(String userId) =>
+      getDevices(userId);
+  @override
+  Stream<Map<String, dynamic>> watchPairingAcknowledgment(
+    String pairId,
+    String receiverDeviceId,
+  ) => Stream.value({});
+  @override
+  Future<void> resolvePairingInvite(
+    String userId,
+    String inviteId,
+    String status,
+  ) async {}
   // Pairing
   @override
   Future<PairingModel> getPairing(String userId) async {
@@ -406,13 +442,21 @@ class FirebaseFakeRepository implements FirebaseRepository {
   }
 
   @override
-  Future<void> sendPairingInvite(String userId, String targetEmail) async {
+  Future<void> sendPairingInvite(
+    String userId,
+    String targetEmail,
+    String deviceId,
+  ) async {
     await Future.delayed(const Duration(milliseconds: 500));
     // Mock implementation
   }
 
   @override
-  Future<void> acceptPairingInvite(String userId, String inviteId) async {
+  Future<void> acceptPairingInvite(
+    String userId,
+    String inviteId,
+    String deviceId,
+  ) async {
     await Future.delayed(const Duration(milliseconds: 500));
     _pairing = PairingModel(
       pairedUserId: 'user2',
@@ -449,7 +493,11 @@ class FirebaseFakeRepository implements FirebaseRepository {
   }
 
   @override
-  Future<void> sendCommand(String deviceId, String type, Map<String, dynamic> payload) async {
+  Future<void> sendCommand(
+    String deviceId,
+    String type,
+    Map<String, dynamic> payload,
+  ) async {
     // Mock command sending
     await Future.delayed(const Duration(milliseconds: 100));
   }

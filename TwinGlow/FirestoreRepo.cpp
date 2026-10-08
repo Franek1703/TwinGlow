@@ -1,6 +1,8 @@
 #include "FirestoreRepo.h"
+#include "FirestorePagination.h"
+#include "SharedScreenContract.h"
 #include "FirebaseClientWrap.h"
-#include "Config.h"
+#include "PairingConfig.h"
 #include <ArduinoJson.h>
 
 #if !defined(ENABLE_FIRESTORE)
@@ -11,7 +13,6 @@ FirestoreRepo::FirestoreRepo(FirebaseClientWrap* wrap, const String& projId, con
 String FirestoreRepo::getDevicePath() const { return ""; }
 String FirestoreRepo::getScreensPath() const { return ""; }
 String FirestoreRepo::getAssetPath(const String&) const { return ""; }
-String FirestoreRepo::getSharedScreenPath(const String&, const String&) const { return ""; }
 String FirestoreRepo::getUserDevicePath(const String&) const { return ""; }
 bool FirestoreRepo::getDeviceDoc(DeviceDoc& out) { out = DeviceDoc(); return false; }
 bool FirestoreRepo::createDeviceDoc(const String&) { return false; }
@@ -19,8 +20,9 @@ bool FirestoreRepo::updateDeviceCapability(bool) { return false; }
 bool FirestoreRepo::updateBrightness(uint8_t) { return false; }
 bool FirestoreRepo::claimDevice(const String&) { return false; }
 bool FirestoreRepo::getScreens(std::vector<ScreenConfig>&) { return false; }
-bool FirestoreRepo::getSharedScreen(const String&, const String&, SharedScreenConfig&) { return false; }
-bool FirestoreRepo::getAsset(const String&, AssetData&) { return false; }
+bool FirestoreRepo::readSharingState(const String&,DeviceDoc&) { return false; }
+void FirestoreRepo::sharingSnapshot(DeviceDoc&) const {}
+bool FirestoreRepo::getAsset(const String&, AssetData&, const String&) { return false; }
 bool FirestoreRepo::checkConfigVersion(DeviceDoc& out) { return getDeviceDoc(out); }
 #else
 
@@ -41,10 +43,6 @@ String FirestoreRepo::getScreensPath() const {
 
 String FirestoreRepo::getAssetPath(const String& assetId) const {
     return "assets/" + assetId;
-}
-
-String FirestoreRepo::getSharedScreenPath(const String& pairId, const String& sharedScreenId) const {
-    return "pairs/" + pairId + "/sharedScreens/" + sharedScreenId;
 }
 
 String FirestoreRepo::getUserDevicePath(const String& uid) const {
@@ -290,6 +288,35 @@ bool FirestoreRepo::claimDevice(const String& uid) {
     return true;
 }
 
+void FirestoreRepo::sharingSnapshot(DeviceDoc& out) const {
+    out.sharingPairId=sharingState.sharingPairId;out.sharingVersion=sharingState.sharingVersion;out.sharingActive=sharingState.sharingActive;
+}
+bool FirestoreRepo::readSharingState(const String& pairId, DeviceDoc& out) {
+    DeviceDoc next;
+    next.sharingPairId=pairId;
+    if(!pairId.isEmpty()) {
+        auto* documents=static_cast<FirebaseFirestoreType*>(wrap->getFirestore());
+        auto* client=wrap->getAsyncClient();if(!documents||!client)return false;
+        Firestore::Parent parent(projectId, "");
+        GetDocumentOptions options(DocumentMask("schemaVersion,state,contentVersion,deviceA,deviceB"));
+        String raw=documents->get(*client,parent,"sharingPairs/"+pairId,options);
+        int code=client->lastError().code();
+        if(code!=404) {
+            if(code!=0||raw.isEmpty())return false;
+            JsonDocument doc;if(deserializeJson(doc,raw)||doc.overflowed())return false;
+            JsonObject f=doc["fields"].as<JsonObject>();
+            if(f["schemaVersion"]["integerValue"].as<int>()!=1)return false;
+            String a=f["deviceA"]["stringValue"].as<String>(),b=f["deviceB"]["stringValue"].as<String>();
+            if(deviceId!=a&&deviceId!=b)return false;
+            String state=f["state"]["stringValue"].as<String>();
+            if(state!="ACTIVE"&&state!="PENDING"&&state!="CLOSING"&&state!="REVOKED")return false;
+            if(!firestoreFieldToInt(f["contentVersion"].as<JsonObject>(),next.sharingVersion)||next.sharingVersion<0)return false;
+            next.sharingActive=state=="ACTIVE";
+        }
+    }
+    sharingState=next;sharingSnapshot(out);return true;
+}
+
 bool FirestoreRepo::getScreens(std::vector<ScreenConfig>& screens) {
     if (wrap == nullptr) return false;
     FirebaseFirestoreType* documents = static_cast<FirebaseFirestoreType*>(wrap->getFirestore());
@@ -297,45 +324,19 @@ bool FirestoreRepo::getScreens(std::vector<ScreenConfig>& screens) {
     if (documents == nullptr || aClient == nullptr) return false;
 
     Firestore::Parent parent(projectId, "");
+    std::vector<ScreenConfig> collected;
+    String pageToken;
+    do {
     ListDocumentsOptions listOpts;
-    String listPath = getScreensPath();
-    String response = documents->list(*aClient, parent, listPath, listOpts);
-    if (aClient->lastError().code() != 0) {
-        Serial.print(F("[Firestore] getScreens list error: "));
-        Serial.println(aClient->lastError().code());
-        return false;
-    }
-
+    listOpts.pageSize(4).mask(DocumentMask("sharedScreenId,type,order,enabled,isShared,durationMs,assetId,defaultAssetId,availableAssetIds,allowManualSwitch,config"));
+    if (!pageToken.isEmpty()) listOpts.pageToken(pageToken);
+    String response = documents->list(*aClient, parent, getScreensPath(), listOpts);
+    if (aClient->lastError().code() != 0 || response.isEmpty()) return false;
     JsonDocument doc;
-    DeserializationError parseError = deserializeJson(doc, response);
-    if (parseError) {
-        // The error name separates two failures that looked identical from the
-        // outside: NoMemory is the document not fitting the heap a reload
-        // leaves, IncompleteInput is the response itself arriving truncated.
-        // Both used to print the same "JSON parse error" and neither could be
-        // told apart without a rebuild.
-        Serial.print(F("[Firestore] getScreens: JSON parse error: "));
-        Serial.print(parseError.c_str());
-        Serial.print(F(" responseLen="));
-        Serial.print(response.length());
-        Serial.print(F(" freeHeap="));
-        Serial.print(ESP.getFreeHeap());
-        Serial.print(F(" largestBlock="));
-        Serial.println(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
-        return false;
-    }
-    if (doc["documents"].isNull()) {
-        screens.clear();
-        Serial.println(F("[Firestore] getScreens: no 'documents' in response"));
-        return true;
-    }
-
-    screens.clear();
+    if (deserializeJson(doc,response) || doc.overflowed()) return false;
+    if (!doc.is<JsonObject>() || (!doc["documents"].isNull() && !doc["documents"].is<JsonArray>())) return false;
+    if (!readFirestorePageToken(doc["nextPageToken"], pageToken)) return false;
     JsonArray arr = doc["documents"].as<JsonArray>();
-    Serial.print(F("[Firestore] getScreens: path="));
-    Serial.print(listPath);
-    Serial.print(F(" rawDocs="));
-    Serial.println(arr.size());
     for (JsonVariant docVar : arr) {
         JsonObject docObj = docVar.as<JsonObject>();
         ScreenConfig sc;
@@ -344,15 +345,13 @@ bool FirestoreRepo::getScreens(std::vector<ScreenConfig>& screens) {
         sc.order = 0;
         sc.enabled = true;
         sc.durationMs = SCREEN_DEFAULT_DURATION_MS;
-        sc.pairId = "";
-        sc.sharedScreenId = "";
         sc.assetId = "";
         sc.defaultAssetId = "";
         sc.currentAssetIndex = 0;
         sc.availableAssetIds.clear();
         sc.allowManualSwitch = true;
         sc.configJson = "";
-        if (docObj["name"].isNull() || docObj["fields"].isNull()) continue;
+        if (!docObj["name"].is<const char*>() || !docObj["fields"].is<JsonObject>()) return false;
         String name = docObj["name"].as<String>();
         int lastSlash = name.lastIndexOf('/');
         if (lastSlash >= 0) sc.id = name.substring(lastSlash + 1);
@@ -366,13 +365,12 @@ bool FirestoreRepo::getScreens(std::vector<ScreenConfig>& screens) {
         if (!fields["enabled"].isNull()) firestoreFieldToBool(fields["enabled"].as<JsonObject>(), sc.enabled);
         if (!fields["durationMs"].isNull()) {
             int d = 0;
-            if (firestoreFieldToInt(fields["durationMs"].as<JsonObject>(), d) && d > 0) {
+            if (firestoreFieldToInt(fields["durationMs"].as<JsonObject>(), d)) {
                 // Clamp up, so a too-small value cannot spin the playlist.
-                sc.durationMs = (d < SCREEN_MIN_DURATION_MS) ? SCREEN_MIN_DURATION_MS : d;
+                sc.durationMs = d <= 0 ? 0 : ((d < SCREEN_MIN_DURATION_MS) ? SCREEN_MIN_DURATION_MS : d);
             }
         }
-        if (!fields["pairId"].isNull()) firestoreFieldToString(fields["pairId"].as<JsonObject>(), sc.pairId);
-        if (!fields["sharedScreenId"].isNull()) firestoreFieldToString(fields["sharedScreenId"].as<JsonObject>(), sc.sharedScreenId);
+        if (!fields["isShared"].isNull()) firestoreFieldToBool(fields["isShared"].as<JsonObject>(),sc.isShared);
         if (!fields["assetId"].isNull()) firestoreFieldToString(fields["assetId"].as<JsonObject>(), sc.assetId);
         // Asset pool lives on the screen document, so IMAGE/ANIMATION screens
         // can cycle several assets without depending on a pair.
@@ -410,8 +408,23 @@ bool FirestoreRepo::getScreens(std::vector<ScreenConfig>& screens) {
                 serializeJson(configDoc, sc.configJson);
             }
         }
-        screens.push_back(sc);
+        if (!fields["sharedScreenId"].isNull()) {
+            sc.sharedScreenId=fields["sharedScreenId"]["stringValue"].as<String>();
+            if(sc.sharedScreenId.isEmpty())return false;
+            if(!sharingState.sharingActive)continue;
+            GetDocumentOptions options(DocumentMask("schemaVersion,state,pairId,type,availableAssetIds,defaultAssetId,allowManualSwitch"));
+            String raw=documents->get(*aClient,parent,"sharedScreens/"+sc.sharedScreenId,options);
+            if(aClient->lastError().code()!=0||raw.isEmpty())return false;
+            JsonDocument sharedDoc;if(deserializeJson(sharedDoc,raw)||sharedDoc.overflowed())return false;
+            JsonObjectConst sf=sharedDoc["fields"].as<JsonObjectConst>();
+            if(sf["state"]["stringValue"].as<String>()=="REVOKED")continue;
+            if(sf["state"]["stringValue"].as<String>()!="ACTIVE"||sf["pairId"]["stringValue"].as<String>()!=sharingState.sharingPairId||!resolveSharedFields(sf,sc))return false;
+        }
+        if (sc.id.isEmpty() || sc.type.isEmpty()) return false;
+        collected.push_back(std::move(sc));
     }
+    } while (!pageToken.isEmpty());
+    screens=std::move(collected);
     Serial.print(F("[Firestore] getScreens: parsed "));
     Serial.print(screens.size());
     Serial.println(F(" screens"));
@@ -422,45 +435,6 @@ bool FirestoreRepo::getScreens(std::vector<ScreenConfig>& screens) {
                 ScreenConfig tmp = screens[i];
                 screens[i] = screens[j];
                 screens[j] = tmp;
-            }
-        }
-    }
-    return true;
-}
-
-bool FirestoreRepo::getSharedScreen(const String& pairId, const String& sharedScreenId, SharedScreenConfig& config) {
-    if (wrap == nullptr) return false;
-    FirebaseFirestoreType* documents = static_cast<FirebaseFirestoreType*>(wrap->getFirestore());
-    AsyncClientClass* aClient = wrap->getAsyncClient();
-    if (documents == nullptr || aClient == nullptr) return false;
-
-    config.type = "";
-    config.defaultAssetId = "";
-    config.availableAssetIds.clear();
-    config.allowManualSwitch = false;
-    config.loop = false;
-
-    Firestore::Parent parent(projectId, "");
-    DocumentMask mask;
-    GetDocumentOptions options(mask);
-    String path = getSharedScreenPath(pairId, sharedScreenId);
-    String response = documents->get(*aClient, parent, path, options);
-    if (aClient->lastError().code() != 0) return false;
-
-    JsonDocument doc;
-    if (deserializeJson(doc, response) != DeserializationError::Ok) return false;
-    if (doc["fields"].isNull()) return false;
-
-    JsonObject fields = doc["fields"].as<JsonObject>();
-    if (!fields["type"].isNull()) firestoreFieldToString(fields["type"].as<JsonObject>(), config.type);
-    if (!fields["defaultAssetId"].isNull()) firestoreFieldToString(fields["defaultAssetId"].as<JsonObject>(), config.defaultAssetId);
-    if (!fields["allowManualSwitch"].isNull()) firestoreFieldToBool(fields["allowManualSwitch"].as<JsonObject>(), config.allowManualSwitch);
-    if (!fields["loop"].isNull()) firestoreFieldToBool(fields["loop"].as<JsonObject>(), config.loop);
-    if (!fields["availableAssetIds"].isNull() && !fields["availableAssetIds"]["arrayValue"].isNull()) {
-        JsonArray arr = fields["availableAssetIds"]["arrayValue"]["values"].as<JsonArray>();
-        for (JsonObject v : arr) {
-            if (!v["stringValue"].isNull()) {
-                config.availableAssetIds.push_back(v["stringValue"].as<String>());
             }
         }
     }
@@ -520,345 +494,97 @@ static void appendFirestorePixelArray(JsonArray& out, JsonVariant firestoreArr) 
     }
 }
 
-bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset) {
+bool FirestoreRepo::getAsset(const String& assetId, AssetData& asset, const String& knownRevision) {
+    asset = AssetData();
     if (wrap == nullptr) return false;
-    FirebaseFirestoreType* documents = static_cast<FirebaseFirestoreType*>(wrap->getFirestore());
-    AsyncClientClass* aClient = wrap->getAsyncClient();
-    if (documents == nullptr || aClient == nullptr) {
-        Serial.println(F("[Firestore] getAsset: documents or aClient is null"));
-        return false;
-    }
-
-    asset.id = assetId;
-    asset.type = "";
-    asset.encoding = "";
-    asset.pixelsJson = "";
-    asset.basePixelsJson = "";
-    asset.framesJson = "";
-
+    auto* documents = static_cast<FirebaseFirestoreType*>(wrap->getFirestore());
+    auto* client = wrap->getAsyncClient();
+    if (!documents || !client) return false;
     Firestore::Parent parent(projectId, "");
-    // No DocumentMask, deliberately.
-    //
-    // FirebaseClient formats the whole request line into a buffer sized from a
-    // hardcoded 300 (RequestHandler.h: printTo(val[header], 300, "%s%s%s
-    // HTTP/1.1\r\n", ...)), so anything past ~331 characters is silently
-    // truncated by vsnprintf - taking the " HTTP/1.1\r\n" terminator with it.
-    // Google's frontend answers that malformed request line with an HTML 400,
-    // and the half-spoken connection then wedges the next synchronous get.
-    //
-    // The document path alone is ~81 characters, so a mask listing every field
-    // both encodings need came to ~388 and broke every asset fetch. Masking
-    // only saves the handful of metadata fields (name, ownerUid, tags, width,
-    // height, createdAt) - a few hundred bytes against a payload we size the
-    // JSON documents from anyway. Not worth reintroducing a length cliff that
-    // depends on how long an asset id happens to be.
-    //
-    // If you add a mask back, keep path + query + 11 under 331 characters.
-    GetDocumentOptions options;
     String path = getAssetPath(assetId);
-    Serial.print(F("[Firestore] getAsset: freeHeap="));
-    Serial.print(ESP.getFreeHeap());
-    Serial.print(F(" largestBlock="));
-    Serial.println(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
-    Serial.print(F("[Firestore] getAsset: querying path="));
-    Serial.print(path);
-    Serial.print(F(" projectId="));
-    Serial.println(projectId);
-    // Call get() - exact same pattern as getDeviceDoc which works
-    // Note: FirebaseClient get() is synchronous and blocks until response or timeout
-    String response = documents->get(*aClient, parent, path, options);
-
-    // A rejected request leaves the socket half-spoken: the next synchronous
-    // get on it blocks past its own read timeout and takes the whole device
-    // with it. Drop the connection so the following fetch starts clean.
-    if (aClient->lastError().code() != 0 && wrap != nullptr) {
-        Serial.print(F("[Firestore] getAsset: request failed (code="));
-        Serial.print(aClient->lastError().code());
-        Serial.println(F("), resetting transport"));
-        wrap->resetTransport();
-    }
-    
-    // Log response details immediately for debugging
-    Serial.print(F("[Firestore] getAsset response length: "));
-    Serial.println(response.length());
-    
-#if FIRESTORE_DEBUG_ASSETS
-    // Instrumentation from an asset-fetch hunt, off by default: the preview and
-    // the hex dump together are ~200 ms of blocking serial per call at 115200
-    // baud, which shifts the timing they exist to measure. An empty response is
-    // reported in full by the branch below either way.
-    if (response.length() > 0) {
-        Serial.print(F("[Firestore] getAsset raw response (first 1000 chars): "));
-        String preview = response.length() > 1000 ? response.substring(0, 1000) : response;
-        Serial.println(preview);
-        
-        // Also log hex dump of first 200 bytes to see exact data
-        Serial.print(F("[Firestore] getAsset hex dump (first 200 bytes): "));
-        int dumpLen = response.length() < 200 ? response.length() : 200;
-        for (int i = 0; i < dumpLen; i++) {
-            if (response[i] < 0x10) Serial.print('0');
-            Serial.print((unsigned char)response[i], HEX);
-            Serial.print(' ');
-            if ((i + 1) % 32 == 0) Serial.println();
+    auto read = [&](const char* mask) {
+        GetDocumentOptions options{DocumentMask(mask)};
+        String response = documents->get(*client, parent, path, options);
+        if (client->lastError().code() != 0) {
+            Serial.print(F("[Firestore] Asset request failed: ")); Serial.print(assetId);
+            Serial.print(F(" code=")); Serial.println(client->lastError().code());
+            wrap->resetTransport(); return String();
         }
-        Serial.println();
+        return response;
+    };
+    if (!knownRevision.isEmpty()) {
+        // updateTime is response metadata and remains present with a field mask.
+        String metadata = read("type");
+        JsonDocument doc;
+        if (metadata.isEmpty() || deserializeJson(doc, metadata.begin()) || doc.overflowed() ||
+            !doc["fields"].is<JsonObject>() || !doc["updateTime"].is<const char*>()) return false;
+        if (knownRevision == doc["updateTime"].as<const char*>()) {
+            asset.unchanged = true;
+            Serial.print(F("[Config] Asset unchanged: ")); Serial.println(assetId);
+            return true;
+        }
     }
-#endif
-    
-    // Check for async client errors first (like getDeviceDoc does)
-    int errorCode = aClient->lastError().code();
-    if (errorCode != 0) {
-        Serial.print(F("[Firestore] getAsset failed: id="));
-        Serial.print(assetId);
-        Serial.print(F(" path="));
-        Serial.print(path);
-        Serial.print(F(" errorCode="));
-        Serial.print(errorCode);
-        Serial.print(F(" errorMsg="));
-        Serial.println(aClient->lastError().message());
-        return false;
-    }
-    
-    // Check if response is empty - this shouldn't happen if document exists
-    if (response.length() == 0) {
-        Serial.print(F("[Firestore] getAsset empty response: id="));
-        Serial.print(assetId);
-        Serial.print(F(" path="));
-        Serial.print(path);
-        Serial.print(F(" (document may not exist or network timeout)"));
-        Serial.println();
-        // An empty body with errorCode 0 is the signature of the client failing
-        // to grow its payload String: without PSRAM it reallocs in 2KB steps
-        // with no reservation, so a large document needs a contiguous block
-        // that a TLS-fragmented heap cannot supply. Largest free block matters
-        // more than total free heap here.
-        Serial.print(F("[Firestore] Heap at failure: free="));
-        Serial.print(ESP.getFreeHeap());
-        Serial.print(F(" largestFreeBlock="));
-        Serial.println(ESP.getMaxAllocHeap());
-        Serial.print(F("[Firestore] Full path should be: projects/"));
-        Serial.print(projectId);
-        Serial.print(F("/databases/(default)/documents/"));
-        Serial.println(path);
-        Serial.print(F("[Firestore] Compare with working getDeviceDoc path: projects/"));
-        Serial.print(projectId);
-        Serial.print(F("/databases/(default)/documents/"));
-        Serial.println(getDevicePath());
-        
-        // Try to get more info from async client
-        Serial.print(F("[Firestore] AsyncClient status - code: "));
-        Serial.print(errorCode);
-        Serial.print(F(", message: "));
-        Serial.println(aClient->lastError().message());
-        
-        return false;
-    }
-    
-    // ArduinoJson 7 grows this as it parses. It used to reserve a fixed 16KB
-    // here and another for `flat` below - 32KB on every asset fetch, on top of
-    // the ~40KB mbedTLS holds for the TLS session, which on a plain ESP32 was
-    // enough to push a later allocation into failure. A failed String
-    // allocation shows up as a truncated request header, which Google's
-    // frontend rejects with an HTML 400 rather than a Firestore JSON error.
+    String response = read("type,encoding,pixels,pixelsPacked,basePixels,basePixelsPacked,frames,frameDeltasPacked,frameDurationsMs,frameCount,loop");
+    if (response.isEmpty()) return false;
     JsonDocument doc;
-    DeserializationError error = deserializeJson(doc, response);
-    if (error != DeserializationError::Ok) {
-        Serial.print(F("[Firestore] getAsset parse error: id="));
-        Serial.print(assetId);
-        Serial.print(F(" error="));
-        Serial.print(error.c_str());
-        Serial.print(F(" responseLen="));
-        Serial.println(response.length());
-        Serial.print(F("[Firestore] getAsset parse error - raw response start: "));
-        if (response.length() > 200) {
-            Serial.println(response.substring(0, 200));
-        } else {
-            Serial.println(response);
-        }
-        return false;
+    // Arduino String's mutable buffer enables zero-copy ArduinoJson parsing.
+    // It stays alive until all pixels and revision strings have been copied.
+    auto error = deserializeJson(doc, response.begin());
+    if (error || doc.overflowed() || !doc["fields"].is<JsonObject>() ||
+        !doc["updateTime"].is<const char*>()) {
+        Serial.print(F("[Firestore] Asset response invalid: ")); Serial.print(assetId);
+        Serial.print(F(" error=")); Serial.println(error.c_str()); return false;
     }
-    
-    // Log what keys are in the parsed JSON
-    Serial.print(F("[Firestore] getAsset parsed JSON keys: "));
-    JsonObject rootObj = doc.as<JsonObject>();
-    for (JsonPair kv : rootObj) {
-        Serial.print(kv.key().c_str());
-        Serial.print(' ');
-    }
-    Serial.println();
-    
-    // Check if document exists (Firestore returns error object if not found)
-    if (!doc["error"].isNull()) {
-        Serial.print(F("[Firestore] getAsset document not found: id="));
-        Serial.print(assetId);
-        Serial.print(F(" path="));
-        Serial.print(path);
-        Serial.print(F(" error="));
-        Serial.println(doc["error"].as<String>());
-        return false;
-    }
-    
-    // Check for 'fields' key (required for Firestore document)
-    if (doc["fields"].isNull()) {
-        Serial.print(F("[Firestore] getAsset response missing 'fields' key: id="));
-        Serial.print(assetId);
-        Serial.print(F(" available keys: "));
-        for (JsonPair kv : doc.as<JsonObject>()) {
-            Serial.print(kv.key().c_str());
-            Serial.print(' ');
-        }
-        Serial.println();
-        return false;
-    }
-    
-    // Get fields object
     JsonObject fields = doc["fields"].as<JsonObject>();
-
-    // `doc` copied everything it needs, so the raw response is dead weight from
-    // here on and `flat` is about to be allocated. Freeing it first keeps the
-    // peak to one document plus one, not two plus the response.
-    response = String();
-    
-    // Log what fields we found
-    Serial.print(F("[Firestore] getAsset found fields: "));
-    for (JsonPair kv : fields) {
-        Serial.print(kv.key().c_str());
-        Serial.print(' ');
-    }
-    Serial.println();
-    if (!fields["type"].isNull()) firestoreFieldToString(fields["type"].as<JsonObject>(), asset.type);
-    if (!fields["encoding"].isNull()) firestoreFieldToString(fields["encoding"].as<JsonObject>(), asset.encoding);
-
-    // The flattened form is strictly smaller than the Firestore-wrapped
-    // response it is built from.
-    JsonDocument flat;
-    flat["type"] = asset.type;
-    flat["encoding"] = asset.encoding;
-    if (!fields["pixelsPacked"].isNull()) {
-        // SPARSE_PACKED_V1 carries the whole image as one string, so it is
-        // copied straight across - no per-pixel rebuild needed.
-        String packed;
-        if (firestoreFieldToString(fields["pixelsPacked"].as<JsonObject>(), packed)) {
-            flat["pixelsPacked"] = packed;
-            Serial.print(F("[Firestore] Found 'pixelsPacked' field, chars="));
-            Serial.print(packed.length());
-            Serial.print(F(" pixels="));
-            Serial.println(packed.length() / 8);
-        } else {
-            Serial.println(F("[Firestore] 'pixelsPacked' present but not a string"));
-        }
-    }
-    if (!fields["pixels"].isNull()) {
-        Serial.println(F("[Firestore] Found 'pixels' field, parsing..."));
-        JsonArray pixels = flat["pixels"].to<JsonArray>();
-        appendFirestorePixelArray(pixels, fields["pixels"]);
-        Serial.print(F("[Firestore] Parsed "));
-        Serial.print(pixels.size());
-        Serial.println(F(" pixels"));
+    const char* encoding = fields["encoding"]["stringValue"].as<const char*>();
+    AssetCache parser;
+    bool valid = false;
+    if (encoding && (strcmp(encoding, "SPARSE_PACKED_V1") == 0 || strcmp(encoding, "DELTA_SPARSE_PACKED_V1") == 0)) {
+        valid = parser.parseFirestorePackedAsset(assetId, fields, asset.content);
     } else {
-        Serial.println(F("[Firestore] No 'pixels' field found"));
-    }
-    if (!fields["basePixels"].isNull()) {
-        JsonArray basePixels = flat["basePixels"].to<JsonArray>();
-        appendFirestorePixelArray(basePixels, fields["basePixels"]);
-    }
-    if (!fields["frames"].isNull()) {
-        JsonArray frames = flat["frames"].to<JsonArray>();
-        JsonArray firestoreFrames = fields["frames"]["arrayValue"]["values"].as<JsonArray>();
-        for (JsonVariant fv : firestoreFrames) {
-            JsonObject frameObj = frames.add<JsonObject>();
-            if (!fv["mapValue"].isNull() && !fv["mapValue"]["fields"].isNull()) {
-                JsonObject ffields = fv["mapValue"]["fields"].as<JsonObject>();
-                if (!ffields["delayMs"].isNull()) {
-                    int d; firestoreFieldToInt(ffields["delayMs"].as<JsonObject>(), d);
-                    frameObj["delayMs"] = d;
-                }
-                if (!ffields["pixels"].isNull()) {
-                    JsonArray px = frameObj["pixels"].to<JsonArray>();
-                    appendFirestorePixelArray(px, ffields["pixels"]);
-                }
-            }
-        }
-    }
-    if (!fields["loop"].isNull()) {
-        bool l; firestoreFieldToBool(fields["loop"].as<JsonObject>(), l);
-        flat["loop"] = l;
-    }
-    // DELTA_SPARSE_PACKED_V1: the first frame in full plus one packed
-    // transition per later frame, all as plain strings, so an animation costs
-    // the same shape of transfer as an image rather than a map per pixel.
-    if (!fields["basePixelsPacked"].isNull()) {
-        String packed;
-        if (firestoreFieldToString(fields["basePixelsPacked"].as<JsonObject>(), packed)) {
-            flat["basePixelsPacked"] = packed;
-            Serial.print(F("[Firestore] Found 'basePixelsPacked', chars="));
-            Serial.println(packed.length());
+        // Existing unpacked assets retain their compatibility decoder. Packed
+        // app-authored content takes the lower-memory path above.
+        JsonDocument flat;
+        flat["type"] = fields["type"]["stringValue"];
+        flat["encoding"] = fields["encoding"]["stringValue"];
+        if (!fields["pixels"].isNull()) {
+            Serial.println(F("[Firestore] Found 'pixels' field, parsing..."));
+            JsonArray pixels = flat["pixels"].to<JsonArray>();
+            appendFirestorePixelArray(pixels, fields["pixels"]);
+            Serial.print(F("[Firestore] Parsed "));
+            Serial.print(pixels.size());
+            Serial.println(F(" pixels"));
         } else {
-            Serial.println(F("[Firestore] 'basePixelsPacked' present but not a string"));
+            Serial.println(F("[Firestore] No 'pixels' field found"));
         }
-    }
-    if (!fields["frameDeltasPacked"].isNull()) {
-        JsonArray deltas = flat["frameDeltasPacked"].to<JsonArray>();
-        JsonVariant src = fields["frameDeltasPacked"];
-        if (!src["arrayValue"].isNull() && !src["arrayValue"]["values"].isNull()) {
-            size_t totalChars = 0;
-            for (JsonVariant v : src["arrayValue"]["values"].as<JsonArray>()) {
-                String delta;
-                // An absent stringValue means an empty transition, which is a
-                // legitimate frame that changes nothing.
-                if (!firestoreFieldToString(v.as<JsonObject>(), delta)) delta = "";
-                totalChars += delta.length();
-                deltas.add(delta);
-            }
-            Serial.print(F("[Firestore] Found 'frameDeltasPacked', deltas="));
-            Serial.print(deltas.size());
-            Serial.print(F(" chars="));
-            Serial.println(totalChars);
+        if (!fields["basePixels"].isNull()) {
+            JsonArray basePixels = flat["basePixels"].to<JsonArray>();
+            appendFirestorePixelArray(basePixels, fields["basePixels"]);
         }
-    }
-    if (!fields["frameDurationsMs"].isNull()) {
-        JsonArray durations = flat["frameDurationsMs"].to<JsonArray>();
-        JsonVariant src = fields["frameDurationsMs"];
-        if (!src["arrayValue"].isNull() && !src["arrayValue"]["values"].isNull()) {
-            for (JsonVariant v : src["arrayValue"]["values"].as<JsonArray>()) {
-                int ms = 0;
-                firestoreFieldToInt(v.as<JsonObject>(), ms);
-                durations.add(ms);
+        if (!fields["frames"].isNull()) {
+            JsonArray frames = flat["frames"].to<JsonArray>();
+            JsonArray firestoreFrames = fields["frames"]["arrayValue"]["values"].as<JsonArray>();
+            for (JsonVariant fv : firestoreFrames) {
+                JsonObject frameObj = frames.add<JsonObject>();
+                if (!fv["mapValue"].isNull() && !fv["mapValue"]["fields"].isNull()) {
+                    JsonObject ffields = fv["mapValue"]["fields"].as<JsonObject>();
+                    if (!ffields["delayMs"].isNull()) {
+                        int d = 0; firestoreFieldToInt(ffields["delayMs"].as<JsonObject>(), d);
+                        frameObj["delayMs"] = d;
+                    }
+                    if (!ffields["pixels"].isNull()) {
+                        JsonArray px = frameObj["pixels"].to<JsonArray>();
+                        appendFirestorePixelArray(px, ffields["pixels"]);
+                    }
+                }
             }
         }
+        valid = !flat.overflowed() && parser.parseAssetObject(assetId, flat.as<JsonObject>(), asset.content);
     }
-    if (!fields["frameCount"].isNull()) {
-        int count = 0;
-        if (firestoreFieldToInt(fields["frameCount"].as<JsonObject>(), count)) {
-            flat["frameCount"] = count;
-        }
-    }
-    // serializeJson into an Arduino String truncates silently when the String
-    // cannot grow: the reload logs show pixelsJsonLen=4061 for a payload that
-    // measures 6274 when healthy, and the caller only discovers it one layer
-    // later as "JSON parse error: IncompleteInput" on a fragment. Comparing the
-    // bytes written against measureJson() turns that corruption into a clean
-    // failure the config loader can retry.
-    size_t expectedLen = measureJson(flat);
-    size_t writtenLen = serializeJson(flat, asset.pixelsJson);
-    if (writtenLen != expectedLen || asset.pixelsJson.length() != expectedLen) {
-        Serial.print(F("[Firestore] getAsset: payload truncated, wrote "));
-        Serial.print(writtenLen);
-        Serial.print(F(" of "));
-        Serial.print(expectedLen);
-        Serial.print(F(" bytes, largestBlock="));
-        Serial.println(ESP.getMaxAllocHeap());
-        asset.pixelsJson = "";
-        return false;
-    }
-    Serial.print(F("[Firestore] getAsset: id="));
-    Serial.print(assetId);
-    Serial.print(F(" type="));
-    Serial.print(asset.type);
-    Serial.print(F(" encoding="));
-    Serial.print(asset.encoding);
-    Serial.print(F(" pixelsJsonLen="));
-    Serial.println(asset.pixelsJson.length());
+    if (!valid) return false;
+    asset.content.sourceRevision = doc["updateTime"].as<const char*>();
+    if (asset.content.sourceRevision.isEmpty()) return false;
+    Serial.print(F("[Config] Asset downloaded: ")); Serial.println(assetId);
     return true;
 }
 

@@ -1,286 +1,242 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:go_router/go_router.dart';
 import '../../config/app_colors.dart';
-import '../../config/app_spacing.dart';
-import '../../config/app_typography.dart';
+import '../../core/models/device_model.dart';
+import '../../core/models/pairing_model.dart';
 import '../../core/widgets/app_button.dart';
 import '../../core/widgets/app_card.dart';
 import '../../core/widgets/app_input.dart';
+import '../../core/widgets/shared_screens_panel.dart';
 import '../../features/auth/cubit/auth_cubit.dart';
 import '../../features/pairing/cubit/pairing_cubit.dart';
+import '../../services/firebase/firebase_repository.dart';
 import '../../services/firebase/firebase_repository_impl.dart';
 
 class PairingManagementView extends StatefulWidget {
-  const PairingManagementView({super.key});
-
+  final FirebaseRepository? repository;
+  const PairingManagementView({super.key, this.repository});
   @override
   State<PairingManagementView> createState() => _PairingManagementViewState();
 }
 
 class _PairingManagementViewState extends State<PairingManagementView> {
-  final _emailController = TextEditingController();
-
+  final _email = TextEditingController();
+  String? _deviceId;
   @override
   void dispose() {
-    _emailController.dispose();
+    _email.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final userId = context.watch<AuthCubit>().state.user?.id ?? '';
-
-    if (userId.isEmpty) {
-      return const Scaffold(
-        backgroundColor: AppColors.bgPrimary,
-        body: Center(child: CircularProgressIndicator()),
-      );
+    final uid = context.watch<AuthCubit>().state.user?.id;
+    if (uid == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-
     return BlocProvider(
-      key: ValueKey(userId),
-      create: (_) => PairingCubit(FirebaseRepositoryImpl(), userId),
+      key: ValueKey(uid),
+      create: (_) =>
+          PairingCubit(widget.repository ?? FirebaseRepositoryImpl(), uid),
       child: Scaffold(
         backgroundColor: AppColors.bgPrimary,
-        appBar: AppBar(
-          title: const Text('Pairing Management'),
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back),
-            onPressed: () => context.pop(),
-          ),
-        ),
-        body: SafeArea(
-          child: SingleChildScrollView(
-            padding: EdgeInsets.all(AppSpacing.xl),
-            child: BlocBuilder<PairingCubit, PairingState>(
-              builder: (context, state) {
-                if (state.isInitialLoading) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (state.error != null) {
-                  return Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
+        appBar: AppBar(title: const Text('Pairing Management')),
+        body: BlocBuilder<PairingCubit, PairingState>(
+          builder: (context, state) {
+            if (state.isInitialLoading) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            final selected = state.devices.any((d) => d.id == _deviceId)
+                ? _deviceId
+                : (state.devices.length == 1 ? state.devices.first.id : null);
+            final cubit = context.read<PairingCubit>();
+            return ListView(
+              padding: const EdgeInsets.all(20),
+              children: [
+                if (state.error != null) ...[
+                  Text(
+                    state.error!,
+                    key: const Key('pairing-error'),
+                    style: const TextStyle(color: AppColors.statusError),
+                  ),
+                  TextButton(
+                    onPressed: state.isBusy ? null : cubit.loadPairing,
+                    child: const Text('Retry'),
+                  ),
+                ],
+                AppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        state.pairing.isPaired
+                            ? 'Paired with ${state.pairing.pairedUserName}'
+                            : 'Not paired',
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      if (state.pairing.isPaired) ...[
                         Text(
-                          'Couldn\'t load pairing details',
-                          style: AppTypography.body(context),
+                          '${state.pairing.deviceId} ↔ ${state.pairing.partnerDeviceId}',
                         ),
-                        SizedBox(height: AppSpacing.md),
+                        const Text(
+                          'Shared screens appear in both playlists and both people can edit them. Hold ACTION to send the currently displayed content.',
+                        ),
+                        if (state.acknowledgment['status'] != null)
+                          Text(
+                            'Partner last acknowledgment: ${state.acknowledgment['status']}',
+                          ),
                         AppButton(
-                          text: 'Retry',
-                          onPressed: () =>
-                              context.read<PairingCubit>().loadPairing(),
+                          text: 'Unpair',
+                          isLoading: state.isBusy,
+                          variant: AppButtonVariant.danger,
+                          onPressed: () => _unpair(context, cubit),
                         ),
                       ],
-                    ),
-                  );
-                }
-
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Header
-                    Text(
-                      'Pairing',
-                      style: AppTypography.h1(context),
-                    ),
-                    SizedBox(height: AppSpacing.sm),
-                    Text(
-                      'Connect with another user to share screens',
-                      style: AppTypography.body(context),
-                    ),
-                    SizedBox(height: AppSpacing.xl),
-                    // Current Pairing Status
-                    AppCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                state.pairing.isPaired
-                                    ? Icons.favorite
-                                    : Icons.favorite_border,
-                                color: state.pairing.isPaired
-                                    ? AppColors.accentMagenta
-                                    : AppColors.textMuted,
-                                size: 24.sp,
-                              ),
-                              SizedBox(width: AppSpacing.md),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      state.pairing.isPaired
-                                          ? 'Paired'
-                                          : 'Not Paired',
-                                      style: AppTypography.h3(context),
-                                    ),
-                                    SizedBox(height: 2.h),
-                                    Text(
-                                      state.pairing.isPaired
-                                          ? '${state.pairing.sharedScreensCount} shared screens'
-                                          : 'No active pairing',
-                                      style: AppTypography.small(context),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          if (state.pairing.isPaired) ...[
-                            SizedBox(height: AppSpacing.lg),
-                            AppButton(
-                              text: 'Unpair',
-                              onPressed: () {
-                                _showUnpairDialog(context);
-                              },
-                              variant: AppButtonVariant.danger,
-                              fullWidth: true,
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    SizedBox(height: AppSpacing.xl),
-                    // Invite User Section
-                    Text(
-                      'Invite User',
-                      style: AppTypography.h2(context),
-                    ),
-                    SizedBox(height: AppSpacing.md),
-                    AppCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Send Pairing Invite',
-                            style: AppTypography.h4(context),
-                          ),
-                          SizedBox(height: AppSpacing.md),
-                          AppInput(
-                            controller: _emailController,
-                            label: 'Email Address',
-                            hint: 'user@example.com',
-                            keyboardType: TextInputType.emailAddress,
-                          ),
-                          SizedBox(height: AppSpacing.md),
-                          AppButton(
-                            text: 'Send Invite',
-                            onPressed: () {
-                              if (_emailController.text.isNotEmpty) {
-                                context
-                                    .read<PairingCubit>()
-                                    .sendInvite(_emailController.text.trim());
-                                _emailController.clear();
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('Invite sent to ${_emailController.text}'),
-                                    backgroundColor: AppColors.accentGreen,
-                                  ),
-                                );
-                              }
-                            },
-                            fullWidth: true,
-                          ),
-                        ],
-                      ),
-                    ),
-                    SizedBox(height: AppSpacing.xl),
-                    // Pending Invites (mock for now)
-                    if (false) ...[
-                      Text(
-                        'Pending Invites',
-                        style: AppTypography.h2(context),
-                      ),
-                      SizedBox(height: AppSpacing.md),
-                      ...[].map((invite) {
-                        return Padding(
-                          padding: EdgeInsets.only(bottom: AppSpacing.md),
-                          child: AppCard(
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        invite,
-                                        style: AppTypography.h4(context),
-                                      ),
-                                      SizedBox(height: 2.h),
-                                      Text(
-                                        'Waiting for acceptance',
-                                        style: AppTypography.small(context),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                TextButton(
-                                  onPressed: () {
-                                    // TODO: Implement cancelInvite
-                                  },
-                                  child: Text(
-                                    'Cancel',
-                                    style: TextStyle(
-                                      color: AppColors.textMuted,
-                                      fontSize: 14.sp,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }),
                     ],
-                  ],
-                );
-              },
-            ),
-          ),
+                  ),
+                ),
+                if (state.pairing.isPaired)
+                  SharedScreensPanel(
+                    repository: cubit.firebaseRepository,
+                    userId: uid,
+                  ),
+                if (!state.pairing.isPaired) ...[
+                  const SizedBox(height: 20),
+                  _selector(state.devices, selected, state.isBusy),
+                  if (state.devices.isEmpty)
+                    const Text(
+                      'No enrolled devices. Finish device setup before pairing.',
+                    ),
+                  AppInput(
+                    controller: _email,
+                    label: 'Partner email',
+                    hint: 'user@example.com',
+                    keyboardType: TextInputType.emailAddress,
+                  ),
+                  const SizedBox(height: 12),
+                  AppButton(
+                    text: 'Send Invite',
+                    isLoading: state.isBusy,
+                    onPressed: selected == null
+                        ? null
+                        : () async {
+                            final email = _email.text.trim();
+                            if (email.isEmpty) return;
+                            final ok = await cubit.sendInvite(email, selected);
+                            if (!context.mounted) return;
+                            if (ok) {
+                              _email.clear();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Invite sent to $email'),
+                                ),
+                              );
+                            }
+                          },
+                  ),
+                ],
+                const SizedBox(height: 20),
+                ...state.incoming
+                    .where((i) => i.isPending)
+                    .map(
+                      (i) => _invite(context, i, true, selected, state, cubit),
+                    ),
+                ...state.outgoing
+                    .where((i) => i.isPending)
+                    .map(
+                      (i) => _invite(context, i, false, selected, state, cubit),
+                    ),
+              ],
+            );
+          },
         ),
       ),
     );
   }
 
-  void _showUnpairDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        backgroundColor: AppColors.bgCard,
-        title: Text(
-          'Unpair',
-          style: AppTypography.h3(context),
+  Widget _selector(List<DeviceModel> devices, String? selected, bool busy) =>
+      DropdownButtonFormField<String>(
+        key: ValueKey('pair-device-$selected'),
+        initialValue: selected,
+        decoration: const InputDecoration(labelText: 'Your device'),
+        items: devices
+            .map(
+              (d) => DropdownMenuItem(
+                value: d.id,
+                child: Text(d.name.isEmpty ? d.id : d.name),
+              ),
+            )
+            .toList(),
+        onChanged: busy ? null : (id) => setState(() => _deviceId = id),
+      );
+  Widget _invite(
+    BuildContext context,
+    PairingInvite i,
+    bool incoming,
+    String? selected,
+    PairingState state,
+    PairingCubit cubit,
+  ) {
+    final expired = i.isExpired(DateTime.now());
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: AppCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              incoming
+                  ? 'Invitation from ${i.fromEmail}'
+                  : 'Invitation to ${i.toEmail}',
+            ),
+            Text(expired ? 'Expired' : 'Waiting for acceptance'),
+            if (incoming && !expired && !state.pairing.isPaired)
+              AppButton(
+                text: 'Accept',
+                isLoading: state.isBusy,
+                onPressed: selected == null
+                    ? null
+                    : () => cubit.acceptInvite(i.id, selected),
+              ),
+            TextButton(
+              onPressed: state.isBusy
+                  ? null
+                  : () => cubit.resolveInvite(
+                      i.id,
+                      expired
+                          ? 'expired'
+                          : (incoming ? 'rejected' : 'cancelled'),
+                    ),
+              child: Text(
+                expired ? 'Dismiss' : (incoming ? 'Reject' : 'Cancel invite'),
+              ),
+            ),
+          ],
         ),
-        content: Text(
-          'Are you sure you want to unpair? This will remove all shared screens.',
-          style: AppTypography.body(context),
+      ),
+    );
+  }
+
+  Future<void> _unpair(BuildContext context, PairingCubit cubit) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Unpair devices?'),
+        content: const Text(
+          'This stops sharing. Your local screens and assets are preserved.',
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: Text(
-              'Cancel',
-              style: TextStyle(color: AppColors.textMuted),
-            ),
+            onPressed: () => Navigator.pop(c, false),
+            child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () {
-              context.read<PairingCubit>().unpair();
-              Navigator.of(dialogContext).pop();
-            },
-            child: Text(
-              'Unpair',
-              style: TextStyle(color: AppColors.statusError),
-            ),
+            onPressed: () => Navigator.pop(c, true),
+            child: const Text('Unpair'),
           ),
         ],
       ),
     );
+    if (ok == true) await cubit.unpair();
   }
 }

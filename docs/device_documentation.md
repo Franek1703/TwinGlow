@@ -227,7 +227,11 @@ Firestore poll — no network is involved. Entering the window drops the panel t
 `sleepMode.brightness`; a value of `0` blanks it instead, since `MatrixDriver::setBrightness`
 clamps `0` up to `1`. Rendering is skipped entirely while blanked so animation frame timing
 does not free-run behind a dark panel. The window is only evaluated once the clock is valid:
-an unsynced device never dims.
+an unsynced device never dims. During an active window, +/- changes the displayed brightness
+for that sleep period only, without changing saved awake brightness or sleep settings. +
+lights a blank display; lowering to 0 blanks it. Unblanking restarts animations at frame zero.
+The adjustment survives unchanged polls, but sleep exit, sleep-settings edits, and restart
+clear it. After sleep, the saved awake brightness is restored.
 
 ---
 

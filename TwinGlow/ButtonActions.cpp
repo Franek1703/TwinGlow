@@ -1,11 +1,12 @@
 #include "ButtonActions.h"
 #include "CloudWorker.h"
+#include "PairingController.h"
 
 ButtonActions::ButtonActions(Buttons* btn, ScreenPlaylist* pl, 
                              MatrixDriver* mat, NvsStore* store, RtdbRepo* db,
-                             CloudWorker* worker)
+                             CloudWorker* worker, PairingController* controller, AssetCache* assets)
     : buttons(btn), playlist(pl), matrix(mat), nvs(store), rtdb(db),
-      cloudWorker(worker), onFactoryReset(nullptr) {
+      cloudWorker(worker), pairing(controller), cache(assets), onFactoryReset(nullptr) {
 }
 
 void ButtonActions::update() {
@@ -16,12 +17,14 @@ void ButtonActions::update() {
 void ButtonActions::handleGlobalActions() {
     // Previous screen
     if (buttons->getPressType(ButtonId::PREV) == ButtonPressType::SHORT) {
+        pairing->dismiss();
         playlist->previous();
         buttons->clearEvent(ButtonId::PREV);
     }
     
     // Next screen
     if (buttons->getPressType(ButtonId::NEXT) == ButtonPressType::SHORT) {
+        pairing->dismiss();
         playlist->next();
         buttons->clearEvent(ButtonId::NEXT);
     }
@@ -46,6 +49,15 @@ void ButtonActions::handleGlobalActions() {
 }
 
 void ButtonActions::handleContextActions() {
+    ButtonPressType overridePress = buttons->getPressType(ButtonId::ACTION);
+    if (pairing->hasOverride()) {
+        if (overridePress == ButtonPressType::SHORT) {
+            pairing->dismiss();
+            playlist->resetRotationTimer();
+        }
+        if (overridePress != ButtonPressType::NONE) buttons->clearEvent(ButtonId::ACTION);
+        return;
+    }
     ScreenConfig* screen = playlist->getCurrentScreen();
     if (screen == nullptr) return;
     
@@ -74,6 +86,8 @@ void ButtonActions::handleContextActions() {
 }
 
 void ButtonActions::handleBrightnessChange(bool increase) {
+    if (onBrightnessChange != nullptr && onBrightnessChange(increase)) return;
+
     uint8_t current = nvs->getBrightness();
     uint8_t step = 16; // Adjust step size as needed
     
@@ -99,19 +113,11 @@ void ButtonActions::handleBrightnessChange(bool increase) {
 
 void ButtonActions::handleSendToPair() {
     ScreenConfig* screen = playlist->getCurrentScreen();
-    if (screen == nullptr || screen->pairId.length() == 0) {
-        Serial.println(F("[ButtonActions] Cannot send to pair - no pair ID"));
-        return;
-    }
-    
-    String assetId = playlist->getCurrentAssetId();
-    if (rtdb != nullptr && assetId.length() > 0) {
-        if (cloudWorker != nullptr &&
-            cloudWorker->requestPairEvent(screen->pairId, screen->id, assetId)) {
-            Serial.println(F("[ButtonActions] Pair event queued"));
-        } else {
-            Serial.println(F("[ButtonActions] Pair event deferred while cloud is unavailable"));
-        }
+    CachedAsset* asset = cache->getAsset(playlist->getCurrentAssetId());
+    if (screen && asset && pairing->send(*screen, *asset)) {
+        Serial.println(F("[ButtonActions] Current content queued"));
+    } else {
+        Serial.println(F("[ButtonActions] Send requires an active pair and a cached, shareable image or animation"));
     }
 }
 
@@ -119,7 +125,7 @@ void ButtonActions::handleFactoryReset() {
     Serial.println(F("[ButtonActions] Factory reset triggered!"));
     
     // Visual feedback
-    matrix->fill(matrix->color(255, 0, 0)); // Red
+    matrix->fillStatus(matrix->color(255, 0, 0)); // Red
     matrix->show();
     delay(500);
     

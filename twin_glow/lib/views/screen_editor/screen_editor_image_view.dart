@@ -70,6 +70,12 @@ class ScreenEditorImageView extends StatelessWidget {
           );
         }
 
+        if (snapshot.hasError) {
+          return Scaffold(
+            appBar: AppBar(title: Text(_editorTitle)),
+            body: Center(child: Text(snapshot.error.toString())),
+          );
+        }
         final screen =
             snapshot.data ??
             ScreenModel(
@@ -128,8 +134,8 @@ class ScreenEditorImageView extends StatelessWidget {
                               context
                                   .read<ScreenEditorImageCubit>()
                                   .save()
-                                  .then((_) {
-                                    context.pop();
+                                  .then((saved) {
+                                    if (saved && context.mounted) context.pop();
                                   });
                             },
                     );
@@ -143,10 +149,14 @@ class ScreenEditorImageView extends StatelessWidget {
                 child: BlocBuilder<ScreenEditorImageCubit, ScreenEditorImageState>(
                   builder: (context, state) {
                     final assetsState = context.watch<AssetsCubit>().state;
-                    final compatibleAssets = [
-                      ...assetsState.myAssets,
-                      ...assetsState.defaultAssets,
-                    ].where((asset) => asset.type == _assetType).toList();
+                    final compatibleAssets = {
+                      for (final asset in [
+                        ...state.availableAssets,
+                        ...assetsState.myAssets,
+                        ...assetsState.defaultAssets,
+                      ].where((asset) => asset.type == _assetType))
+                        asset.id: asset,
+                    }.values.toList();
                     final previewScreen = ScreenModel(
                       id: state.screen.id,
                       type: screenType,
@@ -164,6 +174,25 @@ class ScreenEditorImageView extends StatelessWidget {
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        TextFormField(
+                          initialValue: state.screen.name,
+                          decoration: const InputDecoration(
+                            labelText: 'Screen name',
+                          ),
+                          onChanged: context
+                              .read<ScreenEditorImageCubit>()
+                              .renameScreen,
+                        ),
+                        SizedBox(height: AppSpacing.md),
+                        if (state.error != null) ...[
+                          Text(
+                            state.error!,
+                            style: const TextStyle(
+                              color: AppColors.statusError,
+                            ),
+                          ),
+                          SizedBox(height: AppSpacing.md),
+                        ],
                         // Preview Section
                         AppCard(
                           child: Column(
@@ -199,21 +228,23 @@ class ScreenEditorImageView extends StatelessWidget {
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Share with Paired User',
-                                    style: AppTypography.h4(context),
-                                  ),
-                                  SizedBox(height: 2.h),
-                                  Text(
-                                    state.isShared
-                                        ? 'This screen is shared'
-                                        : 'Keep this screen private',
-                                    style: AppTypography.small(context),
-                                  ),
-                                ],
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Share with Partner',
+                                      style: AppTypography.h4(context),
+                                    ),
+                                    SizedBox(height: 2.h),
+                                    Text(
+                                      state.isShared
+                                          ? 'Both people can edit this screen'
+                                          : 'Keep this screen private',
+                                      style: AppTypography.small(context),
+                                    ),
+                                  ],
+                                ),
                               ),
                               _ToggleSwitch(
                                 enabled: state.isShared,
@@ -241,7 +272,7 @@ class ScreenEditorImageView extends StatelessWidget {
                                 SizedBox(width: AppSpacing.md),
                                 Expanded(
                                   child: Text(
-                                    'Both users can modify this screen\'s content',
+                                    'The whole screen appears in both playlists. Content changes are shared; playlist order is local.',
                                     style: AppTypography.small(
                                       context,
                                     ).copyWith(color: AppColors.accentMagenta),
@@ -263,9 +294,9 @@ class ScreenEditorImageView extends StatelessWidget {
                         Text(
                           state.poolAssetIds.length > 1
                               ? 'Tap to add or remove. Hold to set the starting image (★). '
-                                  'The device cycles them in this order with the action button.'
+                                    'The device cycles them in this order with the action button.'
                               : 'Tap to add assets. Add more than one to cycle them '
-                                  'with the action button on the device.',
+                                    'with the action button on the device.',
                           style: AppTypography.small(context),
                         ),
                         SizedBox(height: AppSpacing.md),
@@ -275,9 +306,8 @@ class ScreenEditorImageView extends StatelessWidget {
                             compatibleAssets.isEmpty)
                           Center(
                             child: TextButton(
-                              onPressed: () => context
-                                  .read<AssetsCubit>()
-                                  .loadAssets(),
+                              onPressed: () =>
+                                  context.read<AssetsCubit>().loadAssets(),
                               child: const Text('Retry loading assets'),
                             ),
                           )
@@ -291,6 +321,19 @@ class ScreenEditorImageView extends StatelessWidget {
                             selectedAssetId: state.selectedAssetId,
                             poolAssetIds: state.poolAssetIds,
                             defaultAssetId: state.defaultAssetId,
+                            onEdit: state.screen.sharedScreenId == null
+                                ? null
+                                : (asset) async {
+                                    await context.push(
+                                      '/asset/edit/${asset.id}?type=${asset.type.name}',
+                                    );
+                                    if (context.mounted) {
+                                      context.read<AssetsCubit>().loadAssets();
+                                      context
+                                          .read<ScreenEditorImageCubit>()
+                                          .reloadPoolAssets();
+                                    }
+                                  },
                             onAssetSelected: (asset) {
                               context
                                   .read<ScreenEditorImageCubit>()
@@ -314,9 +357,9 @@ class ScreenEditorImageView extends StatelessWidget {
                           text: 'Save Configuration',
                           onPressed: () {
                             context.read<ScreenEditorImageCubit>().save().then((
-                              _,
+                              saved,
                             ) {
-                              context.pop();
+                              if (saved && context.mounted) context.pop();
                             });
                           },
                           fullWidth: true,
@@ -339,16 +382,11 @@ class ScreenEditorImageView extends StatelessWidget {
     String deviceId,
     String screenId,
   ) async {
-    try {
-      final screens = await repo.getScreens(deviceId);
-      try {
-        return screens.firstWhere((s) => s.id == screenId);
-      } catch (e) {
-        return null; // Screen doesn't exist yet
-      }
-    } catch (e) {
-      return null;
+    final screens = await repo.getScreens(deviceId);
+    for (final screen in screens) {
+      if (screen.id == screenId) return screen;
     }
+    return null;
   }
 
   AssetType get _assetType => screenType == ScreenType.animation

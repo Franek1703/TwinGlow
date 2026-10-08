@@ -183,3 +183,19 @@ void NvsStore::fullReset() {
     prefs.clear();
     Serial.println(F("[NVS] Full reset complete (all data cleared)"));
 }
+
+uint64_t NvsStore::reserveSendSequence(){
+    uint64_t next=prefs.getULong64("sendSeq",0)+1;
+    if(next>9007199254740991ULL || prefs.putULong64("sendSeq",next)!=sizeof(next))return 0;
+    return next;
+}
+uint64_t NvsStore::getHandledSequence(const String& pairId){
+    // One atomic record avoids a reboot observing a new pair with an old counter.
+    String record=prefs.getString("pairHandled","");int colon=record.lastIndexOf(':');
+    if(colon<0||record.substring(0,colon)!=pairId)return 0;
+    return strtoull(record.substring(colon+1).c_str(),nullptr,10);
+}
+bool NvsStore::setHandledSequence(const String& pairId,uint64_t sequence){
+    char number[24];snprintf(number,sizeof(number),"%llu",(unsigned long long)sequence);
+    String record=pairId+":"+number;return prefs.putString("pairHandled",record)==record.length();
+}

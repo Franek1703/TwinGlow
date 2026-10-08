@@ -1,5 +1,12 @@
 # Firebase Documentation
 
+> Pairing implementation update: the current v1 contract, scoped rules, enrollment,
+> migration and verification procedure are in [pairing_implementation.md](pairing_implementation.md).
+> The pairing/shared-pointer and access-rule designs below describe the legacy
+> architecture and are not the current runtime contract or evidence of deployed rules.
+> Firestore now holds local configuration/content; RTDB is authoritative for
+> pairing and immutable content snapshots in replaceable mailboxes.
+
 This document defines **what is stored in Firestore vs Realtime Database**, and the recommended **data formats** for screens, pairing, shared content, and pixel assets (images + animations) for a 16×16 matrix.
 
 ---

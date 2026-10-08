@@ -20,7 +20,7 @@ static bool parsePackedPixels(const char* packed, std::vector<Pixel>& out,
         Serial.println(F("[AssetCache] packed pixel string is empty"));
         return false;
     }
-    if (len % 8 != 0) {
+    if (len > 2048 || len % 8 != 0) {
         Serial.print(F("[AssetCache] packed length not a multiple of 8: "));
         Serial.println(len);
         return false;
@@ -63,67 +63,57 @@ static bool parsePackedPixels(const char* packed, std::vector<Pixel>& out,
 // Reads DELTA_SPARSE_PACKED_V1. Frames land in the cache already cumulative:
 // frames[0].delta is the whole first frame, frames[i].delta is the change from
 // frame i-1.
-static bool parsePackedAnimation(JsonObject doc, CachedAsset& asset) {
-    if (doc["basePixelsPacked"].isNull() ||
-        doc["frameDurationsMs"].isNull()) {
-        Serial.println(F("[AssetCache] packed animation missing base or durations"));
-        return false;
+// Firestore wraps strings/integers/arrays in Value objects. Reading those
+// wrappers directly avoids a second JSON document and serialized payload.
+static JsonVariant packedValue(JsonVariant value, bool firestore, const char* key) {
+    if (firestore) return value[key].as<JsonVariant>();
+    return value;
+}
+static bool packedInteger(JsonVariant value, bool firestore, int& result) {
+    if (!firestore) {
+        if (!value.is<int>()) return false;
+        result = value.as<int>(); return true;
     }
-
-    JsonArray durations = doc["frameDurationsMs"];
-    JsonArray deltas = doc["frameDeltasPacked"];
-
+    const char* text = value["integerValue"].as<const char*>();
+    if (!text || !*text) return false;
+    char* end = nullptr;
+    long number = strtol(text, &end, 10);
+    if (*end || number < 0 || number > 2147483647L) return false;
+    result = (int)number; return true;
+}
+static bool parsePackedAnimation(JsonObject doc, CachedAsset& asset, bool firestore = false) {
+    JsonVariant baseValue = packedValue(doc["basePixelsPacked"], firestore, "stringValue");
+    JsonVariant durationsValue = firestore
+        ? doc["frameDurationsMs"]["arrayValue"]["values"].as<JsonVariant>() : doc["frameDurationsMs"].as<JsonVariant>();
+    JsonVariant deltasValue = firestore
+        ? doc["frameDeltasPacked"]["arrayValue"]["values"].as<JsonVariant>() : doc["frameDeltasPacked"].as<JsonVariant>();
+    if (!baseValue.is<const char*>() || !durationsValue.is<JsonArray>() || !deltasValue.is<JsonArray>()) return false;
+    JsonArray durations = durationsValue.as<JsonArray>();
+    JsonArray deltas = deltasValue.as<JsonArray>();
     size_t frameCount = durations.size();
-    if (frameCount < ANIM_MIN_FRAMES || frameCount > ANIM_MAX_FRAMES) {
-        Serial.print(F("[AssetCache] frame count out of range: "));
-        Serial.println(frameCount);
-        return false;
+    if (frameCount < ANIM_MIN_FRAMES || frameCount > ANIM_MAX_FRAMES || deltas.size() != frameCount - 1) return false;
+    if (!doc["frameCount"].isNull()) {
+        int count = 0;
+        if (!packedInteger(doc["frameCount"], firestore, count) || (size_t)count != frameCount) return false;
     }
-    // One transition per frame after the first. A mismatch means the document
-    // was written by something that does not agree with this format.
-    if (deltas.size() != frameCount - 1) {
-        Serial.print(F("[AssetCache] delta count "));
-        Serial.print(deltas.size());
-        Serial.print(F(" does not match frame count "));
-        Serial.println(frameCount);
-        return false;
-    }
-    if (!doc["frameCount"].isNull() &&
-        (size_t)doc["frameCount"].as<int>() != frameCount) {
-        Serial.println(F("[AssetCache] frameCount disagrees with frameDurationsMs"));
-        return false;
-    }
-
-    const char* base = doc["basePixelsPacked"].as<const char*>();
-    size_t packedChars = base == nullptr ? 0 : strlen(base);
+    const char* base = baseValue.as<const char*>();
+    size_t packedChars = strlen(base);
     for (JsonVariant d : deltas) {
-        const char* s = d.as<const char*>();
-        packedChars += (s == nullptr ? 0 : strlen(s));
+        JsonVariant value = packedValue(d, firestore, "stringValue");
+        if (!value.is<const char*>()) return false;
+        packedChars += strlen(value.as<const char*>());
     }
-    if (packedChars > ANIM_MAX_PACKED_CHARS) {
-        Serial.print(F("[AssetCache] packed animation too large: "));
-        Serial.println(packedChars);
-        return false;
-    }
-
+    if (packedChars > ANIM_MAX_PACKED_CHARS) return false;
     for (size_t i = 0; i < frameCount; i++) {
-        int duration = durations[i].as<int>();
-        if (duration < (int)ANIM_MIN_DURATION_MS ||
-            duration > (int)ANIM_MAX_DURATION_MS) {
-            Serial.print(F("[AssetCache] frame duration out of range: "));
-            Serial.println(duration);
-            return false;
-        }
-
+        int duration = 0;
+        if (!packedInteger(durations[i], firestore, duration) ||
+            duration < ANIM_MIN_DURATION_MS || duration > ANIM_MAX_DURATION_MS) return false;
         AnimationFrame frame;
         frame.durationMs = (uint16_t)duration;
-        const char* packed = (i == 0) ? base : deltas[i - 1].as<const char*>();
-        // The base may legitimately be empty when frame 0 is blank and later
-        // deltas light the panel up.
+        const char* packed = i == 0 ? base : packedValue(deltas[i - 1], firestore, "stringValue").as<const char*>();
         if (!parsePackedPixels(packed, frame.delta, true)) return false;
-        asset.frames.push_back(frame);
+        asset.frames.push_back(std::move(frame));
     }
-
     return true;
 }
 
@@ -194,7 +184,7 @@ static bool parseLegacyAnimation(JsonObject doc, CachedAsset& asset) {
             }
         }
 
-        asset.frames.push_back(frame);
+        asset.frames.push_back(std::move(frame));
         memcpy(previous, current, sizeof(current));
         first = false;
     }
@@ -202,6 +192,29 @@ static bool parseLegacyAnimation(JsonObject doc, CachedAsset& asset) {
     return true;
 }
 
+static bool validateParsedAsset(CachedAsset& asset) {
+    // An asset that parsed to nothing renders identically to a failure, so
+    // treat it as one rather than caching an empty image.
+    if (asset.isAnimation()) {
+        bool anyVisible = false;
+        for (const auto& frame : asset.frames) {
+            for (const auto& pixel : frame.delta) {
+                if (pixel.color != 0) { anyVisible = true; break; }
+            }
+            if (anyVisible) break;
+        }
+        if (!anyVisible) {
+            Serial.print(F("[AssetCache] Animation has no visible pixel: "));
+            Serial.println(asset.id);
+            return false;
+        }
+    }
+    // Legacy ANIMATION records can contain a still image; publish what is displayed.
+    if (!asset.isAnimation() && asset.type=="ANIMATION") asset.type="IMAGE";
+    if ((asset.encoding.startsWith("DELTA_") && asset.type!="ANIMATION") ||
+        (!asset.encoding.startsWith("DELTA_") && asset.type!="IMAGE")) return false;
+    return true;
+}
 AssetCache::AssetCache() {
 }
 
@@ -210,61 +223,26 @@ AssetCache::~AssetCache() {
 }
 
 bool AssetCache::addAsset(const CachedAsset& asset) {
-    // Remove existing if present
-    removeAsset(asset.id);
-
-    // Add new asset
-    assets.push_back(asset);
-
-    Serial.print(F("[AssetCache] Added asset: "));
-    Serial.println(asset.id);
-    return true;
+    CachedAsset copy=asset;return addAsset(std::move(copy));
 }
-
-bool AssetCache::removeAsset(const String& assetId) {
-    for (auto it = assets.begin(); it != assets.end(); ++it) {
-        if (it->id == assetId) {
-            assets.erase(it);
-            Serial.print(F("[AssetCache] Removed asset: "));
-            Serial.println(assetId);
-            return true;
-        }
-    }
-    return false;
+bool AssetCache::addAsset(CachedAsset&& asset) {
+    auto value=std::make_shared<CachedAsset>(std::move(asset));
+    for(auto& existing:assets) if(existing->id==value->id){existing=std::move(value);return true;}
+    assets.push_back(std::move(value));return true;
 }
-
-void AssetCache::clear() {
-    assets.clear();
-    Serial.println(F("[AssetCache] Cleared"));
+bool AssetCache::removeAsset(const String& id) {
+    for(auto it=assets.begin();it!=assets.end();++it)if((*it)->id==id){assets.erase(it);return true;}return false;
 }
-
-size_t AssetCache::retainOnly(const std::vector<String>& keepIds) {
-    size_t removed = 0;
-    for (auto it = assets.begin(); it != assets.end();) {
-        bool keep = false;
-        for (const String& id : keepIds) {
-            if (it->id == id) { keep = true; break; }
-        }
-        if (keep) {
-            ++it;
-        } else {
-            Serial.print(F("[AssetCache] Dropping unreferenced asset: "));
-            Serial.println(it->id);
-            it = assets.erase(it);
-            removed++;
-        }
-    }
-    return removed;
+void AssetCache::clear(){assets.clear();}
+size_t AssetCache::retainOnly(const std::vector<String>& ids){
+    size_t removed=0;for(auto it=assets.begin();it!=assets.end();){bool keep=false;
+      for(const auto& id:ids)if((*it)->id==id){keep=true;break;}
+      if(keep)++it;else{it=assets.erase(it);++removed;}}return removed;
 }
-
-CachedAsset* AssetCache::getAsset(const String& assetId) {
-    for (auto& asset : assets) {
-        if (asset.id == assetId) {
-            return &asset;
-        }
-    }
-    return nullptr;
+std::shared_ptr<CachedAsset> AssetCache::getSharedAsset(const String& id){
+    for(const auto& a:assets)if(a->id==id)return a;return {};
 }
+CachedAsset* AssetCache::getAsset(const String& id){return getSharedAsset(id).get();}
 
 bool AssetCache::parseAsset(const String& assetId, const String& jsonStr, CachedAsset& asset) {
     asset.id = assetId;
@@ -285,12 +263,17 @@ bool AssetCache::parseAsset(const String& assetId, const String& jsonStr, Cached
         return false;
     }
 
-    JsonObject root = doc.as<JsonObject>();
+    return parseAssetObject(assetId,doc.as<JsonObject>(),asset);
+}
+bool AssetCache::parseAssetObject(const String& assetId,JsonObject root,CachedAsset& asset){
+    asset=CachedAsset();asset.id=assetId;
 
     // Parse type
     if (!root["type"].isNull()) {
         asset.type = root["type"].as<String>();
     }
+
+    asset.type.toUpperCase();
 
     // Parse encoding
     if (!root["encoding"].isNull()) {
@@ -303,7 +286,7 @@ bool AssetCache::parseAsset(const String& assetId, const String& jsonStr, Cached
             Serial.println(F("[AssetCache] SPARSE_PACKED_V1 asset has no pixelsPacked field"));
             return false;
         }
-        if (!parsePackedPixels(root["pixelsPacked"].as<const char*>(), asset.pixels)) {
+        if (!root["pixelsPacked"].is<const char*>() || strlen(root["pixelsPacked"].as<const char*>())>2048 || !parsePackedPixels(root["pixelsPacked"].as<const char*>(), asset.pixels,true)) {
             return false;
         }
     } else if (asset.encoding == "SPARSE_I16_RGB888") {
@@ -331,26 +314,20 @@ bool AssetCache::parseAsset(const String& assetId, const String& jsonStr, Cached
         return false;
     }
 
-    // An asset that parsed to nothing renders identically to a failure, so
-    // treat it as one rather than caching an empty image.
-    if (asset.isAnimation()) {
-        bool anyVisible = false;
-        for (const auto& frame : asset.frames) {
-            for (const auto& pixel : frame.delta) {
-                if (pixel.color != 0) { anyVisible = true; break; }
-            }
-            if (anyVisible) break;
-        }
-        if (!anyVisible) {
-            Serial.print(F("[AssetCache] Animation has no visible pixel: "));
-            Serial.println(assetId);
-            return false;
-        }
-    } else if (asset.pixels.empty()) {
-        Serial.print(F("[AssetCache] Image parsed to zero pixels: "));
-        Serial.println(assetId);
-        return false;
-    }
+    return validateParsedAsset(asset);
+}
 
-    return true;
+bool AssetCache::parseFirestorePackedAsset(const String& assetId, JsonObject fields, CachedAsset& asset) {
+    asset = CachedAsset(); asset.id = assetId;
+    if (!fields["type"]["stringValue"].is<const char*>() ||
+        !fields["encoding"]["stringValue"].is<const char*>()) return false;
+    asset.type = fields["type"]["stringValue"].as<const char*>();
+    asset.type.toUpperCase();
+    asset.encoding = fields["encoding"]["stringValue"].as<const char*>();
+    if (asset.encoding == "SPARSE_PACKED_V1") {
+        if (!parsePackedPixels(fields["pixelsPacked"]["stringValue"].as<const char*>(), asset.pixels, true)) return false;
+    } else if (asset.encoding == "DELTA_SPARSE_PACKED_V1") {
+        if (!parsePackedAnimation(fields, asset, true)) return false;
+    } else return false;
+    return validateParsedAsset(asset);
 }

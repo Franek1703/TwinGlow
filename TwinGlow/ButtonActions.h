@@ -8,6 +8,8 @@
 #include "RtdbRepo.h"
 
 class CloudWorker;
+class PairingController;
+class AssetCache;
 
 /**
  * Button action handler
@@ -17,10 +19,13 @@ class ButtonActions {
 public:
     ButtonActions(Buttons* buttons, ScreenPlaylist* playlist, 
                   MatrixDriver* matrix, NvsStore* nvs, RtdbRepo* rtdb,
-                  CloudWorker* cloudWorker);
+                  CloudWorker* cloudWorker, PairingController* pairing, AssetCache* cache);
     
     void update(); // Call in loop() to handle button events
     
+    // Return true to consume a brightness press without saving normal brightness.
+    bool (*onBrightnessChange)(bool increase) = nullptr;
+
     // Factory reset callback
     void (*onFactoryReset)();
     
@@ -32,9 +37,8 @@ private:
     RtdbRepo* rtdb;
     CloudWorker* cloudWorker;
     
-    String currentPairId;
-    String currentScreenId;
-    String currentAssetId;
+    PairingController* pairing;
+    AssetCache* cache;
     
     void handleGlobalActions();
     void handleContextActions();

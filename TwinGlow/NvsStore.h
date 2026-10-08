@@ -50,6 +50,9 @@ public:
     void getSleepSettings(SleepSettings& sleep);
     void setSleepSettings(const SleepSettings& sleep);
     
+    uint64_t reserveSendSequence();
+    uint64_t getHandledSequence(const String& pairId);
+    bool setHandledSequence(const String& pairId,uint64_t sequence);
     // Factory reset
     void factoryReset(); // Clear all except deviceId
     void fullReset();    // Clear everything including deviceId

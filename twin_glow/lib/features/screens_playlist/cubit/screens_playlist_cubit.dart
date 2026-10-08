@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../core/models/asset_model.dart';
 import '../../../core/models/screen_model.dart';
@@ -42,47 +43,79 @@ class ScreensPlaylistState {
 class ScreensPlaylistCubit extends Cubit<ScreensPlaylistState> {
   final FirebaseRepository firebaseRepository;
   final String deviceId;
+  StreamSubscription<void>? _changes;
+  bool _loading = false, _reload = false;
 
   ScreensPlaylistCubit(this.firebaseRepository, this.deviceId)
-      : super(ScreensPlaylistState()) {
+    : super(ScreensPlaylistState()) {
     loadScreens();
+    _changes = firebaseRepository
+        .watchScreenChanges(deviceId)
+        .listen(
+          (_) => loadScreens(),
+          onError: (Object e) {
+            if (!isClosed) emit(state.copyWith(error: e.toString()));
+          },
+        );
   }
 
   Future<void> loadScreens() async {
-    emit(state.copyWith(isLoading: true, clearError: true));
-    try {
-      final screens = await firebaseRepository.getScreens(deviceId);
-      final assetIds = screens
-          .expand(_assetIdsForScreen)
-          .where((id) => id.isNotEmpty)
-          .toSet()
-          .toList();
-
-      List<AssetModel> assets = const [];
-      String? assetError;
-      try {
-        assets = await firebaseRepository.getAssetsByIds(assetIds);
-      } catch (e) {
-        // Screen configuration should still be usable when an asset was
-        // deleted or is temporarily unavailable.
-        assetError = e.toString();
-      }
-
-      emit(state.copyWith(
-        screens: screens,
-        assets: assets,
-        isLoading: false,
-        hasLoaded: true,
-        error: assetError,
-        clearError: assetError == null,
-      ));
-    } catch (e) {
-      emit(state.copyWith(
-        isLoading: false,
-        hasLoaded: true,
-        error: e.toString(),
-      ));
+    if (_loading) {
+      _reload = true;
+      return;
     }
+    _loading = true;
+    do {
+      _reload = false;
+      if (isClosed) break;
+      emit(state.copyWith(isLoading: true, clearError: true));
+      try {
+        final screens = await firebaseRepository.getScreens(deviceId);
+        final assetIds = screens
+            .expand(_assetIdsForScreen)
+            .where((id) => id.isNotEmpty)
+            .toSet()
+            .toList();
+
+        List<AssetModel> assets = const [];
+        String? assetError;
+        try {
+          assets = await firebaseRepository.getAssetsByIds(assetIds);
+        } catch (e) {
+          // Screen configuration should still be usable when an asset was
+          // deleted or is temporarily unavailable.
+          assetError = e.toString();
+        }
+
+        if (isClosed) break;
+        emit(
+          state.copyWith(
+            screens: screens,
+            assets: assets,
+            isLoading: false,
+            hasLoaded: true,
+            error: assetError,
+            clearError: assetError == null,
+          ),
+        );
+      } catch (e) {
+        if (isClosed) break;
+        emit(
+          state.copyWith(
+            isLoading: false,
+            hasLoaded: true,
+            error: e.toString(),
+          ),
+        );
+      }
+    } while (_reload && !isClosed);
+    _loading = false;
+  }
+
+  @override
+  Future<void> close() async {
+    await _changes?.cancel();
+    return super.close();
   }
 
   static Iterable<String> _assetIdsForScreen(ScreenModel screen) sync* {

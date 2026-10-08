@@ -398,6 +398,8 @@ class _ClockScreenPreviewState extends State<_ClockScreenPreview> {
     final parts = [
       _now.hour.toString().padLeft(2, '0'),
       _now.minute.toString().padLeft(2, '0'),
+      if (widget.config?['showSeconds'] as bool? ?? true)
+        _now.second.toString().padLeft(2, '0'),
     ];
 
     return _ConfiguredPreviewFrame(

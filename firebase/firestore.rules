@@ -1,0 +1,213 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function human() { return signedIn() && !('twinGlowDeviceId' in request.auth.token); }
+    function access(id) { return get(/databases/$(database)/documents/deviceAccess/$(id)).data; }
+    function owner(id) { return human() && access(id).enabled == true && access(id).ownerUid == request.auth.uid; }
+    function device(id) {
+      return signedIn() && request.auth.token.get('twinGlowDeviceId', '') == id
+        && access(id).enabled == true && access(id).authUid == request.auth.uid;
+    }
+    function assetReader(data) {
+      return signedIn() && (data.get('isDefault', false) == true
+        || (human() && data.ownerUid == request.auth.uid)
+        || (device(request.auth.token.twinGlowDeviceId)
+          && data.ownerUid == access(request.auth.token.twinGlowDeviceId).ownerUid));
+    }
+    // Shared schema v2: /assets remains canonical, /sharedScreens stores pools.
+    // /sharingPairs requires bilateral human consent; devices only read.
+    function grant(id) { return get(/databases/$(database)/documents/sharingPairs/$(id)).data; }
+    function grantAfter(id) { return getAfter(/databases/$(database)/documents/sharingPairs/$(id)).data; }
+    function participant(g) {
+      return human() && request.auth.uid in [g.userA, g.userB];
+    }
+    function grantReader(g) {
+      return participant(g) || (signedIn() && request.auth.token.get('twinGlowDeviceId', '') in [g.deviceA, g.deviceB]
+        && device(request.auth.token.twinGlowDeviceId));
+    }
+    function validGrant(d) {
+      return d.keys().hasOnly(['schemaVersion','userA','userB','deviceA','deviceB','acceptedA','acceptedB','state','contentVersion','mutationKind','mutationId'])
+        && d.schemaVersion == 1 && d.userA is string && d.userB is string && d.userA != d.userB
+        && d.deviceA is string && d.deviceB is string && d.deviceA != d.deviceB
+        && d.acceptedA is bool && d.acceptedB is bool && d.contentVersion is int && d.contentVersion >= 0
+        && d.state in ['PENDING','ACTIVE','CLOSING','REVOKED'] && d.contentVersion < 2147483647
+        && (d.state != 'ACTIVE' || (d.acceptedA && d.acceptedB))
+        && (d.state == 'REVOKED' || (access(d.deviceA).enabled && access(d.deviceB).enabled))
+        && access(d.deviceA).ownerUid == d.userA && access(d.deviceB).ownerUid == d.userB;
+    }
+    function mutationRecorded(id, d) {
+      return (d.mutationKind == 'SCREEN' && sharedAfter(d.mutationId).pairId == id && sharedAfter(d.mutationId).contentVersion == sharedData(d.mutationId).contentVersion + 1)
+        || (d.mutationKind == 'ASSET' && get(/databases/$(database)/documents/assets/$(d.mutationId)).data.sharingPairId == id
+          && getAfter(/databases/$(database)/documents/assets/$(d.mutationId)).data.revision == get(/databases/$(database)/documents/assets/$(d.mutationId)).data.get('revision',0) + 1);
+    }
+    function bumped(id) { return grantAfter(id).contentVersion == grant(id).contentVersion + 1; }
+    function idList(ids) {
+      return ids is list && ids.size() <= 32 && ids.toSet().size() == ids.size()
+        && (ids.size() == 0 || ids.join('|').matches('^[A-Za-z0-9_-]{1,95}(\\|[A-Za-z0-9_-]{1,95})*$'));
+    }
+    function sharedData(id) { return get(/databases/$(database)/documents/sharedScreens/$(id)).data; }
+    function sharedAfter(id) { return getAfter(/databases/$(database)/documents/sharedScreens/$(id)).data; }
+    function validShared(d) {
+      let g = grant(d.pairId);
+      return d.keys().hasOnly(['schemaVersion','name','type','availableAssetIds','defaultAssetId','allowManualSwitch','config','contentVersion','pairId','createdBy','state','screenRefs'])
+        && d.schemaVersion == 2 && d.name is string && d.name.size() <= 120
+        && d.type in ['IMAGE','ANIMATION'] && idList(d.availableAssetIds) && d.availableAssetIds.size() > 0 && d.availableAssetIds.size() <= 10
+        && d.defaultAssetId in d.availableAssetIds && d.allowManualSwitch is bool && d.config is map
+        && d.contentVersion is int && d.contentVersion >= 0 && d.state in ['STAGING','ACTIVE','REVOKED']
+        && d.createdBy in [g.userA,g.userB] && d.screenRefs is map
+        && d.screenRefs.keys().hasOnly([g.deviceA,g.deviceB]) && d.screenRefs.keys().hasAll([g.deviceA,g.deviceB])
+        && d.screenRefs[g.deviceA] is string && d.screenRefs[g.deviceB] is string;
+    }
+    function validReference(d) {
+      return d.keys().hasOnly(['sharedScreenId','order','enabled','durationMs']) && d.sharedScreenId is string
+        && d.order is int && d.order >= 0 && d.order < 2147483647 && d.enabled is bool
+        && d.durationMs is int && d.durationMs >= 0;
+    }
+    function referenceBound(d,id,screenId) {
+      let s = sharedAfter(d.sharedScreenId);
+      let g = grant(s.pairId);
+      return s.state == 'ACTIVE' && g.state == 'ACTIVE' && id in [g.deviceA,g.deviceB] && s.screenRefs[id] == screenId;
+    }
+    function appendReference(d,id,screenId) {
+      let s = sharedAfter(d.sharedScreenId);
+      let before = get(/databases/$(database)/documents/playlistState/$(id)).data;
+      let after = getAfter(/databases/$(database)/documents/playlistState/$(id)).data;
+      return human() && participant(grant(s.pairId)) && validReference(d) && referenceBound(d,id,screenId)
+        && sharedData(d.sharedScreenId).state == 'STAGING' && s.state == 'ACTIVE'
+        && d.enabled == true && d.durationMs == 10000 && d.order == before.nextOrder
+        && after.nextOrder == before.nextOrder + 1 && after.lastSharedScreenId == d.sharedScreenId;
+    }
+    function sharedAsset(d, id) {
+      let links = d.get('sharedScreenIds', []);
+      let pair = d.get('sharingPairId', '');
+      let s = links.size() > 0 ? sharedData(links[0]) : {};
+      return links.size() > 0 && s.get('state','') == 'ACTIVE' && s.pairId == pair
+        && id in s.availableAssetIds && (grant(pair).state == 'ACTIVE' || (human() && grant(pair).state == 'CLOSING')) && grantReader(grant(pair));
+    }
+    function assetShape(d) {
+      return d.ownerUid is string && d.isDefault is bool
+        && idList(d.get('sharedScreenIds', []));
+    }
+    function aclChange(id) {
+      let old = resource.data;
+      let next = request.resource.data;
+      let sid = next.sharingMutationScreenId;
+      let s = sharedAfter(sid);
+      let g = grant(s.pairId);
+      let previous = old.get('sharedScreenIds', []).toSet();
+      let current = next.get('sharedScreenIds', []).toSet();
+      return human() && participant(g) && (g.state == 'ACTIVE' || (g.state == 'CLOSING' && s.state == 'REVOKED')) && bumped(s.pairId)
+        && (old.ownerUid == request.auth.uid
+          || (sid in previous && sharedData(sid).state == 'ACTIVE' && id in sharedData(sid).availableAssetIds)
+          || sharedAsset(old,id)) && old.isDefault == false
+        && next.diff(old).affectedKeys().hasOnly(['sharedScreenIds','sharingPairId','sharingMutationScreenId'])
+        && (old.get('sharingPairId',s.pairId) == s.pairId || previous.size() == 0)
+        && ((s.state == 'ACTIVE' && id in s.availableAssetIds && current == previous.union([sid].toSet()))
+          || ((s.state == 'REVOKED' || !(id in s.availableAssetIds)) && current == previous.difference([sid].toSet())))
+        && (current.size() == 0 ? !('sharingPairId' in next) : next.sharingPairId == s.pairId);
+    }
+    function retainedCopy(d,id) {
+      let original = get(/databases/$(database)/documents/assets/$(d.retainedFrom)).data;
+      let s = sharedData(d.retainedScreenId);
+      let after = sharedAfter(d.retainedScreenId);
+      return human() && participant(grant(s.pairId)) && grant(s.pairId).state in ['ACTIVE','CLOSING']
+        && s.state == 'ACTIVE' && after.state == 'REVOKED' && d.ownerUid == s.createdBy
+        && d.isDefault == false && d.retainedFrom in s.availableAssetIds
+        && id.matches('^retained_[a-f0-9]{64}$')
+        && d.diff(original).affectedKeys().hasOnly(['ownerUid','sharingPairId','sharedScreenIds','sharingMutationScreenId','retainedFrom','retainedScreenId'])
+        && d.get('sharedScreenIds',[]).size() == 0 && !('sharingPairId' in d)
+        && id in after.availableAssetIds;
+    }
+    function restoreReference(id,screenId) {
+      let old = resource.data;
+      let d = request.resource.data;
+      let s = sharedAfter(old.sharedScreenId);
+      let g = grant(s.pairId);
+      return participant(g) && sharedData(old.sharedScreenId).state == 'ACTIVE' && s.state == 'REVOKED'
+        && s.screenRefs[id] == screenId && access(id).ownerUid == s.createdBy
+        && d.keys().hasOnly(['order','enabled','durationMs','name','type','isShared','availableAssetIds','defaultAssetId','assetId','allowManualSwitch','config'])
+        && d.order == old.order && d.enabled == old.enabled && d.durationMs == old.durationMs
+        && d.isShared == false && d.name == s.name && d.type == s.type.lower()
+        && d.availableAssetIds == s.availableAssetIds && d.defaultAssetId == s.defaultAssetId && d.assetId == s.defaultAssetId
+        && d.allowManualSwitch == s.allowManualSwitch && d.config == s.config && bumped(s.pairId);
+    }
+    match /sharingPairs/{pairId} {
+      allow get: if (signedIn() && !exists(/databases/$(database)/documents/sharingPairs/$(pairId))) || grantReader(resource.data);
+      allow create: if validGrant(request.resource.data) && participant(request.resource.data)
+        && request.resource.data.state in ['PENDING','CLOSING'] && request.resource.data.contentVersion == 0
+        && request.resource.data.acceptedA == (request.auth.uid == request.resource.data.userA)
+        && request.resource.data.acceptedB == (request.auth.uid == request.resource.data.userB);
+      allow update: if validGrant(request.resource.data) && participant(resource.data) && resource.data.state != 'REVOKED'
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['schemaVersion','userA','userB','deviceA','deviceB'])
+        && ((request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state']) && request.resource.data.state in ['CLOSING','REVOKED'])
+          || ((resource.data.state == 'ACTIVE' || (resource.data.state == 'CLOSING' && request.resource.data.mutationKind == 'SCREEN' && sharedAfter(request.resource.data.mutationId).state == 'REVOKED')) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['contentVersion','mutationKind','mutationId']) && request.resource.data.contentVersion == resource.data.contentVersion + 1 && mutationRecorded(pairId,request.resource.data))
+          || (resource.data.state == 'PENDING' && request.resource.data.diff(resource.data).affectedKeys().hasOnly([request.auth.uid == resource.data.userA ? 'acceptedA' : 'acceptedB','state'])
+            && (!resource.data.acceptedA || request.resource.data.acceptedA) && (!resource.data.acceptedB || request.resource.data.acceptedB)
+            && request.resource.data.state == (request.resource.data.acceptedA && request.resource.data.acceptedB ? 'ACTIVE' : 'PENDING')));
+    }
+    match /sharedScreens/{sid} {
+      allow get: if (human() && !exists(/databases/$(database)/documents/sharedScreens/$(sid))) || grantReader(grant(resource.data.pairId));
+      allow list: if grantReader(grant(resource.data.pairId));
+      allow create: if validShared(request.resource.data) && participant(grant(request.resource.data.pairId))
+        && grant(request.resource.data.pairId).state == 'ACTIVE' && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.state == 'STAGING' && request.resource.data.contentVersion == 0;
+      allow update: if validShared(request.resource.data) && participant(grant(resource.data.pairId)) && (grant(resource.data.pairId).state == 'ACTIVE' || (grant(resource.data.pairId).state == 'CLOSING' && request.resource.data.state == 'REVOKED'))
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['schemaVersion','pairId','createdBy','screenRefs'])
+        && resource.data.state != 'REVOKED' && request.resource.data.state in ['ACTIVE','REVOKED']
+        && (resource.data.state != 'STAGING' || resource.data.createdBy == request.auth.uid || (grant(resource.data.pairId).state == 'CLOSING' && request.resource.data.state == 'REVOKED'))
+        && request.resource.data.contentVersion == resource.data.contentVersion + 1 && bumped(resource.data.pairId);
+    }
+    match /playlistState/{id} {
+      allow get: if owner(id) || (exists(/databases/$(database)/documents/playlistState/$(id)) && participant(grant(resource.data.pairId)) && grant(resource.data.pairId).state == 'ACTIVE');
+      allow create: if owner(id) && request.resource.data.keys().hasOnly(['nextOrder','pairId']) && request.resource.data.nextOrder is int && request.resource.data.nextOrder >= 0 && request.resource.data.pairId is string;
+      allow update: if request.resource.data.keys().hasOnly(['nextOrder','pairId','lastSharedScreenId']) && request.resource.data.nextOrder is int && request.resource.data.nextOrder >= resource.data.nextOrder
+        && request.resource.data.nextOrder < 2147483647 && request.resource.data.pairId is string
+        && (owner(id) || (request.resource.data.pairId == resource.data.pairId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nextOrder','lastSharedScreenId'])
+          && appendReference(getAfter(/databases/$(database)/documents/devices/$(id)/screens/$(sharedAfter(request.resource.data.lastSharedScreenId).screenRefs[id])).data, id, sharedAfter(request.resource.data.lastSharedScreenId).screenRefs[id])));
+    }
+    match /deviceAccess/{id} {
+      allow read: if owner(id) || device(id);
+      allow write: if false;
+    }
+    match /users/{uid} {
+      allow read, create, update: if human() && request.auth.uid == uid;
+      match /devices/{id} {
+        allow read: if human() && request.auth.uid == uid;
+        allow create, update: if (owner(id) || device(id)) && access(id).ownerUid == uid
+          && request.resource.data.role == 'OWNER'
+          && request.resource.data.keys().hasOnly(['role', 'nameOverride', 'addedAt']);
+        allow delete: if owner(id) && request.auth.uid == uid;
+      }
+    }
+    match /devices/{id} {
+      allow read: if owner(id) || device(id);
+      allow create: if (owner(id) || device(id))
+        && request.resource.data.keys().hasOnly(['name','fwVersion','hw','configVersion','timezone','tzPosix','brightness','sleepMode','createdAt','updatedAt','hasSensor','userId','isOnline']);
+      allow update: if owner(id) || (device(id)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fwVersion','hw','brightness']));
+      allow delete: if owner(id);
+      match /screens/{screenId} {
+        allow read: if owner(id) || device(id);
+        // Private creates have no sharedScreenId. Guard the shared-only helper
+        // before evaluating its document lookups, including transaction creates.
+        allow create: if (owner(id) && (!('sharedScreenId' in request.resource.data) || (validReference(request.resource.data) && referenceBound(request.resource.data,id,screenId)))) || ('sharedScreenId' in request.resource.data && appendReference(request.resource.data,id,screenId));
+        allow update: if (owner(id) && (!('sharedScreenId' in request.resource.data) || (validReference(request.resource.data) && referenceBound(request.resource.data,id,screenId) && (!('sharedScreenId' in resource.data) || request.resource.data.sharedScreenId == resource.data.sharedScreenId)))) || restoreReference(id,screenId);
+        allow delete: if owner(id) || (human() && 'sharedScreenId' in resource.data && participant(grant(sharedData(resource.data.sharedScreenId).pairId)) && sharedAfter(resource.data.sharedScreenId).state == 'REVOKED' && bumped(sharedData(resource.data.sharedScreenId).pairId));
+      }
+    }
+    match /assets/{assetId} {
+      allow get: if human() && !exists(/databases/$(database)/documents/assets/$(assetId));
+      allow read: if assetReader(resource.data) || sharedAsset(resource.data,assetId);
+      allow create: if assetShape(request.resource.data) && request.resource.data.isDefault == false
+        && ((human() && request.resource.data.ownerUid == request.auth.uid && request.resource.data.get('sharedScreenIds',[]).size() == 0 && !('sharingPairId' in request.resource.data)) || retainedCopy(request.resource.data,assetId));
+      allow update: if human() && assetShape(request.resource.data) && resource.data.isDefault == false && request.resource.data.isDefault == false && request.resource.data.ownerUid == resource.data.ownerUid
+        && (aclChange(assetId) || ((resource.data.ownerUid == request.auth.uid || sharedAsset(resource.data,assetId))
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['ownerUid','isDefault','sharingPairId','sharedScreenIds','sharingMutationScreenId','retainedFrom','retainedScreenId'])
+          && (resource.data.get('sharedScreenIds',[]).size() == 0 || (request.resource.data.type == resource.data.type && bumped(resource.data.sharingPairId)))));
+      allow delete: if human() && resource.data.ownerUid == request.auth.uid && resource.data.isDefault == false && resource.data.get('sharedScreenIds',[]).size() == 0;
+    }
+    // Legacy pairs/sharedScreens are deliberately inactive after cutover.
+  }
+}

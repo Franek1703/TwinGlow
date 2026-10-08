@@ -1,7 +1,4 @@
-enum AssetType {
-  image,
-  animation,
-}
+enum AssetType { image, animation }
 
 /// One authored frame of an animation: a full 16x16 grid plus how long it
 /// stays on screen.
@@ -20,14 +17,11 @@ class AnimationFrameModel {
   }) : pixels = copyGrid(pixels);
 
   AnimationFrameModel.blank({this.durationMs = defaultDurationMs})
-      : pixels = emptyGrid();
+    : pixels = emptyGrid();
 
   static const int defaultDurationMs = 200;
 
-  AnimationFrameModel copyWith({
-    List<List<int>>? pixels,
-    int? durationMs,
-  }) {
+  AnimationFrameModel copyWith({List<List<int>>? pixels, int? durationMs}) {
     return AnimationFrameModel(
       pixels: pixels ?? this.pixels,
       durationMs: durationMs ?? this.durationMs,
@@ -36,10 +30,8 @@ class AnimationFrameModel {
 
   /// A frame whose grid shares no references with this one. Duplicating a
   /// frame without this let edits to the copy write through to the original.
-  AnimationFrameModel deepCopy() => AnimationFrameModel(
-        pixels: pixels,
-        durationMs: durationMs,
-      );
+  AnimationFrameModel deepCopy() =>
+      AnimationFrameModel(pixels: pixels, durationMs: durationMs);
 
   bool get hasVisiblePixel =>
       pixels.any((row) => row.any((value) => (value & 0xFFFFFF) != 0));
@@ -63,10 +55,12 @@ class AssetModel {
   final String name;
   final AssetType type;
   final List<String> tags;
-  final List<List<int>>? pixelData; // 16x16 for images, first frame for animations
+  final List<List<int>>?
+  pixelData; // 16x16 for images, first frame for animations
   final List<AnimationFrameModel>? frames; // animations only
   final bool isDefault;
   final DateTime? createdAt;
+  final int revision;
 
   AssetModel({
     required this.id,
@@ -77,6 +71,7 @@ class AssetModel {
     this.frames,
     this.isDefault = false,
     this.createdAt,
+    this.revision = 0,
   });
 
   /// The grid to show in a static thumbnail. Animations preview on their first
@@ -99,6 +94,7 @@ class AssetModel {
     List<AnimationFrameModel>? frames,
     bool? isDefault,
     DateTime? createdAt,
+    int? revision,
   }) {
     return AssetModel(
       id: id ?? this.id,
@@ -109,6 +105,7 @@ class AssetModel {
       frames: frames ?? this.frames,
       isDefault: isDefault ?? this.isDefault,
       createdAt: createdAt ?? this.createdAt,
+      revision: revision ?? this.revision,
     );
   }
 }
