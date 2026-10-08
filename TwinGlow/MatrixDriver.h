@@ -31,13 +31,14 @@ public:
     // Fill operations
     void fill(uint32_t color);
     void fill(uint8_t r, uint8_t g, uint8_t b);
+    // Dim full-panel status indicators, even before saved brightness is loaded.
+    void fillStatus(uint32_t color);
     
     // Utility
     uint32_t color(uint8_t r, uint8_t g, uint8_t b);
     uint32_t color(uint32_t rgb888); // Convert 0xRRGGBB to NeoPixel format
     
-    // Test animations
-    void testRainbow(unsigned long durationMs = 3000);
+    // Test pattern
     void testFill(uint8_t r, uint8_t g, uint8_t b);
     
     uint16_t numPixels() const { return MATRIX_WIDTH * MATRIX_HEIGHT; }

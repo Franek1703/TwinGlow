@@ -14,6 +14,7 @@ uint32_t painted[256];unsigned shows=0;
 MatrixDriver::MatrixDriver():currentBrightness(128){}
 MatrixDriver::~MatrixDriver()=default;
 void MatrixDriver::fill(uint32_t color){std::fill(painted,painted+256,color);}
+void MatrixDriver::fillStatus(uint32_t color){fill(color);}
 void MatrixDriver::show(){++shows;}
 uint32_t MatrixDriver::color(uint32_t v){return v;}
 uint32_t MatrixDriver::color(uint8_t r,uint8_t g,uint8_t b){return (r<<16)|(g<<8)|b;}

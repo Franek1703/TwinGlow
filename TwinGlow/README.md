@@ -101,5 +101,6 @@ See `Config.h` for troubleshooting section with common issues and solutions.
 
 - Device ID is generated once and stored in NVS
 - Brightness persists across reboots
+- Startup has no rainbow animation; full-screen status indicators are capped at 8/255 LED output before the selected brightness is applied
 - Factory reset: Very long press (~10s) on ACTION button
 - BLE provisioning mode: Entered automatically if Wi-Fi fails repeatedly

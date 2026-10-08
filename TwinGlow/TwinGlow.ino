@@ -114,13 +114,7 @@ void setup() {
         Serial.println(F("[ERROR] Matrix initialization failed - check NEOPIXEL_PIN in Config.h"));
         Serial.println(F("[ERROR] Common fixes: change NEOPIXEL_PIN to 5, check wiring, verify power"));
     } else {
-        matrix.clear();
-        // Test rainbow animation on startup
-        Serial.println(F("[Matrix] Running startup test animation..."));
-        matrix.testRainbow(2000); // 2 second rainbow animation
-        matrix.clear();
-        
-        matrix.fill(matrix.color(0, 255, 255)); // Blue during boot
+        matrix.fillStatus(matrix.color(0, 255, 255)); // Dim cyan during boot
         matrix.show();
     }
     
@@ -276,7 +270,7 @@ void handleProvisioningBle() {
     if (!bleStarted) {
         if (bleProvisioning.begin()) {
             bleStarted = true;
-            matrix.fill(matrix.color(255, 255, 0)); // Yellow during provisioning
+            matrix.fillStatus(matrix.color(255, 255, 0)); // Yellow during provisioning
             matrix.show();
         } else {
             Serial.println(F("[BLE] Failed to start"));
@@ -304,7 +298,7 @@ void handleProvisioningBle() {
 
         Serial.println(F("[BLE] Provisioning complete, credentials saved"));
 
-        matrix.fill(matrix.color(0, 255, 0)); // Green: provisioned
+        matrix.fillStatus(matrix.color(0, 255, 0)); // Green: provisioned
         matrix.show();
         delay(500);
 
@@ -329,7 +323,7 @@ void handleWifiConnecting() {
             nvs.getWifiPass(pass);
             if (wifiManager.begin(ssid, pass)) {
                 wifiStarted = true;
-                // matrix.fill(matrix.color(0, 255, 0)); // Green during Wi-Fi
+                // matrix.fillStatus(matrix.color(0, 255, 0)); // Green during Wi-Fi
                 matrix.show();
             }
         } else {
@@ -768,7 +762,7 @@ void handleRunning() {
             if (now < 1000000000) {
                 if (logRender) Serial.println(F("[Render] Branch: CLOCK (invalid time -> red)"));
                 // Invalid time - show test pattern
-                matrix.fill(matrix.color(255, 0, 0)); // Red = time invalid
+                matrix.fillStatus(matrix.color(255, 0, 0)); // Red = time invalid
                 matrix.show();
             } else {
                 if (logRender) Serial.println(F("[Render] Branch: CLOCK"));
@@ -899,14 +893,12 @@ void handleRunning() {
         } else {
             if (logRender) Serial.println(F("[Render] Branch: fallback (unknown type or SENSOR without BME)"));
             // Unknown type or SENSOR without BME680: show placeholder so display updates.
-            // Raised from 32: gamma correction maps 32 -> 2/255, which is invisible.
-            matrix.fill(matrix.color(96, 96, 96));
+            matrix.fillStatus(matrix.color(96, 96, 96));
             matrix.show();
         }
     } else {
-        // No screens - show default pattern. Raised from 64: gamma correction
-        // maps 64 -> 12/255, too dim to read as "device is alive".
-        matrix.fill(matrix.color(128, 128, 128));
+        // No screens - show a dim grey status indicator.
+        matrix.fillStatus(matrix.color(128, 128, 128));
         matrix.show();
     }
     // No trailing show() here: every branch above ends in one of its own, so

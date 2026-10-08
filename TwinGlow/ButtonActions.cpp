@@ -123,7 +123,7 @@ void ButtonActions::handleFactoryReset() {
     Serial.println(F("[ButtonActions] Factory reset triggered!"));
     
     // Visual feedback
-    matrix->fill(matrix->color(255, 0, 0)); // Red
+    matrix->fillStatus(matrix->color(255, 0, 0)); // Red
     matrix->show();
     delay(500);
     

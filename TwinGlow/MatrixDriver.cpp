@@ -148,6 +148,27 @@ void MatrixDriver::fill(uint8_t r, uint8_t g, uint8_t b) {
     fill(color(r, g, b));
 }
 
+void MatrixDriver::fillStatus(uint32_t color) {
+    // Cap linear PWM after gamma correction, so status screens stay dim even
+    // with gamma disabled or the owner's brightness set to maximum. Normal
+    // screen content still uses fill()/setPixel() at the selected brightness.
+    constexpr uint8_t maxStatusPwm = 8;
+    uint32_t corrected = applyGamma(color);
+    uint8_t r = (corrected >> 16) & 0xFF;
+    uint8_t g = (corrected >> 8) & 0xFF;
+    uint8_t b = corrected & 0xFF;
+    uint8_t peak = max(r, max(g, b));
+    if (peak > maxStatusPwm) {
+        r = (uint16_t)r * maxStatusPwm / peak;
+        g = (uint16_t)g * maxStatusPwm / peak;
+        b = (uint16_t)b * maxStatusPwm / peak;
+    }
+    uint32_t dimmed = ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+    for (uint16_t i = 0; i < numPixels(); i++) {
+        strip.setPixelColor(i, dimmed);
+    }
+}
+
 uint32_t MatrixDriver::color(uint8_t r, uint8_t g, uint8_t b) {
     return strip.Color(r, g, b);
 }
@@ -172,55 +193,6 @@ uint16_t MatrixDriver::xyToIndex(uint8_t x, uint8_t y) {
         // Odd row: right to left
         return row * MATRIX_WIDTH + (MATRIX_WIDTH - 1 - col);
     }
-}
-
-void MatrixDriver::testRainbow(unsigned long durationMs) {
-    Serial.println(F("[Matrix] Starting rainbow test animation"));
-    unsigned long startMs = millis();
-    unsigned long frameCount = 0;
-    const unsigned long frameDelayMs = 50; // ~20 FPS
-    
-    while (true) {
-        unsigned long elapsed = millis() - startMs;
-        if (elapsed >= durationMs) break;
-        
-        // Create rainbow effect - simpler approach
-        for (uint8_t y = 0; y < MATRIX_HEIGHT; y++) {
-            for (uint8_t x = 0; x < MATRIX_WIDTH; x++) {
-                // Calculate hue based on position and time
-                uint16_t hue = (x * 16 + y + elapsed / 20) % 256;
-                
-                // Convert hue (0-255) to RGB using simple approximation
-                uint8_t r, g, b;
-                if (hue < 85) {
-                    r = 255 - hue * 3;
-                    g = hue * 3;
-                    b = 0;
-                } else if (hue < 170) {
-                    hue -= 85;
-                    r = 0;
-                    g = 255 - hue * 3;
-                    b = hue * 3;
-                } else {
-                    hue -= 170;
-                    r = hue * 3;
-                    g = 0;
-                    b = 255 - hue * 3;
-                }
-                
-                setPixel(x, y, r, g, b);
-            }
-        }
-        show();
-        frameCount++;
-        delay(frameDelayMs);
-    }
-    
-    Serial.print(F("[Matrix] Rainbow test complete ("));
-    Serial.print(frameCount);
-    Serial.print(F(" frames, "));
-    Serial.print(millis() - startMs);
-    Serial.println(F("ms elapsed)"));
 }
 
 void MatrixDriver::testFill(uint8_t r, uint8_t g, uint8_t b) {
