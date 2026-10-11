@@ -14,6 +14,8 @@ bool valid = true;
 bool isTimeValid() { return valid; }
 }
 struct Matrix {
+    bool blanked = false;
+    void setDisplayBlanked(bool value) { blanked = value; }
     uint8_t brightness = 128;
     unsigned clears = 0, shows = 0;
     void setBrightness(uint8_t value) { brightness = value ? value : 1; }
@@ -69,12 +71,12 @@ int main() {
     doc.sleep.endMinute = 7 * 60;
     doc.sleep.brightness = 0;
     applyDeviceSettings(doc);
-    assert(updateSleepState() && sleepActive && matrix.clears == 1);
+    assert(updateSleepState() && sleepActive && matrix.clears == 1 && matrix.blanked);
     ButtonActions buttons;
     buttons.onBrightnessChange = handleSleepBrightnessChange;
     unsigned savedWrites = nvs.brightnessWrites, sleepWrites = nvs.sleepWrites;
     buttons.handleBrightnessChange(true);
-    assert(!updateSleepState() && matrix.brightness == 16);
+    assert(!updateSleepState() && matrix.brightness == 16 && !matrix.blanked);
     assert(renderAsset.resets == 1 && receivedRenderer.resets == 1);
     for (int i = 0; i < 4; ++i) {
         fakeMillis += SLEEP_CHECK_INTERVAL_MS;

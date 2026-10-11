@@ -3,6 +3,7 @@
 
 #include <Adafruit_NeoPixel.h>
 #include "Config.h"
+#include "ConnectivityStatus.h"
 
 /**
  * NeoPixel matrix driver with serpentine mapping
@@ -27,6 +28,10 @@ public:
     void setPixelOriented(uint8_t x, uint8_t y, uint8_t r, uint8_t g, uint8_t b);
     void clear();
     void show();
+    // Returns whether the indicator changed; the caller can present the held
+    // frame immediately without restarting its renderer or animation.
+    bool setConnectivityStatus(ConnectivityStatus status, bool enabled = true);
+    void setDisplayBlanked(bool blanked) { displayBlanked = blanked; }
     
     // Fill operations
     void fill(uint32_t color);
@@ -46,6 +51,9 @@ public:
 private:
     Adafruit_NeoPixel strip;
     uint8_t currentBrightness;
+    ConnectivityStatus connectivityStatus = ConnectivityStatus::Online;
+    bool connectivityIndicatorEnabled = false;
+    bool displayBlanked = false;
 
     // sRGB -> linear PWM lookup, built once in begin(). The app hands us
     // gamma-encoded sRGB (what a phone screen shows); NeoPixel drives the byte
@@ -60,6 +68,7 @@ private:
     
     // Serpentine mapping: convert (x,y) to pixel index
     uint16_t xyToIndex(uint8_t x, uint8_t y);
+    uint16_t orientedIndex(uint8_t x, uint8_t y);
 };
 
 #endif // MATRIX_DRIVER_H

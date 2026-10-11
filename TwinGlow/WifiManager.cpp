@@ -1,11 +1,12 @@
 #include "WifiManager.h"
+#include <limits.h>
 
 WifiManager* WifiManager::activeInstance = nullptr;
 
 WifiManager::WifiManager() 
     : lastAttemptMs(0), retryDelayMs(WIFI_RETRY_QUICK_DELAY_MS), failureCount(0),
       quickRetryCount(0), teardownStartedMs(0), teardownPending(false),
-      offlineSinceMs(0), connecting(false), persistentReconnect(false),
+      connecting(false),
       wasConnected(false), everConnected(false), reconnectRequested(false),
       disconnectEventPending(false), gotIpEventPending(false),
       lastDisconnectReason(0), eventHandlerRegistered(false) {
@@ -19,8 +20,6 @@ bool WifiManager::begin(const String& ssid, const String& password) {
     retryDelayMs = WIFI_RETRY_QUICK_DELAY_MS;
     connecting = false;
     teardownPending = false;
-    offlineSinceMs = 0;
-    persistentReconnect = false;
     wasConnected = false;
     everConnected = false;
     
@@ -99,7 +98,6 @@ void WifiManager::update() {
         everConnected = true;
         connecting = false;
         teardownPending = false;
-        offlineSinceMs = 0;
         failureCount = 0;
         quickRetryCount = 0;
         retryDelayMs = WIFI_RETRY_QUICK_DELAY_MS;
@@ -112,26 +110,11 @@ void WifiManager::update() {
         wasConnected = false;
         connecting = false;
         teardownPending = false;
-        offlineSinceMs = now;
         failureCount = 0;
         quickRetryCount = 0;
         retryDelayMs = WIFI_RETRY_QUICK_DELAY_MS;
         lastAttemptMs = now;
         Serial.println(F("[WiFi] Runtime connection lost; keeping cached screen active"));
-    }
-
-    // A device that has connected once retries forever, but the station can
-    // still reach a state no further begin() recovers from - an AP that expires
-    // every auth leaves the retry loop running with nothing to show for it.
-    // A restart is the only lever left, and it is cheap: credentials and the
-    // cached playlist both survive in NVS.
-    if (persistentReconnect && offlineSinceMs != 0 &&
-        now - offlineSinceMs >= WIFI_OFFLINE_REBOOT_MS) {
-        Serial.print(F("[WiFi] Offline for "));
-        Serial.print((now - offlineSinceMs) / 1000);
-        Serial.println(F("s; restarting to clear the radio"));
-        Serial.flush();
-        ESP.restart();
     }
 
     // Second half of a retry: the radio has had WIFI_TEARDOWN_SETTLE_MS with
@@ -147,8 +130,8 @@ void WifiManager::update() {
     if (connecting) {
         if (now - lastAttemptMs < WIFI_CONNECT_ATTEMPT_TIMEOUT_MS) return;
 
-        failureCount++;
-        quickRetryCount++;
+        if (failureCount < INT_MAX - 1) ++failureCount;
+        if (quickRetryCount < WIFI_RETRY_QUICK_COUNT + 4) ++quickRetryCount;
         connecting = false;
         retryDelayMs = calculateBackoffDelay();
         lastAttemptMs = now;
@@ -217,8 +200,8 @@ void WifiManager::finishConnectionAttempt() {
     // WIFI_CONNECT_ATTEMPT_TIMEOUT_MS waiting for a connection nobody asked for.
     if (status == WL_CONNECT_FAILED) {
         connecting = false;
-        failureCount++;
-        quickRetryCount++;
+        if (failureCount < INT_MAX - 1) ++failureCount;
+        if (quickRetryCount < WIFI_RETRY_QUICK_COUNT + 4) ++quickRetryCount;
         retryDelayMs = calculateBackoffDelay();
         lastAttemptMs = millis();
         Serial.print(F("[WiFi] begin() failed to start the station; failures="));
@@ -249,24 +232,7 @@ unsigned long WifiManager::calculateBackoffDelay() {
 }
 
 bool WifiManager::shouldRetry() const {
-    return persistentReconnect || failureCount < WIFI_MAX_FAILURES;
-}
-
-bool WifiManager::shouldEnterProvisioning() const {
-    return !persistentReconnect && failureCount >= WIFI_MAX_FAILURES;
-}
-
-void WifiManager::reset() {
-    WiFi.disconnect();
-    connecting = false;
-    teardownPending = false;
-    offlineSinceMs = 0;
-    failureCount = 0;
-    quickRetryCount = 0;
-    retryDelayMs = WIFI_RETRY_QUICK_DELAY_MS;
-    persistentReconnect = false;
-    wasConnected = false;
-    everConnected = false;
+    return !currentSsid.isEmpty();
 }
 
 void WifiManager::handleWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {

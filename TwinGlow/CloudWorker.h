@@ -12,6 +12,7 @@
 
 #include "CloudMessages.h"
 #include "PairTransport.h"
+#include "ConnectivityStatus.h"
 
 /**
  * Runs periodic Firebase I/O on the other ESP32 core.
@@ -63,6 +64,8 @@ public:
     bool isBusy();
     bool isBackoffActive() const;
     uint8_t getConsecutiveFailures() const { return consecutiveTransportFailures; }
+    ConnectivityStatus connectivityStatus(bool wifiConnected);
+    void resetHealthConfirmation();
 
 private:
     struct CloudJob {
@@ -101,8 +104,7 @@ private:
     // millis() when the current run of transport failures began; 0 while the
     // last call succeeded. Gates the Wi-Fi cycle on a sustained outage.
     uint32_t transportFailingSinceMs;
-    // Set once per stuck operation so the watchdog intervenes a single time
-    // rather than on every loop() pass while the call stays blocked.
+    // Set once per stuck operation to log once and refuse more queued work.
     bool watchdogTripped;
     uint8_t watchdogTrips;
     // Rate limits the "still stuck" line so a wedged worker keeps saying so.
@@ -111,6 +113,7 @@ private:
     bool brightnessWritePending;
     uint32_t brightnessSettleAtMs;
     portMUX_TYPE stateMux = portMUX_INITIALIZER_UNLOCKED;
+    ConnectionHealth connectionHealth;
 
     // request* and popResult are both called by the Arduino loop task, so these
     // flags do not need a cross-core lock. They coalesce identical jobs while
@@ -118,12 +121,12 @@ private:
     bool jobPending[(size_t)CloudOperation::COUNT];
 
     bool enqueue(const CloudJob& job);
-    // Breaks a cloud operation that has stopped making progress. Runs on the
-    // Arduino loop task via tick().
+    // Reports a stuck operation while preserving local playback and ownership.
     void serviceWatchdog();
     void run();
     void execute(const CloudJob& job, CloudResult& result);
     void recordOutcome(bool success, int errorCode, const char* operationName);
+    void recordServiceOutcome(CloudService service, bool success);
     unsigned long calculateBackoffMs() const;
     static void taskEntry(void* context);
 };

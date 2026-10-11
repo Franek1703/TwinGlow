@@ -182,7 +182,9 @@ Device starts BLE GATT service exposing characteristics for:
 
 **Failure**
 
-- If repeated failures exceed threshold → return to **PROVISIONING_BLE** (network likely changed)
+- Saved credentials retry indefinitely with backoff capped at 60 seconds. Connection
+  failures never enter **PROVISIONING_BLE** or restart the board. To change an invalid
+  SSID/password, hold ACTION for 10 seconds to clear credentials and restart into BLE.
 
 **Special cases**
 
@@ -424,13 +426,18 @@ Even if sharing fails (offline):
 ### 8.2 Wi-Fi creds are wrong (router changed)
 
 - Retry with backoff
-- After threshold → BLE provisioning
+- Retry indefinitely, including boot with a saved SSID; no failure threshold enters BLE
+- Hold ACTION for 10 seconds to factory-reset credentials, including before playback starts
 
 ### 8.3 Firebase is down / no internet
 
-- Enter OFFLINE_RUNNING
-- Keep cached playlist/assets
-- Retry Firebase periodically
+- Keep the runtime state and cached playlist/assets/received override; playback and buttons continue
+- Red top-right pixel for disconnected Wi-Fi, orange for unavailable/unconfirmed Firebase
+- Confirm RTDB/Firestore independently; use existing jobs and a 60-second freshness timeout
+- Hide the indicator during fully blank sleep; use current brightness during dim sleep
+- Retry Firebase periodically without automatic reboot
+- A cloud operation stuck for 30 seconds logs and shows orange; preserve client/task ownership
+  and pending flags until its result returns. No main-loop transport cancellation.
 
 ### 8.4 NTP fails
 
@@ -476,7 +483,7 @@ Even if sharing fails (offline):
 ## 10. Final “One-Page” Execution Summary
 
 1. Boot → load NVS (deviceId, Wi-Fi, uid, brightness, timezone, sleep window)
-2. If no Wi-Fi → BLE provisioning
+2. If no saved Wi-Fi credentials → BLE provisioning
 3. Connect Wi-Fi (retry/backoff)
 4. NTP sync now + schedule every 6h
 5. Connect Firebase (ServiceAuth DB secret)

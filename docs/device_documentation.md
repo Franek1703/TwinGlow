@@ -121,7 +121,10 @@ All data survives reboot/power loss.
 BLE provisioning mode is entered when:
 
 - No Wi-Fi credentials are stored in NVS
-- OR Wi-Fi connection fails repeatedly
+- Or the user holds ACTION for 10 seconds to clear Wi-Fi credentials and restart
+
+Connection failures never trigger BLE, even during boot with a saved SSID. The
+10-second factory reset also works before playback/button actions initialize.
 
 ### 6.2 BLE GATT Service
 
@@ -151,7 +154,9 @@ The device exposes a custom BLE service with characteristics for:
 1. Device loads SSID and password from NVS
 2. Attempts to connect to Wi-Fi
 3. If connection succeeds → provisioning ends
-4. If connection fails → re-enters BLE provisioning mode
+4. If connection fails → retry indefinitely with backoff capped at 60 seconds
+5. A runtime outage preserves the playlist, asset cache, and received override in RAM;
+   playback and buttons continue. No Wi-Fi or cloud timeout automatically restarts the board.
 
 ---
 
@@ -345,6 +350,24 @@ If Wi-Fi or Firebase becomes unavailable:
 - Device continues operating using cached configuration/assets
 - CLOCK continues using local time (may drift slightly until next NTP sync)
 - SENSOR continues reading locally (if hardware present)
+- One screen-space pixel at the top right is red (`#FF0000`) while Wi-Fi is disconnected,
+  or orange (`#FF8000`) when Wi-Fi is connected but Firebase is unavailable/unconfirmed.
+  Red takes priority. The indicator disappears after communication is confirmed again.
+- RTDB and Firestore are confirmed separately using existing requests. A successful
+  RTDB heartbeat cannot hide a Firestore fault. Auth failures, transport errors,
+  HTTP 401/403/408/429/5xx, an operation blocked for 30 seconds, or no successful
+  cloud request for 60 seconds produce orange. Missing/malformed individual assets
+  and local allocation failures do not introduce a connection fault.
+- A fully blank sleep window also hides the indicator; dim sleep retains it at
+  the current brightness. BLE provisioning keeps its normal yellow screen.
+- The overlay is applied in `MatrixDriver::show()` using the configured panel
+  orientation, then the original raw pixel bytes are restored. Connectivity
+  transitions refresh a held frame without resetting animations.
+- A stuck cloud call logs at most once every 30 seconds. The worker keeps ownership
+  of its client and pending jobs until it returns; the main loop does not cancel
+  I/O or restart the board. A permanently blocked library call may require a
+  manual restart to restore cloud communication. Cached content remains RAM-only;
+  a manual restart loses it.
 
 ---
 

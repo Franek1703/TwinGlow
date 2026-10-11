@@ -16,10 +16,7 @@ public:
     bool begin(const String& ssid, const String& password);
     void update(); // Call in loop() for non-blocking operation
 
-    // Initial setup gives up after WIFI_MAX_FAILURES so bad credentials can
-    // return to provisioning. Once the device has connected successfully,
-    // runtime recovery must continue forever using capped backoff.
-    void setPersistentReconnect(bool enabled) { persistentReconnect = enabled; }
+    // Saved credentials are retried indefinitely, including during boot.
     
     // Asks for a fresh station session from another task. The request is acted
     // on inside update(), so that every WiFi.begin()/disconnect() in the
@@ -33,9 +30,6 @@ public:
     // Status
     int getFailureCount() const { return failureCount; }
     bool shouldRetry() const;
-    bool shouldEnterProvisioning() const;
-    
-    void reset();
     
 private:
     String currentSsid;
@@ -51,11 +45,7 @@ private:
     unsigned long teardownStartedMs;
     bool teardownPending;
 
-    // millis() when the current offline stretch began; 0 while connected.
-    unsigned long offlineSinceMs;
-
     bool connecting;
-    bool persistentReconnect;
     bool wasConnected;
     bool everConnected;
 

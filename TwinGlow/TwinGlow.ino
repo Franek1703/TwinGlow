@@ -198,6 +198,8 @@ void loop() {
     // Handle button actions if initialized
     if (buttonActions != nullptr) {
         buttonActions->update();
+    } else {
+        handleBootFactoryReset();
     }
 
     // Consume background Firebase results without ever waiting for the worker.
@@ -213,6 +215,7 @@ void loop() {
         wifiManager.requestReconnect();
     }
     servicePlaylistUpdate();
+    updateConnectivityIndicator();
     
     // State machine
     switch (fsm.getState()) {
@@ -265,11 +268,24 @@ void loop() {
             break;
     }
     
+    // Wi-Fi handlers can change link state during this pass. Refresh a static
+    // frame immediately without resetting either animation renderer.
+    updateConnectivityIndicator();
     // Update scheduler
     scheduler.update();
     
     // Small delay to prevent watchdog issues
     delay(10);
+}
+
+void handleBootFactoryReset() {
+    // Saved credentials may be retried forever before ButtonActions exists.
+    // Keep the explicit 10-second reset available during that boot phase.
+    if (buttons.getPressType(ButtonId::ACTION) != ButtonPressType::VERY_LONG) return;
+    buttons.clearEvent(ButtonId::ACTION);
+    Serial.println(F("[Boot] Factory reset triggered"));
+    nvs.factoryReset();
+    ESP.restart();
 }
 
 void handleProvisioningBle() {
@@ -327,7 +343,7 @@ void handleWifiConnecting() {
     
     if (!wifiStarted) {
         String ssid, pass;
-        if (nvs.getWifiSsid(ssid)) {
+        if (nvs.getWifiSsid(ssid) && !ssid.isEmpty()) {
             nvs.getWifiPass(pass);
             if (wifiManager.begin(ssid, pass)) {
                 wifiStarted = true;
@@ -345,16 +361,30 @@ void handleWifiConnecting() {
     
     if (wifiManager.isConnected()) {
         Serial.println(F("[WiFi] Connected!"));
-        // From this point onward a network outage is not a provisioning error.
-        // Retry forever in the background while cached content keeps running.
-        wifiManager.setPersistentReconnect(true);
         wifiStarted = false;
         fsm.transition(DeviceState::TIME_SYNC);
-    } else if (wifiManager.shouldEnterProvisioning()) {
-            Serial.println(F("[WiFi] Too many failures, entering BLE mode"));
-        wifiManager.reset();
-        wifiStarted = false;
-        fsm.transition(DeviceState::PROVISIONING_BLE);
+    }
+}
+
+void updateConnectivityIndicator() {
+    static bool lastWifiConnected = false;
+    static bool confirmCloudAfterReconnect = false;
+    const bool connected = wifiManager.isConnected();
+    if (connected != lastWifiConnected) {
+        cloudWorker.resetHealthConfirmation();
+        confirmCloudAfterReconnect = connected;
+        lastWifiConnected = connected;
+    }
+    if (confirmCloudAfterReconnect && cloudWorker.isStarted() &&
+        cloudWorker.requestConfigCheck()) {
+        confirmCloudAfterReconnect = false;
+    }
+    const DeviceState state = fsm.getState();
+    const bool enabled = state != DeviceState::PROVISIONING_BLE &&
+        state != DeviceState::BOOT && state != DeviceState::LOAD_NVS &&
+        state != DeviceState::ERROR_RECOVERY;
+    if (matrix.setConnectivityStatus(cloudWorker.connectivityStatus(connected), enabled)) {
+        matrix.show();
     }
 }
 
@@ -437,6 +467,7 @@ bool updateSleepState() {
                 Serial.println(sleepSettings.brightness);
             } else {
                 Serial.println(F("[Sleep] Leaving sleep window"));
+                matrix.setDisplayBlanked(false);
                 matrix.setBrightness(nvs.getBrightness());
                 renderAsset.resetAnimation();
                 receivedRenderer.resetAnimation();
@@ -445,11 +476,12 @@ bool updateSleepState() {
     }
 
     uint8_t brightness = effectiveSleepBrightness();
+    const bool dark = sleepActive && brightness == 0;
+    matrix.setDisplayBlanked(dark);
     if (sleepActive && brightness > 0 && matrix.getBrightness() != brightness) {
         matrix.setBrightness(brightness);
     }
     static bool wasBlank = false;
-    bool dark = sleepActive && brightness == 0;
     if (dark && !wasBlank) {
         matrix.clear();
         matrix.show();

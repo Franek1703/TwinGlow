@@ -130,8 +130,7 @@ bool CloudWorker::begin(FirebaseClientWrap* firebaseClient,
     // CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0 only (CPU1 is unset), and the
     // Arduino core leaves loopTaskWDTEnabled false unless enableLoopWDT() is
     // called. Hardware hang detection is given up deliberately; serviceWatchdog()
-    // now covers a stuck cloud operation in software, and recovers the transport
-    // instead of rebooting the panel.
+    // reports a stuck cloud operation without interrupting cached playback.
     esp_task_wdt_config_t wdtConfig = {};
     wdtConfig.timeout_ms = CONFIG_ESP_TASK_WDT_TIMEOUT_S * 1000;
     wdtConfig.idle_core_mask = 0;
@@ -170,8 +169,32 @@ bool CloudWorker::isBusy() {
     return busy;
 }
 
+ConnectivityStatus CloudWorker::connectivityStatus(bool wifiConnected) {
+    const uint32_t now = millis();
+    portENTER_CRITICAL(&stateMux);
+    const bool stuck = operationActive &&
+        uint32_t(now - operationStartedMs) >= FIREBASE_OPERATION_WATCHDOG_MS;
+    const auto status = connectionHealth.status(wifiConnected, now, stuck);
+    portEXIT_CRITICAL(&stateMux);
+    return status;
+}
+
+void CloudWorker::resetHealthConfirmation() {
+    portENTER_CRITICAL(&stateMux);
+    connectionHealth.resetConfirmation();
+    portEXIT_CRITICAL(&stateMux);
+}
+
+void CloudWorker::recordServiceOutcome(CloudService service, bool success) {
+    const int code = success ? 0 : firebase->getLastErrorCode();
+    const uint32_t now = millis();
+    portENTER_CRITICAL(&stateMux);
+    connectionHealth.record(service, success, code, now);
+    portEXIT_CRITICAL(&stateMux);
+}
+
 bool CloudWorker::enqueue(const CloudJob& job) {
-    if (!started || paused || isBackoffActive()) return false;
+    if (!started || paused || isBackoffActive() || (watchdogTripped && isBusy())) return false;
 
     size_t index = (size_t)job.operation;
     if (index >= (size_t)CloudOperation::COUNT) return false;
@@ -258,11 +281,8 @@ void CloudWorker::tick() {
     if (enqueue(job)) brightnessWritePending = false;
 }
 
-// The worker task cannot be unblocked from the outside: it is parked inside a
-// synchronous library call. Closing the socket underneath it is what makes that
-// call return an error instead of waiting forever, so the reset below is issued
-// from this task on purpose, accepting the concurrent touch of the client. The
-// alternative is a device whose cloud I/O never recovers without a power cycle.
+// Report the hang, but do not cancel another task's client, clear its queue
+// flags or restart the board: all loaded content must keep running from RAM.
 void CloudWorker::serviceWatchdog() {
     if (!started) return;
 
@@ -276,32 +296,21 @@ void CloudWorker::serviceWatchdog() {
         return;
     }
     uint32_t stuckMs = millis() - startedMs;
-    if ((int32_t)stuckMs < (int32_t)FIREBASE_OPERATION_WATCHDOG_MS) return;
-
-    // Nothing outside the worker task can end a call that is already blocked in
-    // the socket: the reset below is a request the blocked call is free to
-    // ignore, and operationActive must stay set or a second caller gets onto the
-    // shared client. So a call that outlasts this leaves the worker unable to
-    // take another job and unable to post a result - presence and the config
-    // poll stop dead, with nothing logged to say why, and they never resume even
-    // once Wi-Fi comes back. Restarting is the only lever left, the same
-    // conclusion the Wi-Fi path reaches for a station that cannot reassociate.
-    if ((int32_t)stuckMs >= (int32_t)FIREBASE_OPERATION_STUCK_REBOOT_MS) {
-        Serial.print(F("[CloudWorker] Operation stuck for "));
-        Serial.print(stuckMs / 1000);
-        Serial.println(F("s; restarting to recover cloud I/O"));
-        Serial.flush();
-        ESP.restart();
+    if (stuckMs < FIREBASE_OPERATION_WATCHDOG_MS) {
+        // The worker may finish and start its next queued job between two
+        // loop passes, without the loop ever observing operationActive=false.
+        watchdogTripped = false;
+        return;
     }
 
     if (watchdogTripped) {
         // One trip line followed by silence made a permanently wedged worker
         // look exactly like an idle healthy one. Keep saying it.
-        if ((int32_t)(millis() - lastStuckLogMs) >= (int32_t)FIREBASE_OPERATION_WATCHDOG_MS) {
+        if (uint32_t(millis() - lastStuckLogMs) >= FIREBASE_OPERATION_WATCHDOG_MS) {
             lastStuckLogMs = millis();
             Serial.print(F("[CloudWorker] Still stuck after "));
             Serial.print(stuckMs / 1000);
-            Serial.println(F("s; cloud I/O is down until it returns or we restart"));
+            Serial.println(F("s; cached playback continues, waiting for cloud I/O"));
         }
         return;
     }
@@ -314,21 +323,7 @@ void CloudWorker::serviceWatchdog() {
     Serial.print(stuckMs / 1000);
     Serial.print(F("s (trip "));
     Serial.print(watchdogTrips);
-    Serial.println(F("), resetting transport"));
-
-    // The worker exclusively owns the transport. Its synchronous timeout or
-    // the bounded reboot above recovers a stuck call; never race it here.
-
-    // jobPending is touched only by the Arduino loop task - request*, popResult
-    // and this function - so it needs no lock. Clearing it lets the 20 s
-    // presence tick and the 60 s config poll queue work again instead of being
-    // coalesced into a job that will never report a result.
-    for (size_t i = 0; i < (size_t)CloudOperation::COUNT; i++) jobPending[i] = false;
-
-    // operationActive is deliberately left set. The worker still owns the shared
-    // FirebaseClient until its call returns, and clearing it here would let
-    // servicePendingConfigReload() start a second, concurrent Firestore read
-    // from loop() on the same client.
+    Serial.println(F("); keeping cached playback and transport ownership"));
 }
 
 bool CloudWorker::consumeWifiCycleRequest() {
@@ -380,6 +375,7 @@ void CloudWorker::run() {
         bool authReady = firebase->ready();
         bool canAttempt = !paused && !cooldownActive && authReady;
         portENTER_CRITICAL(&stateMux);
+        connectionHealth.setAuthReady(authReady);
         if (canAttempt) {
             operationActive = true;
             operationStartedMs = millis();
@@ -426,46 +422,58 @@ void CloudWorker::execute(const CloudJob& job, CloudResult& result) {
         return;
     }
 
+    // Observe only repository calls that actually run. An allocation failure
+    // must not reuse a stale error from a previous request.
+    auto observe = [&](CloudService service, bool success) {
+        recordServiceOutcome(service, success);
+        if (!success) result.errorCode = firebase->getLastErrorCode();
+        return success;
+    };
+
     switch (job.operation) {
         case CloudOperation::PRESENCE:
-            result.success = rtdb != nullptr && rtdb->updatePresence(job.online);
+            result.success = rtdb != nullptr && observe(CloudService::Rtdb, rtdb->updatePresence(job.online));
             break;
 
         case CloudOperation::TELEMETRY:
             result.success = rtdb != nullptr &&
-                rtdb->pushTelemetry(job.temperature, job.humidity, job.pressure, job.gas);
+                observe(CloudService::Rtdb, rtdb->pushTelemetry(job.temperature, job.humidity, job.pressure, job.gas));
             break;
 
         case CloudOperation::CONFIG_CHECK: {
             DeviceDoc* doc = new (std::nothrow) DeviceDoc();
-            if (doc != nullptr && firestore != nullptr && firestore->checkConfigVersion(*doc)) {
+            if (doc != nullptr && firestore != nullptr) {
+                const bool configOk = observe(CloudService::Firestore, firestore->checkConfigVersion(*doc));
                 PairState pair;
-                if(rtdb && rtdb->getPairState(pair) && firestore->readSharingState(pair.pairId,*doc)) {
-                    result.deviceDoc = doc; result.success = true;
-                } else delete doc;
-            } else {
-                delete doc;
+                if (configOk && rtdb) {
+                    const bool pairOk = observe(CloudService::Rtdb, rtdb->getPairState(pair));
+                    if (pairOk) {
+                        const bool sharingOk = observe(CloudService::Firestore, firestore->readSharingState(pair.pairId, *doc));
+                        if (sharingOk) { result.deviceDoc = doc; result.success = true; }
+                    }
+                }
             }
+            if (!result.success) delete doc;
             break;
         }
 
         case CloudOperation::REVISION_CHECK:
-            result.success = rtdb != nullptr && rtdb->getConfigRevision(result.revision);
+            result.success = rtdb != nullptr && observe(CloudService::Rtdb, rtdb->getConfigRevision(result.revision));
             break;
 
         case CloudOperation::PAIR_EVENT:
-            result.success = rtdb && job.pairSend && rtdb->sendToPair(*job.pairSend);break;
+            result.success = rtdb && job.pairSend && observe(CloudService::Rtdb, rtdb->sendToPair(*job.pairSend));break;
         case CloudOperation::PAIR_STATE:
             result.pairState=new(std::nothrow) PairState();
-            result.success=rtdb && result.pairState && rtdb->getPairState(*result.pairState);break;
+            result.success=rtdb && result.pairState && observe(CloudService::Rtdb, rtdb->getPairState(*result.pairState));break;
         case CloudOperation::PAIR_FETCH:
             result.pairSnapshot=new(std::nothrow) PairSnapshot();
-            result.success=rtdb && job.pairMeta && result.pairSnapshot && rtdb->getPairSnapshot(*job.pairMeta,*result.pairSnapshot);break;
+            result.success=rtdb && job.pairMeta && result.pairSnapshot && observe(CloudService::Rtdb, rtdb->getPairSnapshot(*job.pairMeta,*result.pairSnapshot));break;
         case CloudOperation::PAIR_ACK:
-            result.success=rtdb && job.pairMeta && rtdb->acknowledgePair(*job.pairMeta,job.displayed);break;
+            result.success=rtdb && job.pairMeta && observe(CloudService::Rtdb, rtdb->acknowledgePair(*job.pairMeta,job.displayed));break;
         case CloudOperation::SCREENS_FETCH:
             result.screens=new(std::nothrow) std::vector<ScreenConfig>();
-            result.success=firestore && result.screens && firestore->getScreens(*result.screens);
+            result.success=firestore && result.screens && observe(CloudService::Firestore, firestore->getScreens(*result.screens));
             if(result.success) { result.deviceDoc=new(std::nothrow)DeviceDoc(); if(result.deviceDoc)firestore->sharingSnapshot(*result.deviceDoc);else result.success=false; }
             break;
 
@@ -474,14 +482,14 @@ void CloudWorker::execute(const CloudJob& job, CloudResult& result) {
             // sends the value the panel settled on instead of the first one.
             uint8_t value = latestBrightness;
             result.brightness = value;
-            result.success = firestore != nullptr && firestore->updateBrightness(value);
+            result.success = firestore != nullptr && observe(CloudService::Firestore, firestore->updateBrightness(value));
             break;
         }
 
         case CloudOperation::ASSET_FETCH: {
             AssetData* asset = new (std::nothrow) AssetData();
             if (asset != nullptr && firestore != nullptr &&
-                firestore->getAsset(job.assetId, *asset, job.assetRevision)) {
+                observe(CloudService::Firestore, firestore->getAsset(job.assetId, *asset, job.assetRevision))) {
                 result.assetData = asset;
                 result.success = true;
             } else {
@@ -492,10 +500,6 @@ void CloudWorker::execute(const CloudJob& job, CloudResult& result) {
 
         default:
             break;
-    }
-
-    if (!result.success && firebase != nullptr) {
-        result.errorCode = firebase->getLastErrorCode();
     }
 }
 
@@ -580,7 +584,7 @@ void CloudWorker::recordOutcome(bool success, int errorCode, const char* name) {
         wifiCycleRequested = true;
     }
 
-    recoveryAttempts++;
+    if (recoveryAttempts < 255) ++recoveryAttempts;
     unsigned long backoffMs = calculateBackoffMs();
     backoffUntilMs = millis() + backoffMs;
     consecutiveTransportFailures = 0;

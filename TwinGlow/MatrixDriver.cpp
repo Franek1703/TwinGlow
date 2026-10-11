@@ -1,5 +1,6 @@
 #include "MatrixDriver.h"
 #include <math.h>
+#include <cstring>
 
 MatrixDriver::MatrixDriver() 
     : strip(MATRIX_WIDTH * MATRIX_HEIGHT, NEOPIXEL_PIN, NEOPIXEL_TYPE),
@@ -60,7 +61,7 @@ bool MatrixDriver::begin() {
         Serial.println(F(" ready now"));
     }
     
-    strip.show();
+    show();
     
     Serial.println(F("[Matrix] Initialized successfully"));
     return true;
@@ -73,7 +74,7 @@ void MatrixDriver::setBrightness(uint8_t brightness) {
     }
     currentBrightness = brightness;
     strip.setBrightness(brightness);
-    strip.show();
+    show();
     Serial.print(F("[Matrix] Brightness set to: "));
     Serial.println(brightness);
 }
@@ -108,16 +109,21 @@ void MatrixDriver::setPixelOriented(uint8_t x, uint8_t y, uint32_t color) {
     // coordinate cannot wrap into a valid panel pixel on the way through.
     if (x >= MATRIX_WIDTH || y >= MATRIX_HEIGHT) return;
 
+    strip.setPixelColor(orientedIndex(x, y), applyGamma(color));
+}
+
+uint16_t MatrixDriver::orientedIndex(uint8_t x, uint8_t y) {
+
 #if PANEL_ORIENTATION == PANEL_ORIENT_NONE
-    setPixel(x, y, color);
+    return xyToIndex(x, y);
 #elif PANEL_ORIENTATION == PANEL_ORIENT_ROT90
-    setPixel((uint8_t)(MATRIX_WIDTH - 1 - y), x, color);
+    return xyToIndex((uint8_t)(MATRIX_WIDTH - 1 - y), x);
 #elif PANEL_ORIENTATION == PANEL_ORIENT_ROT180
-    setPixel((uint8_t)(MATRIX_WIDTH - 1 - x), (uint8_t)(MATRIX_HEIGHT - 1 - y), color);
+    return xyToIndex((uint8_t)(MATRIX_WIDTH - 1 - x), (uint8_t)(MATRIX_HEIGHT - 1 - y));
 #elif PANEL_ORIENTATION == PANEL_ORIENT_ROT270
-    setPixel(y, (uint8_t)(MATRIX_HEIGHT - 1 - x), color);
+    return xyToIndex(y, (uint8_t)(MATRIX_HEIGHT - 1 - x));
 #elif PANEL_ORIENTATION == PANEL_ORIENT_TRANSPOSE
-    setPixel(y, x, color);
+    return xyToIndex(y, x);
 #else
 #error "PANEL_ORIENTATION must be one of PANEL_ORIENT_NONE/ROT90/ROT180/ROT270/TRANSPOSE"
 #endif
@@ -129,11 +135,35 @@ void MatrixDriver::setPixelOriented(uint8_t x, uint8_t y, uint8_t r, uint8_t g, 
 
 void MatrixDriver::clear() {
     strip.clear();
-    strip.show();
+    show();
 }
 
 void MatrixDriver::show() {
+    if (!connectivityIndicatorEnabled || displayBlanked ||
+        connectivityStatus == ConnectivityStatus::Online || strip.getPixels() == nullptr) {
+        strip.show();
+        return;
+    }
+    // Save the exact brightness-scaled RGB/GRB bytes, not getPixelColor():
+    // decoding and rescaling that value loses precision at low brightness.
+    const uint16_t index = orientedIndex(MATRIX_WIDTH - 1, 0);
+    constexpr uint8_t bytesPerPixel =
+        ((NEOPIXEL_TYPE >> 6) & 3) == ((NEOPIXEL_TYPE >> 4) & 3) ? 3 : 4;
+    uint8_t* pixel = strip.getPixels() + index * bytesPerPixel;
+    uint8_t saved[bytesPerPixel];
+    memcpy(saved, pixel, bytesPerPixel);
+    const uint32_t color = connectivityStatus == ConnectivityStatus::WifiOffline
+        ? 0xFF0000 : 0xFF8000;
+    strip.setPixelColor(index, applyGamma(color));
     strip.show();
+    memcpy(pixel, saved, bytesPerPixel);
+}
+
+bool MatrixDriver::setConnectivityStatus(ConnectivityStatus status, bool enabled) {
+    const bool changed = status != connectivityStatus || enabled != connectivityIndicatorEnabled;
+    connectivityStatus = status;
+    connectivityIndicatorEnabled = enabled;
+    return changed;
 }
 
 void MatrixDriver::fill(uint32_t color) {

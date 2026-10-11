@@ -90,9 +90,8 @@
 // is cleared only when a result comes back, so one hung call silences the
 // presence tick and the config poll permanently while rendering continues.
 #define FIREBASE_OPERATION_WATCHDOG_MS 30000
-// A blocked worker call cannot be cancelled from outside, so past this the
-// only way back to working cloud I/O is a restart.
-#define FIREBASE_OPERATION_STUCK_REBOOT_MS 180000
+// This watchdog only logs and shows an orange connectivity pixel. It never
+// cancels the owning task or restarts the board; loaded content remains in RAM.
 
 // Runtime transport recovery. Two consecutive failures are treated as a dead
 // path even when WiFi.status() still says WL_CONNECTED. The worker closes the
@@ -198,11 +197,9 @@
                                          // re-auths every second, which turns a
                                          // transient drop into a lockout
 #define WIFI_RETRY_BACKOFF_MAX_MS 60000
-#define WIFI_MAX_FAILURES 10
 #define WIFI_CONNECT_ATTEMPT_TIMEOUT_MS 10000
 #define WIFI_TEARDOWN_SETTLE_MS 600      // Radio-off settle before re-associating
-#define WIFI_OFFLINE_REBOOT_MS 720000    // 12 min offline after a good connection
-                                         // means the station is wedged; reboot
+// Saved SSIDs retry indefinitely; no automatic provisioning or offline reboot.
 
 // Button timing
 #define BUTTON_DEBOUNCE_MS 50
