@@ -242,7 +242,8 @@ class SharedFirestoreService {
     bool localEnabled = true,
   }) async {
     validate(input);
-    // Public templates stay immutable; editable copies still live in /assets.
+    // Shared screens use independent copies of the collaborative default
+    // library, so their content changes only through the pair's versioning.
     final data = Map<String, dynamic>.from(input);
     final copied = <String, String>{};
     for (final assetId in pool(data)) {

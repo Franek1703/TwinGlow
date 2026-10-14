@@ -375,7 +375,18 @@ class FirebaseFakeRepository implements FirebaseRepository {
     await Future.delayed(const Duration(milliseconds: 300));
     final index = _userAssets.indexWhere((a) => a.id == assetId);
     if (index != -1) {
-      _userAssets[index] = asset;
+      _userAssets[index] = asset.copyWith(
+        isDefault: false,
+        revision: asset.revision + 1,
+      );
+      return;
+    }
+    final defaultIndex = _defaultAssets.indexWhere((a) => a.id == assetId);
+    if (defaultIndex != -1) {
+      _defaultAssets[defaultIndex] = asset.copyWith(
+        isDefault: true,
+        revision: asset.revision + 1,
+      );
     }
   }
 

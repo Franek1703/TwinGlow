@@ -7,7 +7,7 @@ import {join} from 'node:path';
 import {verifiedLegacyAssetPatch} from '../legacy-asset-migration.mjs';
 import {initializeTestEnvironment,assertSucceeds,assertFails} from '@firebase/rules-unit-testing';
 import {ref,set,get,update,serverTimestamp,query,orderByChild,equalTo,limitToFirst} from 'firebase/database';
-import {doc,setDoc,getDoc,updateDoc,collection,getDocs,query as fsQuery,where,writeBatch,deleteField,increment,runTransaction} from 'firebase/firestore';
+import {doc,setDoc,getDoc,updateDoc,deleteDoc,collection,getDocs,query as fsQuery,where,writeBatch,deleteField,increment,runTransaction} from 'firebase/firestore';
 
 let env;
 const db = uid => env.authenticatedContext(uid,{email:`${uid}@example.com`}).database();
@@ -477,4 +477,100 @@ for(const [templates,animation] of [[0,false],[4,false],[0,true]])test(`producti
   }));
   assert.deepEqual((await getDoc(doc(fs,`devices/${device}/screens/${local}`))).data(),{sharedScreenId:sid,order:0,enabled:true,durationMs:10000});
   for(const id of copied)await assertSucceeds(getDoc(doc(fsHuman(peer),`assets/${id}`)));
+});
+
+const defaultImagePatch = (revision=1) => ({
+  name:'Edited template',tags:['edited'],updatedAt:new Date(),revision,
+  encoding:'SPARSE_PACKED_V1',pixelsPacked:'00ffffff',
+  pixels:deleteField(),basePixels:deleteField(),frames:deleteField(),
+  basePixelsPacked:deleteField(),frameDeltasPacked:deleteField(),
+  frameDurationsMs:deleteField(),frameCount:deleteField(),loop:deleteField(),
+});
+const defaultAnimationPatch = (revision=1,count=2) => ({
+  name:'Edited animation',tags:[],updatedAt:new Date(),revision,
+  encoding:'DELTA_SPARSE_PACKED_V1',basePixelsPacked:'00ff0000',
+  frameDeltasPacked:Array(count-1).fill('00000000'),
+  frameDurationsMs:Array(count).fill(100),frameCount:count,loop:true,
+  pixelsPacked:deleteField(),pixels:deleteField(),basePixels:deleteField(),frames:deleteField(),
+});
+async function seedDefault(type='IMAGE',extra={}) {
+  await env.withSecurityRulesDisabled(c=>setDoc(doc(c.firestore(),'assets/template'),{
+    isDefault:true,type,ownerUid:'alice',createdAt:new Date(),pixels:[{index:0,color:16711680}],...extra,
+  }));
+}
+test('every human can edit an existing default image, including a legacy versionless template',async()=>{
+  await seedDefault();
+  const bob=fsHuman('bob'),alice=fsHuman('alice'),ref=doc(bob,'assets/template');
+  await assertSucceeds(runTransaction(bob,async tx=>{
+    const before=await tx.get(ref);
+    tx.update(ref,defaultImagePatch((before.data().revision??0)+1));
+  }));
+  await assertSucceeds(updateDoc(doc(alice,'assets/template'),defaultImagePatch(2)));
+  const saved=(await getDoc(ref)).data();
+  assert.equal(saved.isDefault,true);assert.equal(saved.ownerUid,'alice');
+  assert.equal(saved.revision,2);assert.equal(saved.pixels,undefined);
+  await assertFails(updateDoc(ref,defaultImagePatch(2))); // stale concurrent editor
+  assert.equal((await getDoc(ref)).data().revision,2);
+});
+for(const count of [2,16]) test(`every human can edit a default animation with ${count} frames`,async()=>{
+  await seedDefault('ANIMATION');
+  await assertSucceeds(updateDoc(doc(fsHuman('bob'),'assets/template'),defaultAnimationPatch(1,count)));
+  await assertSucceeds(updateDoc(doc(fsHuman('eve'),'assets/template'),defaultAnimationPatch(2,count)));
+  assert.equal((await getDoc(doc(fsHuman('alice'),'assets/template'))).data().frameCount,count);
+});
+test('default editing cannot modify identity, sharing, type or introduce arbitrary fields',async()=>{
+  await seedDefault();
+  const ref=doc(fsHuman('bob'),'assets/template');
+  for(const extra of [
+    {ownerUid:'bob'},{isDefault:false},{type:'ANIMATION'},{createdAt:new Date(0)},
+    {sharingPairId:'pair'},{sharedScreenIds:['album']},{sharingMutationScreenId:'album'},
+    {retainedFrom:'other'},{userId:'bob'},{arbitrary:true},{width:32},
+  ]) await assertFails(updateDoc(ref,{...defaultImagePatch(),...extra}));
+  await assertFails(deleteDoc(ref));
+  await assertFails(setDoc(doc(fsHuman('bob'),'assets/new-template'),{ownerUid:'bob',isDefault:true}));
+  await assertSucceeds(updateDoc(ref,defaultImagePatch()));
+});
+test('firmware and anonymous clients cannot write defaults, even with valid content',async()=>{
+  await seedDefault();
+  for(const fs of [fsDevice('A'),env.unauthenticatedContext().firestore()]) {
+    await assertFails(updateDoc(doc(fs,'assets/template'),defaultImagePatch()));
+    await assertFails(deleteDoc(doc(fs,'assets/template')));
+  }
+});
+test('malformed and oversized default image payloads are rejected',async()=>{
+  await seedDefault();
+  const ref=doc(fsHuman('bob'),'assets/template');
+  for(const extra of [
+    {pixelsPacked:'xyz'},{pixelsPacked:'00ff0000'.repeat(257)},
+    {pixelsPacked:123},{tags:'tag'},{name:''},{updatedAt:'today'},
+    {revision:1.5},{revision:4},{frameCount:2},{pixels:[]},
+  ]) await assertFails(updateDoc(ref,{...defaultImagePatch(),...extra}));
+  await assertSucceeds(updateDoc(ref,defaultImagePatch()));
+});
+test('default animation validation enforces frame shape, durations and packed budget',async()=>{
+  await seedDefault('ANIMATION');
+  const ref=doc(fsHuman('bob'),'assets/template');
+  for(const extra of [
+    {frameCount:1},{frameCount:17},{frameDurationsMs:[49,100]},
+    {frameDurationsMs:[100,5001]},{frameDurationsMs:[100,'100']},
+    {frameDeltasPacked:[]},{frameDeltasPacked:['invalid!']},{frameDeltasPacked:[12345678]},
+    {frameDeltasPacked:['00ff0000'.repeat(257)]},{loop:false},
+    {basePixelsPacked:'00ff0000'.repeat(256),frameCount:5,
+      frameDurationsMs:Array(5).fill(100),frameDeltasPacked:Array(4).fill('00ff0000'.repeat(256))},
+  ]) await assertFails(updateDoc(ref,{...defaultAnimationPatch(),...extra}));
+  // The documented 8192-character boundary remains usable.
+  await assertSucceeds(updateDoc(ref,{...defaultAnimationPatch(1,4),
+    basePixelsPacked:'00ff0000'.repeat(256),frameDeltasPacked:Array(3).fill('00000000'.repeat(256))}));
+});
+test('ordinary private assets support transactional editing without sharing metadata',async()=>{
+  const alice=fsHuman('alice'),ref=doc(alice,'assets/private-editor');
+  await assertSucceeds(setDoc(ref,{ownerUid:'alice',isDefault:false,type:'IMAGE',pixelsPacked:'00ff0000'}));
+  await assertSucceeds(runTransaction(alice,async tx=>{
+    await tx.get(ref);
+    tx.update(ref,{name:'Saved private image',tags:[],revision:1,updatedAt:new Date(),
+      encoding:'SPARSE_PACKED_V1',pixelsPacked:'00ffffff',pixels:deleteField()});
+  }));
+  await assertFails(updateDoc(doc(fsHuman('bob'),'assets/private-editor'),{name:'Not mine'}));
+  await assertFails(updateDoc(ref,{ownerUid:'bob'}));
+  await assertSucceeds(deleteDoc(ref));
 });

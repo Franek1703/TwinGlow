@@ -138,6 +138,7 @@ class AssetEditorCubit extends Cubit<AssetEditorState> {
       final asset = AssetModel(
         id: assetId,
         revision: state.asset?.revision ?? 0,
+        isDefault: state.asset?.isDefault ?? false,
         name: state.name,
         type: assetType,
         tags: state.tags,

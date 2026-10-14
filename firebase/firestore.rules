@@ -89,6 +89,85 @@ service cloud.firestore {
       return d.ownerUid is string && d.isDefault is bool
         && idList(d.get('sharedScreenIds', []));
     }
+    // Existing defaults are a collaborative library for human app accounts.
+    // Updates preserve identity/ACL metadata and use the app's packed codecs.
+    function validPacked(p) {
+      return p is string && p.size() <= 2048 && p.size() % 8 == 0
+        && p.matches('^[0-9a-fA-F]*$');
+    }
+    function validDuration(ms) { return ms is int && ms >= 50 && ms <= 5000; }
+    function validDefaultAnimation(d) {
+      let count = d.frameCount;
+      let durations = d.frameDurationsMs;
+      let deltas = d.frameDeltasPacked;
+      return d.encoding == 'DELTA_SPARSE_PACKED_V1'
+        && count is int && count >= 2 && count <= 16
+        && d.loop == true && validPacked(d.basePixelsPacked)
+        && durations is list && durations.size() == count
+        && deltas is list && deltas.size() == count - 1
+        && (count <= 0 || validDuration(durations[0]))
+        && (count <= 1 || validDuration(durations[1]))
+        && (count <= 2 || validDuration(durations[2]))
+        && (count <= 3 || validDuration(durations[3]))
+        && (count <= 4 || validDuration(durations[4]))
+        && (count <= 5 || validDuration(durations[5]))
+        && (count <= 6 || validDuration(durations[6]))
+        && (count <= 7 || validDuration(durations[7]))
+        && (count <= 8 || validDuration(durations[8]))
+        && (count <= 9 || validDuration(durations[9]))
+        && (count <= 10 || validDuration(durations[10]))
+        && (count <= 11 || validDuration(durations[11]))
+        && (count <= 12 || validDuration(durations[12]))
+        && (count <= 13 || validDuration(durations[13]))
+        && (count <= 14 || validDuration(durations[14]))
+        && (count <= 15 || validDuration(durations[15]))
+        && (count <= 1 || deltas[0] is string)
+        && (count <= 2 || deltas[1] is string)
+        && (count <= 3 || deltas[2] is string)
+        && (count <= 4 || deltas[3] is string)
+        && (count <= 5 || deltas[4] is string)
+        && (count <= 6 || deltas[5] is string)
+        && (count <= 7 || deltas[6] is string)
+        && (count <= 8 || deltas[7] is string)
+        && (count <= 9 || deltas[8] is string)
+        && (count <= 10 || deltas[9] is string)
+        && (count <= 11 || deltas[10] is string)
+        && (count <= 12 || deltas[11] is string)
+        && (count <= 13 || deltas[12] is string)
+        && (count <= 14 || deltas[13] is string)
+        && (count <= 15 || deltas[14] is string)
+        && deltas.join('|').matches('^([0-9a-fA-F]{8}){0,256}(\\|([0-9a-fA-F]{8}){0,256})*$')
+        && d.basePixelsPacked.size() + deltas.join('').size() <= 8192
+        && !d.keys().hasAny(['pixelsPacked','pixels','basePixels','frames']);
+    }
+    function validDefaultContent(d) {
+      return d.isDefault == true && d.name is string && d.name.size() > 0
+        && d.tags is list && d.updatedAt is timestamp && d.revision is int
+        && ((d.type == 'IMAGE' && d.encoding == 'SPARSE_PACKED_V1' && validPacked(d.pixelsPacked)
+          && !d.keys().hasAny(['basePixelsPacked','frameDeltasPacked','frameDurationsMs','frameCount','loop','pixels','basePixels','frames']))
+          || (d.type == 'ANIMATION' && validDefaultAnimation(d)));
+    }
+    function defaultUpdate() {
+      return human() && resource.data.get('isDefault', false) == true
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name','tags','revision','updatedAt','encoding','pixelsPacked',
+          'basePixelsPacked','frameDeltasPacked','frameDurationsMs','frameCount','loop',
+          'pixels','basePixels','frames'])
+        && request.resource.data.revision == resource.data.get('revision', 0) + 1
+        && validDefaultContent(request.resource.data);
+    }
+    function privateAssetUpdate(id) {
+      let old = resource.data;
+      let next = request.resource.data;
+      let changed = next.diff(old).affectedKeys();
+      return old.isDefault == false && next.isDefault == false
+        && assetShape(next) && next.ownerUid == old.ownerUid
+        && (('sharingMutationScreenId' in next
+          && changed.hasAny(['sharedScreenIds','sharingPairId','sharingMutationScreenId'])
+          && aclChange(id)) || ((old.ownerUid == request.auth.uid || sharedAsset(old,id))
+          && !changed.hasAny(['ownerUid','isDefault','sharingPairId','sharedScreenIds','sharingMutationScreenId','retainedFrom','retainedScreenId'])
+          && (old.get('sharedScreenIds',[]).size() == 0 || (next.type == old.type && bumped(old.sharingPairId)))));
+    }
     function aclChange(id) {
       let old = resource.data;
       let next = request.resource.data;
@@ -202,10 +281,8 @@ service cloud.firestore {
       allow read: if assetReader(resource.data) || sharedAsset(resource.data,assetId);
       allow create: if assetShape(request.resource.data) && request.resource.data.isDefault == false
         && ((human() && request.resource.data.ownerUid == request.auth.uid && request.resource.data.get('sharedScreenIds',[]).size() == 0 && !('sharingPairId' in request.resource.data)) || retainedCopy(request.resource.data,assetId));
-      allow update: if human() && assetShape(request.resource.data) && resource.data.isDefault == false && request.resource.data.isDefault == false && request.resource.data.ownerUid == resource.data.ownerUid
-        && (aclChange(assetId) || ((resource.data.ownerUid == request.auth.uid || sharedAsset(resource.data,assetId))
-          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['ownerUid','isDefault','sharingPairId','sharedScreenIds','sharingMutationScreenId','retainedFrom','retainedScreenId'])
-          && (resource.data.get('sharedScreenIds',[]).size() == 0 || (request.resource.data.type == resource.data.type && bumped(resource.data.sharingPairId)))));
+      allow update: if human() && (resource.data.get('isDefault', false) == true
+        ? defaultUpdate() : privateAssetUpdate(assetId));
       allow delete: if human() && resource.data.ownerUid == request.auth.uid && resource.data.isDefault == false && resource.data.get('sharedScreenIds',[]).size() == 0;
     }
     // Legacy pairs/sharedScreens are deliberately inactive after cutover.
