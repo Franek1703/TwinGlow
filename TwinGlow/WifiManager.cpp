@@ -1,15 +1,26 @@
 #include "WifiManager.h"
 #include <limits.h>
+#include <esp_wifi.h>
+
+namespace {
+// Full-channel selection can try several APs with the same SSID. Give that
+// work enough time even with an older, ignored Config.h specifying 10 seconds.
+constexpr unsigned long kMinimumConnectBudgetMs = 20000;
+constexpr uint8_t kAuthFailuresBeforeCompatibility = 3;
+}
 
 WifiManager* WifiManager::activeInstance = nullptr;
 
 WifiManager::WifiManager() 
     : lastAttemptMs(0), retryDelayMs(WIFI_RETRY_QUICK_DELAY_MS), failureCount(0),
-      quickRetryCount(0), teardownStartedMs(0), teardownPending(false),
+      quickRetryCount(0), consecutiveAuthFailures(0), compatibilityRadio(false),
+      attemptAuthExpired(false), attemptAssociated(false),
+      teardownStartedMs(0), teardownPending(false),
       connecting(false),
       wasConnected(false), everConnected(false), reconnectRequested(false),
       disconnectEventPending(false), gotIpEventPending(false),
-      lastDisconnectReason(0), eventHandlerRegistered(false) {
+      lastDisconnectReason(0), lastDisconnectRssi(0), lastDisconnectBssid{},
+      eventHandlerRegistered(false) {
 }
 
 bool WifiManager::begin(const String& ssid, const String& password) {
@@ -17,6 +28,7 @@ bool WifiManager::begin(const String& ssid, const String& password) {
     currentPassword = password;
     failureCount = 0;
     quickRetryCount = 0;
+    consecutiveAuthFailures = 0;
     retryDelayMs = WIFI_RETRY_QUICK_DELAY_MS;
     connecting = false;
     teardownPending = false;
@@ -31,22 +43,6 @@ bool WifiManager::begin(const String& ssid, const String& password) {
     Serial.print(F("[WiFi] Connecting to: "));
     Serial.println(ssid);
     
-    WiFi.mode(WIFI_STA);
-
-    // The core's auto-reconnect is not passive: on every reason it considers
-    // retryable - AUTH_EXPIRE and GROUP_KEY_UPDATE_TIMEOUT included - its event
-    // handler issues its own disconnect()/connect() pair. Left on, it raced the
-    // retry below for the radio and the two kept aborting each other's
-    // association, which is what turned one lost group-key handshake into an
-    // endless AUTH_EXPIRE storm. update() is the only retry path now.
-    WiFi.setAutoReconnect(false);
-
-    // Modem sleep is the default on every target but the S2. A dozing radio
-    // misses the AP's periodic group-key handshake and gets deauthed with
-    // GROUP_KEY_UPDATE_TIMEOUT; the panel is mains-powered, so the extra ~40mA
-    // costs nothing worth having the dropouts for.
-    WiFi.setSleep(false);
-
     // Kept for diagnostics only - the retry/backoff path lives in update().
     if (!eventHandlerRegistered) {
         activeInstance = this;
@@ -54,10 +50,7 @@ bool WifiManager::begin(const String& ssid, const String& password) {
         eventHandlerRegistered = true;
     }
 
-    WiFi.begin(ssid.c_str(), password.length() > 0 ? password.c_str() : NULL);
-    
-    connecting = true;
-    lastAttemptMs = millis();
+    finishConnectionAttempt();
     
     return true;
 }
@@ -89,6 +82,22 @@ void WifiManager::update() {
         if (!wasConnected) {
             Serial.print(F("[WiFi] Connected! IP: "));
             Serial.println(WiFi.localIP());
+#ifdef WIFI_MAX_TX_POWER_QUARTER_DBM
+            // Reapply the explicit limit after the AP's country information
+            // has been processed as well. Failure is logged, never a reason
+            // to discard an already working association.
+            const esp_err_t powerError = esp_wifi_set_max_tx_power(WIFI_MAX_TX_POWER_QUARTER_DBM);
+            if (powerError != ESP_OK) {
+                Serial.print(F("[WiFi] TX limit after association failed: "));
+                Serial.println((int)powerError);
+            }
+#endif
+            int8_t power = 0;
+            if (esp_wifi_get_max_tx_power(&power) == ESP_OK) {
+                Serial.print(F("[WiFi] TX limit after association: "));
+                Serial.print(power / 4.0f);
+                Serial.println(F("dBm"));
+            }
             if (everConnected) {
                 Serial.println(F("[WiFi] Runtime connection restored; cached screen stayed active"));
             }
@@ -100,6 +109,7 @@ void WifiManager::update() {
         teardownPending = false;
         failureCount = 0;
         quickRetryCount = 0;
+        consecutiveAuthFailures = 0;
         retryDelayMs = WIFI_RETRY_QUICK_DELAY_MS;
         return;
     }
@@ -112,14 +122,15 @@ void WifiManager::update() {
         teardownPending = false;
         failureCount = 0;
         quickRetryCount = 0;
+        consecutiveAuthFailures = 0;
         retryDelayMs = WIFI_RETRY_QUICK_DELAY_MS;
         lastAttemptMs = now;
         Serial.println(F("[WiFi] Runtime connection lost; keeping cached screen active"));
     }
 
-    // Second half of a retry: the radio has had WIFI_TEARDOWN_SETTLE_MS with
-    // the station disabled, so the supplicant state the AP had already expired
-    // is gone and this begin() opens a genuinely new session.
+    // Second half of a retry: restart the station after the settle window.
+    // This resets local driver state; it cannot guarantee that the AP accepts
+    // a new authentication attempt.
     if (teardownPending) {
         if (now - teardownStartedMs < WIFI_TEARDOWN_SETTLE_MS) return;
         teardownPending = false;
@@ -128,16 +139,25 @@ void WifiManager::update() {
     }
 
     if (connecting) {
-        if (now - lastAttemptMs < WIFI_CONNECT_ATTEMPT_TIMEOUT_MS) return;
+        const unsigned long timeoutMs = max(
+            (unsigned long)WIFI_CONNECT_ATTEMPT_TIMEOUT_MS, kMinimumConnectBudgetMs);
+        if (now - lastAttemptMs < timeoutMs) return;
 
-        if (failureCount < INT_MAX - 1) ++failureCount;
-        if (quickRetryCount < WIFI_RETRY_QUICK_COUNT + 4) ++quickRetryCount;
-        connecting = false;
-        retryDelayMs = calculateBackoffDelay();
-        lastAttemptMs = now;
+        const unsigned long elapsedMs = now - lastAttemptMs;
+        portENTER_CRITICAL(&eventMux);
+        const bool authExpired = attemptAuthExpired;
+        const bool associated = attemptAssociated;
+        portEXIT_CRITICAL(&eventMux);
+        recordFailedAttempt(true);
 
         Serial.print(F("[WiFi] Connection attempt timed out; failures="));
         Serial.println(failureCount);
+        Serial.print(F("[WiFi] Attempt phase="));
+        Serial.print(associated ? F("associated without IP") : F("authentication/association"));
+        Serial.print(F(" authExpireSeen="));
+        Serial.print(authExpired);
+        Serial.print(F(" elapsedMs="));
+        Serial.println(elapsedMs);
         if (shouldRetry()) {
             Serial.print(F("[WiFi] Next retry in "));
             Serial.print(retryDelayMs);
@@ -151,11 +171,9 @@ void WifiManager::update() {
     }
 }
 
-// First half of a retry. A plain WiFi.disconnect() leaves the station enabled
-// and its association state intact, so a begin() issued straight afterwards
-// re-offered the very session the AP had already expired - the device could
-// retry for hours without ever presenting itself as a new client. Passing
-// wifioff=true routes through STA.end() and takes the station down properly.
+// First half of a retry. A plain WiFi.disconnect() leaves the driver running.
+// Passing wifioff=true routes through STA.end() to restart the local radio
+// state. It is a recovery step, not proof that stale state caused AUTH_EXPIRE.
 void WifiManager::attemptConnection() {
     Serial.print(F("[WiFi] Attempt "));
     Serial.print(failureCount + 1);
@@ -174,7 +192,11 @@ void WifiManager::attemptConnection() {
     // esp_wifi_disconnect() rejects the call, which it does when the station is
     // already stopped. Setting the mode explicitly makes the teardown
     // unconditional; espWiFiStop() underneath it does not block.
-    WiFi.mode(WIFI_OFF);
+    if (!WiFi.mode(WIFI_OFF)) {
+        recordFailedAttempt(false);
+        Serial.println(F("[WiFi] Radio teardown failed; deferring retry"));
+        return;
+    }
 
     connecting = false;
     teardownPending = true;
@@ -186,11 +208,16 @@ void WifiManager::finishConnectionAttempt() {
     Serial.print(F("[WiFi] Connecting to "));
     Serial.println(currentSsid);
 
-    // begin() re-enables the station on its own; the explicit mode() keeps the
-    // radio-off/radio-on pairing visible at the call site.
-    WiFi.mode(WIFI_STA);
-    wl_status_t status = WiFi.begin(
-        currentSsid.c_str(), currentPassword.length() > 0 ? currentPassword.c_str() : NULL);
+    const bool configured = configureStation();
+    portENTER_CRITICAL(&eventMux);
+    attemptAuthExpired = false;
+    attemptAssociated = false;
+    portEXIT_CRITICAL(&eventMux);
+    connecting = true;
+    lastAttemptMs = millis();
+    wl_status_t status = configured ? WiFi.begin(
+        currentSsid.c_str(), currentPassword.length() > 0 ? currentPassword.c_str() : NULL)
+        : WL_CONNECT_FAILED;
 
     // The teardown above deinitialises the driver, so this begin() has to run
     // esp_wifi_init() again and that wants a sizeable contiguous block. When it
@@ -199,12 +226,9 @@ void WifiManager::finishConnectionAttempt() {
     // return value is checked. Fail the attempt now rather than spending
     // WIFI_CONNECT_ATTEMPT_TIMEOUT_MS waiting for a connection nobody asked for.
     if (status == WL_CONNECT_FAILED) {
-        connecting = false;
-        if (failureCount < INT_MAX - 1) ++failureCount;
-        if (quickRetryCount < WIFI_RETRY_QUICK_COUNT + 4) ++quickRetryCount;
-        retryDelayMs = calculateBackoffDelay();
-        lastAttemptMs = millis();
-        Serial.print(F("[WiFi] begin() failed to start the station; failures="));
+        recordFailedAttempt(false);
+        Serial.print(configured ? F("[WiFi] begin() failed to start the station; failures=")
+                                : F("[WiFi] Station configuration failed; failures="));
         Serial.print(failureCount);
         Serial.print(F(" largestBlock="));
         Serial.println(ESP.getMaxAllocHeap());
@@ -212,6 +236,82 @@ void WifiManager::finishConnectionAttempt() {
     }
 
     connecting = true;
+    lastAttemptMs = millis();
+}
+
+bool WifiManager::configureStation() {
+    if (!WiFi.mode(WIFI_STA)) {
+        Serial.println(F("[WiFi] Could not enable station mode"));
+        return false;
+    }
+    // Reapply after every driver restart. Arduino also has a one-time initial
+    // retry independent of this flag; later retries belong to this manager.
+    if (!WiFi.setAutoReconnect(false) || !WiFi.setSleep(false)) {
+        Serial.println(F("[WiFi] Could not disable automatic reconnect/modem sleep"));
+        return false;
+    }
+    // FAST_SCAN stops at the first matching SSID, which may be a failing
+    // repeater. The driver can try every matching AP with ALL_CHANNEL_SCAN.
+    WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
+    WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
+
+    // A recovery hypothesis, not a diagnosis: alternate legacy modulation
+    // with the normal profile after repeated auth timeouts. This preserves
+    // WPA2/WPA3 security and also permits recovery on an n-only access point.
+    compatibilityRadio = consecutiveAuthFailures >= kAuthFailuresBeforeCompatibility &&
+        (failureCount % 2 != 0);
+    const uint8_t protocols = WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G |
+        (compatibilityRadio ? 0 : WIFI_PROTOCOL_11N);
+    esp_err_t protocolError = esp_wifi_set_protocol(WIFI_IF_STA, protocols);
+    esp_err_t bandwidthError = esp_wifi_set_bandwidth(WIFI_IF_STA, WIFI_BW_HT20);
+    if (protocolError != ESP_OK || bandwidthError != ESP_OK) {
+        Serial.print(F("[WiFi] Radio configuration failed: protocol="));
+        Serial.print((int)protocolError);
+        Serial.print(F(" bandwidth="));
+        Serial.println((int)bandwidthError);
+        return false;
+    }
+#ifdef WIFI_MAX_TX_POWER_QUARTER_DBM
+    // An explicit, optional limit for controlled RF/power comparisons. Never
+    // infer a power fault from AUTH_EXPIRE or lower TX automatically.
+    static_assert(WIFI_MAX_TX_POWER_QUARTER_DBM >= 8 && WIFI_MAX_TX_POWER_QUARTER_DBM <= 84,
+                  "Wi-Fi TX power must be 8..84 quarter-dBm units");
+    const esp_err_t powerError = esp_wifi_set_max_tx_power(WIFI_MAX_TX_POWER_QUARTER_DBM);
+    if (powerError != ESP_OK) {
+        Serial.print(F("[WiFi] Could not apply TX power limit: "));
+        Serial.println((int)powerError);
+        return false;
+    }
+#endif
+    int8_t power = 0;
+    const esp_err_t powerReadError = esp_wifi_get_max_tx_power(&power);
+    Serial.print(F("[WiFi] Station profile="));
+    Serial.print(compatibilityRadio ? F("b/g compatibility") : F("b/g/n"));
+    Serial.print(F(" scan=all-channels bandwidth=20MHz sleep=off autoReconnect=off txLimit="));
+    if (powerReadError == ESP_OK) {
+        Serial.print(power / 4.0f);
+        Serial.println(F("dBm"));
+    } else {
+        Serial.print(F("unavailable error="));
+        Serial.println((int)powerReadError);
+    }
+    return true;
+}
+
+void WifiManager::recordFailedAttempt(bool authenticationAttempt) {
+    if (failureCount < INT_MAX - 1) ++failureCount;
+    if (quickRetryCount < WIFI_RETRY_QUICK_COUNT + 4) ++quickRetryCount;
+    // Several AUTH_EXPIRE events within one SDK attempt count as one failure.
+    portENTER_CRITICAL(&eventMux);
+    const bool authExpired = attemptAuthExpired;
+    portEXIT_CRITICAL(&eventMux);
+    if (authenticationAttempt && authExpired) {
+        if (consecutiveAuthFailures < 255) ++consecutiveAuthFailures;
+    } else {
+        consecutiveAuthFailures = 0;
+    }
+    connecting = false;
+    retryDelayMs = calculateBackoffDelay();
     lastAttemptMs = millis();
 }
 
@@ -239,27 +339,53 @@ void WifiManager::handleWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
     WifiManager* manager = activeInstance;
     if (manager == nullptr) return;
 
+    portENTER_CRITICAL(&manager->eventMux);
     if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
         manager->lastDisconnectReason = info.wifi_sta_disconnected.reason;
+        manager->lastDisconnectRssi = info.wifi_sta_disconnected.rssi;
+        memcpy(manager->lastDisconnectBssid, info.wifi_sta_disconnected.bssid, 6);
+        if (info.wifi_sta_disconnected.reason == WIFI_REASON_AUTH_EXPIRE) {
+            manager->attemptAuthExpired = true;
+        }
         manager->disconnectEventPending = true;
+    } else if (event == ARDUINO_EVENT_WIFI_STA_CONNECTED) {
+        manager->attemptAssociated = true;
     } else if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP) {
         manager->gotIpEventPending = true;
     }
+    portEXIT_CRITICAL(&manager->eventMux);
 }
 
 void WifiManager::logPendingEvents() {
-    if (disconnectEventPending) {
-        uint8_t reason = lastDisconnectReason;
-        disconnectEventPending = false;
+    portENTER_CRITICAL(&eventMux);
+    const bool disconnected = disconnectEventPending;
+    const bool gotIp = gotIpEventPending;
+    const uint8_t reason = lastDisconnectReason;
+    const int8_t rssi = lastDisconnectRssi;
+    uint8_t mac[6];
+    memcpy(mac, lastDisconnectBssid, 6);
+    disconnectEventPending = false;
+    gotIpEventPending = false;
+    portEXIT_CRITICAL(&eventMux);
+    if (disconnected) {
         Serial.print(F("[WiFi] STA disconnected: reason="));
         Serial.print(reason);
         Serial.print(F(" ("));
         Serial.print(WiFi.disconnectReasonName((wifi_err_reason_t)reason));
-        Serial.println(F(")"));
+        Serial.print(F(") rssi="));
+        Serial.print((int)rssi);
+        Serial.print(F("dBm driverStatus="));
+        Serial.print((int)WiFi.status());
+        Serial.print(F(" connectedWithIp="));
+        Serial.print(isConnected());
+        char bssid[18];
+        snprintf(bssid, sizeof(bssid), "%02X:%02X:%02X:%02X:%02X:%02X",
+                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+        Serial.print(F(" bssid="));
+        Serial.println(bssid);
     }
 
-    if (gotIpEventPending) {
-        gotIpEventPending = false;
+    if (gotIp) {
         Serial.print(F("[WiFi] STA got IP: "));
         Serial.println(WiFi.localIP());
     }

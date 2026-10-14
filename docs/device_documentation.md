@@ -158,6 +158,45 @@ The device exposes a custom BLE service with characteristics for:
 5. A runtime outage preserves the playlist, asset cache, and received override in RAM;
    playback and buttons continue. No Wi-Fi or cloud timeout automatically restarts the board.
 
+The manager checks `WiFi.isConnected()` (interface connection and IP bits), rather
+than `WiFi.status()`: Arduino-ESP32 3.3.11 can leave the latter at `WL_CONNECTED`
+after `AUTH_EXPIRE`. Disconnect logs include the event's RSSI and both status
+values. The reason alone does not distinguish an authentication timeout from a
+reason sent by the AP; it does not prove incorrect Firebase or Wi-Fi credentials.
+
+Each station session reapplies disabled modem sleep/automatic reconnect and uses
+`WIFI_ALL_CHANNEL_SCAN` with signal sorting, allowing the driver to try multiple
+APs with the same SSID instead of stopping at the first one. Connection attempts
+have a minimum 20-second budget, including with older local `Config.h` files.
+After three consecutive attempts that report `AUTH_EXPIRE`, retries alternate
+normal b/g/n modulation with a b/g compatibility profile, both at 20 MHz. This
+is an interoperability recovery attempt, not proof of an 802.11n fault; normal
+attempts remain available for n-only routers. Duplicate disconnect events in
+one attempt count once. Success or an attempt without `AUTH_EXPIRE` clears the
+auth failure sequence. WPA security, saved credentials and cached content are
+unchanged. Failures to initialize/configure or stop the radio back off rather
+than launching another connection against a failed transition.
+
+Disconnect logs include BSSID, identifying the actual AP, and attempt diagnostics
+report whether association was reached without IP. Two initial `AUTH_EXPIRE`
+events may be Arduino's one-time bootstrap retry even with auto-reconnect off.
+
+Repeated failures with both profiles on `tg_f4ec6bb0ef83` did not demonstrate
+recovery. For a controlled comparison without rendering/cloud tasks, see the
+[standalone Wi-Fi diagnostic](../tools/wifi-diagnostic/README.md). It reads the
+same saved credentials, compares normal/lower TX limits and records AP management
+reply metadata; it must be run on the board to establish further evidence.
+
+`WIFI_MAX_TX_POWER_QUARTER_DBM` optionally limits station transmit power in SDK
+quarter-dBm units (8..84), applied before authentication and again after
+association. The limit and its readback are logged. The example leaves it
+undefined; the current device profile selects 28 (7 dBm). A full-application
+hardware run at that limit lasted 13 minutes with all 11 assets downloaded,
+successful cloud heartbeats/config polls, working image/animation playback and
+no Wi-Fi disconnects. This is a measured workaround, not a confirmed diagnosis
+of hardware or router failure. Lower transmit power can reduce usable range.
+See the diagnostic results above for the failed baseline and test limitations.
+
 ---
 
 ## 8. Firebase Connection & Device Claiming

@@ -3,6 +3,7 @@
 
 #include <WiFi.h>
 #include <Arduino.h>
+#include <freertos/FreeRTOS.h>
 #include "Config.h"
 
 /**
@@ -23,7 +24,9 @@ public:
     // firmware is issued from the one task that owns the radio.
     void requestReconnect() { reconnectRequested = true; }
 
-    bool isConnected() const { return WiFi.status() == WL_CONNECTED; }
+    // Arduino-ESP32 3.3.11 leaves its cached status unchanged for AUTH_EXPIRE.
+    // isConnected() checks the interface connection/IP bits cleared on loss.
+    bool isConnected() const { return WiFi.isConnected(); }
     String getSsid() const { return currentSsid; }
     IPAddress getIpAddress() const { return WiFi.localIP(); }
     
@@ -39,6 +42,10 @@ private:
     unsigned long retryDelayMs;
     int failureCount;
     int quickRetryCount;
+    uint8_t consecutiveAuthFailures;
+    bool compatibilityRadio;
+    volatile bool attemptAuthExpired;
+    volatile bool attemptAssociated;
 
     // A retry drops the radio and re-associates on a later update() pass, so
     // neither half ever blocks the loop waiting for the other.
@@ -53,13 +60,18 @@ private:
     volatile bool disconnectEventPending;
     volatile bool gotIpEventPending;
     volatile uint8_t lastDisconnectReason;
+    volatile int8_t lastDisconnectRssi;
+    uint8_t lastDisconnectBssid[6];
     bool eventHandlerRegistered;
+    portMUX_TYPE eventMux = portMUX_INITIALIZER_UNLOCKED;
 
     static WifiManager* activeInstance;
     static void handleWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info);
     
     void attemptConnection();
     void finishConnectionAttempt();
+    bool configureStation();
+    void recordFailedAttempt(bool authenticationAttempt);
     unsigned long calculateBackoffDelay();
     void logPendingEvents();
 };

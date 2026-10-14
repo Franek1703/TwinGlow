@@ -197,9 +197,13 @@
                                          // re-auths every second, which turns a
                                          // transient drop into a lockout
 #define WIFI_RETRY_BACKOFF_MAX_MS 60000
-#define WIFI_CONNECT_ATTEMPT_TIMEOUT_MS 10000
+#define WIFI_CONNECT_ATTEMPT_TIMEOUT_MS 20000 // Full-channel scan and multiple matching APs
 #define WIFI_TEARDOWN_SETTLE_MS 600      // Radio-off settle before re-associating
 // Saved SSIDs retry indefinitely; no automatic provisioning or offline reboot.
+// Optional controlled TX limit: SDK quarter-dBm units, 8..84. Keep undefined
+// to use the SDK default. A lower limit may reduce coverage. Readback is logged
+// because the PHY can map a requested value to a different actual limit.
+// #define WIFI_MAX_TX_POWER_QUARTER_DBM 28 // 7 dBm; only after hardware validation
 
 // Button timing
 #define BUTTON_DEBOUNCE_MS 50

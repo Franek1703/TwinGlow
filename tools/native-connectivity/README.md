@@ -14,11 +14,19 @@ ArduinoJson in `~/Documents/Arduino/libraries/ArduinoJson/src` (or set
 matrix driver, and extracts the production cloud/FSM methods into controlled
 test harnesses. No Firebase credentials or live cloud requests are needed.
 
-Coverage: indefinite boot/runtime Wi-Fi retries, reconnect confirmation,
-intentional BLE/reset paths, independent Firestore/RTDB health, auth/HTTP and
+Coverage: indefinite boot/runtime Wi-Fi retries, stale legacy status after
+`AUTH_EXPIRE` with cleared connection/IP bits, reconnect confirmation,
+intentional BLE/reset paths, full-channel AP selection, the 20-second connection
+budget, alternating compatibility profiles after three auth-failing attempts,
+duplicate SDK disconnect events, radio initialization/teardown/configuration
+failure recovery, independent Firestore/RTDB health, auth/HTTP and
 transport failures, stale confirmation and millis rollover, stuck-call ownership,
 all five matrix orientations, raw-buffer restoration at low brightness,
 disabled indicators during BLE and fully blank sleep, and transition-only refresh.
+
+The optional explicit Wi-Fi TX limit is tested for reapplication after radio
+restart/association and recovery after the SDK rejects its configuration.
+Its default is unset; physical RF/power conclusions need a controlled comparison.
 
 Hardware checks after installing the firmware:
 

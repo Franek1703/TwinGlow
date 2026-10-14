@@ -256,4 +256,10 @@
 // Set to 1 to run RTDB/Firestore put-get test once after Firebase connects
 #define FIREBASE_RUN_TEST 0
 
+// Validated on tg_f4ec6bb0ef83: full playback and cloud traffic at 7 dBm.
+// Keep this explicit profile across builds; the example leaves it opt-in.
+#ifndef WIFI_MAX_TX_POWER_QUARTER_DBM
+#define WIFI_MAX_TX_POWER_QUARTER_DBM 28
+#endif
+
 #endif // CONFIG_H

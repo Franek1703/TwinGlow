@@ -32,5 +32,21 @@ int main() {
     WiFi.link = WL_CONNECTED;
     manager.update();
     assert(manager.isConnected() && manager.getFailureCount() == 0);
-    std::cout << "Wi-Fi tests passed: indefinite boot/runtime retries, recovery, no restart\n";
+    // AUTH_EXPIRE can leave the SDK's legacy status at WL_CONNECTED even
+    // though its interface connection/IP bits have already been cleared.
+    WiFi.interfaceHasIp = false;
+    assert(WiFi.status() == WL_CONNECTED && !manager.isConnected());
+    manager.update();
+    const auto beforeExpiredAuthRetry = WiFi.begins;
+    fakeMillis += WIFI_RETRY_QUICK_DELAY_MS;
+    manager.update();
+    fakeMillis += WIFI_TEARDOWN_SETTLE_MS;
+    manager.update();
+    assert(WiFi.begins == beforeExpiredAuthRetry + 1);
+    assert(ESP.restarts == 0);
+    WiFi.interfaceHasIp = true;
+    WiFi.link = WL_CONNECTED;
+    manager.update();
+    assert(manager.isConnected() && manager.getFailureCount() == 0);
+    std::cout << "Wi-Fi tests passed: indefinite retries, stale AUTH_EXPIRE status, recovery, no restart\n";
 }

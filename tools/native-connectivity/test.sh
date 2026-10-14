@@ -7,6 +7,10 @@ json_root="${ARDUINOJSON_ROOT:-$HOME/Documents/Arduino/libraries/ArduinoJson/src
 flags=(-std=c++17 -fsanitize=address,undefined -g -Itools/native-connectivity -Itools/native-pairing -ITwinGlow -I"$json_root" -I"$task_test_dir" -include tools/native-connectivity/Config.h)
 c++ "${flags[@]}" tools/native-connectivity/wifi-test.cpp TwinGlow/WifiManager.cpp -o "$task_test_dir/wifi"
 "$task_test_dir/wifi"
+c++ "${flags[@]}" tools/native-connectivity/wifi-recovery-test.cpp TwinGlow/WifiManager.cpp -o "$task_test_dir/wifi-recovery"
+"$task_test_dir/wifi-recovery"
+c++ "${flags[@]}" -DWIFI_MAX_TX_POWER_QUARTER_DBM=28 tools/native-connectivity/wifi-power-test.cpp TwinGlow/WifiManager.cpp -o "$task_test_dir/wifi-power"
+"$task_test_dir/wifi-power"
 for orientation in 0 1 2 3 4; do
     c++ "${flags[@]}" -DPANEL_ORIENTATION="$orientation" tools/native-connectivity/matrix-test.cpp TwinGlow/MatrixDriver.cpp -o "$task_test_dir/matrix"
     "$task_test_dir/matrix"
